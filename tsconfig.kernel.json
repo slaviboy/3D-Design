@@ -1,0 +1,10 @@
+{
+  "//": "The kernel must run in the browser main thread, in Web Workers and in Node tests. Compiling it without DOM or Node type definitions makes any accidental platform dependency a type error.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": [],
+    "jsx": "preserve"
+  },
+  "include": ["src/kernel"]
+}

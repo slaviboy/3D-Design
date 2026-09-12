@@ -6,8 +6,9 @@ Planar is an offline, local-first 3D modeling application that runs in the brows
 - No telemetry and no network requests at runtime.
 - Everything you create stays on your device.
 
-> **Status: Phase 0 (research) complete.** The application is not implemented yet. Nothing in this repository
-> is production-ready. Progress is tracked phase by phase in [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md).
+> **Status: Phase 1 (architecture and tooling) complete.** No modeling features exist yet; the geometry kernel
+> starts in Phase 2. Nothing in this repository is production-ready. Progress is tracked phase by phase in
+> [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md).
 
 ## Documents
 
