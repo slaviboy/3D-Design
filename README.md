@@ -6,10 +6,13 @@ Planar is an offline, local-first 3D modeling application that runs in the brows
 - No telemetry and no network requests at runtime.
 - Everything you create stays on your device.
 
-> **Status: Phase 2 (geometry kernel) complete.** The headless modeling kernel (topology, sticky geometry,
-> undo/redo, groups and components, units and measurement parsing, snapshots) is implemented and tested. There is
-> no modeling UI yet; the viewport and first interactive tools arrive in Phases 3–4. Nothing in this repository is
-> production-ready. Progress is tracked phase by phase in [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md).
+> **Status: Phase 3 (foundation app) complete.** Planar opens as an installable offline web app with menus,
+> toolbars, a 3D viewport, orbit/pan/zoom, standard views, selection (click, double/triple click, window and
+> crossing), Entity Info, undo/redo, saving and opening `.planar` files, and autosave with crash recovery. Drawing
+> and modeling tools arrive in Phases 4–6. Nothing in this repository is production-ready yet. Progress is tracked
+> in [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md).
+>
+> Try it: `npm install && npm run dev`, then **File › Open Sample Model**.
 
 ## Documents
 

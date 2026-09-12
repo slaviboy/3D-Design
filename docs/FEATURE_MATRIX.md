@@ -9,7 +9,7 @@ proprietary code, assets, or copy are reused.
 
 - **Priority:** MVP = first usable modeling loop · Core = expected by a professional user · Adv = advanced · Opt = optional.
 - **Complexity:** S < 1 day · M = days · L = 1–2 weeks · XL = multi-week, high-risk.
-- **Status:** `Planned (Pn)` = scheduled for phase *n* of the roadmap · `Kernel done (Pn)` = domain logic and its tests are complete, but UI, rendering or interaction are still pending · `In progress` · `Done` (Done only when UI +
+- **Status:** `Planned (Pn)` = scheduled for phase *n* of the roadmap · `Kernel done (Pn)` = domain logic and its tests are complete, but UI, rendering or interaction are still pending · `Partly done (Pn): …` = the listed part meets the Definition of Done; the rest is scheduled as noted · `In progress` · `Done` (Done only when UI +
   domain + rendering + interaction + undo/redo + persistence + errors + tests + docs are all complete) ·
   `Out of scope` (needs an online service).
 
@@ -46,29 +46,29 @@ Doc titles are shown in *italics* and map to entries in `help.sketchup.com/index
 
 | Feature | Reference | Required behavior | Pri | Cx | Dependencies | Status | Tests required |
 |---|---|---|---|---|---|---|---|
-| Orbit (O) | *Viewing a Model*, *Using Your Mouse* | Drag orbits; middle mouse orbits temporarily in any tool; gravity keeps verticals; Shift pans | MVP | M | camera controller | Planned (P3) | Controller math |
-| Pan (H) | same | Drag pans; Shift + middle mouse pans temporarily | MVP | S | camera | Planned (P3) | Controller math |
-| Zoom (Z), wheel, FOV | same | Wheel zooms toward cursor; Zoom tool drag; speed scales with distance; Shift+drag or typed value changes FOV (degrees or mm focal length, range 1–120°) | MVP | M | camera | Planned (P3) | Zoom-to-cursor invariance |
-| Zoom Extents (Shift+Z), Zoom Selection, Zoom Window | same | Fit model, fit selection, fit dragged rectangle | MVP | S | bounds | Planned (P3) | Fit math |
+| Orbit (O) | *Viewing a Model*, *Using Your Mouse* | Drag orbits; middle mouse orbits temporarily in any tool; gravity keeps verticals; Shift pans | MVP | M | camera controller | Done (P3) | Controller math |
+| Pan (H) | same | Drag pans; Shift + middle mouse pans temporarily | MVP | S | camera | Done (P3) | Controller math |
+| Zoom (Z), wheel, FOV | same | Wheel zooms toward cursor; Zoom tool drag; speed scales with distance; Shift+drag or typed value changes FOV (degrees or mm focal length, range 1–120°) | MVP | M | camera | Partly done (P3): wheel and drag zoom; typed FOV P5 | Zoom-to-cursor invariance |
+| Zoom Extents (Shift+Z), Zoom Selection, Zoom Window | same | Fit model, fit selection, fit dragged rectangle | MVP | S | bounds | Partly done (P3): Zoom Extents; Zoom Selection and Window P5 | Fit math |
 | Previous / Next view | *Viewing a Model* | Camera history stack (not undo) | Core | S | camera | Planned (P5) | Stack |
-| Projections | *Viewing a Model* | Perspective (default), Parallel, Two-Point Perspective | MVP | M | renderer | Planned (P3, two-point P7) | Projection tests |
-| Standard views | *Viewing a Model* | Top, Bottom, Front, Back, Left, Right, Iso; Align View to face or section | MVP | S | camera | Planned (P3) | Orientation |
+| Projections | *Viewing a Model* | Perspective (default), Parallel, Two-Point Perspective | MVP | M | renderer | Partly done (P3): perspective, parallel; two-point P7 | Projection tests |
+| Standard views | *Viewing a Model* | Top, Bottom, Front, Back, Left, Right, Iso; Align View to face or section | MVP | S | camera | Partly done (P3): standard views; Align View P7 | Orientation |
 | Position Camera / Look Around / Walk | *Walking through a Model* | Eye height (default 1.676 m), look around, walk with collision; Shift vertical, Ctrl run, Alt disables collision | Adv | M | picking | Planned (P9) | Integration |
-| Camera clipping management | *Clipped or Missing Faces* | Dynamic near/far from model bounds; no clipping when switching projection | MVP | S | renderer | Planned (P3) | Near/far computation |
+| Camera clipping management | *Clipped or Missing Faces* | Dynamic near/far from model bounds; no clipping when switching projection | MVP | S | renderer | Done (P3) | Near/far computation |
 
 ## 3. Selection
 
 | Feature | Reference | Required behavior | Pri | Cx | Dependencies | Status | Tests required |
 |---|---|---|---|---|---|---|---|
-| Click select | *Selecting Geometry* | Single entity; empty space clears | MVP | S | CPU picking | Planned (P3) | Picker |
-| Double / triple click | same | Double on face = face + bounding edges; double on edge = edge + faces; triple = all connected | MVP | S | kernel queries | Planned (P3) | Sets |
-| Window / crossing box | same | Drag left→right: fully inside; right→left: touching | MVP | M | frustum queries | Planned (P3) | Frustum tests |
-| Modifiers | same | Ctrl add · Shift toggle · Shift+Ctrl subtract; cursor shows the mode | MVP | S | input router | Planned (P3) | Integration |
-| Select All / None | same | Ctrl+A; Ctrl+T (Win) / Shift+Cmd+A (Mac) | MVP | S | commands | Planned (P3) | Commands |
+| Click select | *Selecting Geometry* | Single entity; empty space clears | MVP | S | CPU picking | Done (P3) | Picker |
+| Double / triple click | same | Double on face = face + bounding edges; double on edge = edge + faces; triple = all connected | MVP | S | kernel queries | Done (P3) | Sets |
+| Window / crossing box | same | Drag left→right: fully inside; right→left: touching | MVP | M | frustum queries | Done (P3) | Frustum tests |
+| Modifiers | same | Ctrl add · Shift toggle · Shift+Ctrl subtract; cursor shows the mode | MVP | S | input router | Done (P3) | Integration |
+| Select All / None | same | Ctrl+A; Ctrl+T (Win) / Shift+Cmd+A (Mac) | MVP | S | commands | Done (P3) | Commands |
 | Context Select submenu | *Entity Context Menus* | Connected faces, all connected, same tag, same material, bounding edges, invert | Core | S | kernel | Planned (P9) | Sets |
 | Lasso | *Selecting Geometry* | Freehand or clicked polygon; clockwise = touching, counter-clockwise = inside (reversible in preferences) | Core | M | screen polygon tests | Planned (P5) | Winding |
 | Hierarchy-aware selection | *Grouping Geometry* | Outside a context, clicks pick the top-level instance; inside, pick entities; locked shown in locked color | MVP | M | contexts | Planned (P4) | Context paths |
-| Highlighting | *Customizing Modeling Settings* | Selection color, hover pre-highlight, locked color | MVP | M | selection texture | Planned (P3) | Visual |
+| Highlighting | *Customizing Modeling Settings* | Selection color, hover pre-highlight, locked color | MVP | M | selection texture | Partly done (P3): selection highlight; hover pre-highlight P4 | Visual |
 
 ## 4. Inference & precision
 
@@ -86,7 +86,7 @@ Doc titles are shown in *italics* and map to entries in `help.sketchup.com/index
 | Protractor | *Measuring Angles* | Plane by hover or arrows, Shift lock; vertex, baseline, angle → angled guide; 15° ticks with snap | Core | M | inference | Planned (P5) | Angle math |
 | Guides | *Using Guides* | Infinite guide lines, guide points; snap to them; hide / unhide / delete / delete all | Core | M | kernel entity | Planned (P4) | Inference |
 | Axes tool / Align Axes | *Adjusting the Drawing Axes* | Place origin + axes; double-click moves origin; Align Axes to face; Reset / Hide / Move dialog | Core | M | camera, inference | Planned (P5) | Transforms |
-| Entity Info | *Inspecting an Entity* | Type, solid status, count, length / radius / segments / area / volume, tag, hidden, locked, cast/receive shadows, instance name vs definition | Core | M | kernel | Planned (P3 basic, P5 full) | Panel integration |
+| Entity Info | *Inspecting an Entity* | Type, solid status, count, length / radius / segments / area / volume, tag, hidden, locked, cast/receive shadows, instance name vs definition | Core | M | kernel | Partly done (P3): selection summary, area, length; editing P5 | Panel integration |
 | Estimating height helper | *Estimating Height* | Not needed as a feature (formula doc) | Opt | — | — | Not planned | — |
 
 ## 5. Drawing tools
@@ -112,7 +112,7 @@ Doc titles are shown in *italics* and map to entries in `help.sketchup.com/index
 | Move copy + arrays | *Using the Measurements Box* | Ctrl toggles copy; `3x` / `3*` external array, `3/` internal divide, retypable | MVP | M | VCB re-entry | Planned (P4) | Integration + e2e |
 | Stretch + autofold | *Stretching Geometry* | Moving vertices / edges / faces stretches connected geometry; non-planar faces fold with new edges or the move is constrained; Alt toggles autofold | MVP | XL | kernel | Planned (P4) | Behavior matrix |
 | Eraser (E) | *Erasing and Undoing* | Click / drag-over edges; cannot erase faces directly; guides; Shift hide, Ctrl soften+smooth, Alt unsoften | MVP | M | kernel | Planned (P4) | Integration |
-| Delete command | *Erasing and Undoing* | Delete key erases the selection including faces | MVP | S | kernel | Planned (P3) | Commands |
+| Delete command | *Erasing and Undoing* | Delete key erases the selection including faces | MVP | S | kernel | Done (P3) | Commands |
 | Rotate (Q) | *Flipping, Mirroring, Rotating and Arrays* | Protractor plane by hover / Shift / arrows; vertex, start, angle; degrees or slope VCB; fold rotation by dragging an axis; Ctrl copy; radial arrays `4x` / `4/`; instance rotate grips | MVP | L | transforms | Planned (P5) | Integration + e2e |
 | Scale (S) | *Scaling Your Model or Parts of Your Model* | Grip box; corner = uniform, edge/face grips = axis scale; Shift uniform toggle; Ctrl about center; VCB factor, `a,b` / `a,b,c`, or lengths with units | MVP | L | transforms | Planned (P5) | Integration + e2e |
 | Flip / Mirror | *Flipping…* | Three planes through selection; click to flip; drag plane; Ctrl copy; Alt own vs context axes; custom plane from face; context menu Flip Along | Core | M | transforms | Planned (P5) | Determinant / orientation |
@@ -121,7 +121,7 @@ Doc titles are shown in *italics* and map to entries in `help.sketchup.com/index
 | Follow Me | *Extruding with Follow Me* | Preselected path + click profile, or manual drag along path; lathe around circle; curve paths soften | Adv | L | kernel | Planned (P6) | Profile / path matrix |
 | Paint Bucket (B) | *Applying Materials* | Paint faces, edges, instances; Shift all matching, Ctrl connected, Ctrl+Shift same object, Alt sample; applies to preselection | MVP→Core | M | materials | Planned (P5 color, P7 full) | Integration + e2e |
 | Tag tool | *Controlling Visibility with Tags* | Assign active-panel tag; Alt sample, Shift replace all, Ctrl all instances | Core | S | tags | Planned (P5) | Integration |
-| Undo / Redo | *Erasing and Undoing* | Named operations; Ctrl+Z / Ctrl+Y (Cmd+Shift+Z); camera and selection not undoable; Esc cancels in-progress op | MVP | M | history | Kernel done (P2); UI P3 | Hash identity + e2e |
+| Undo / Redo | *Erasing and Undoing* | Named operations; Ctrl+Z / Ctrl+Y (Cmd+Shift+Z); camera and selection not undoable; Esc cancels in-progress op | MVP | M | history | Done (P3) | Hash identity + e2e |
 | Clipboard | *Grouping Geometry* (paste in place) | Cut / Copy / Paste / Paste In Place within the app (serialized fragment) | Core | M | serialization | Planned (P5) | Round-trip |
 | Hide / Unhide / Hide Rest of Model | *Softening…*, *Clipped or Missing Faces* | Hide selection, unhide selected / last / all, view hidden geometry, hide rest of model while editing | Core | S | kernel flags | Planned (P5) | Commands |
 
@@ -197,10 +197,10 @@ Doc titles are shown in *italics* and map to entries in `help.sketchup.com/index
 
 | Feature | Reference | Required behavior | Pri | Cx | Dependencies | Status | Tests required |
 |---|---|---|---|---|---|---|---|
-| Native project `.planar` | *Saving a Model*, *Opening a Saved Model* | Versioned zip: manifest, model, assets, thumbnail; validate; migrate | MVP | L | fflate | Planned (P3 basic, P8 full) | Round-trip, corrupt, migrations |
-| New / Open / Save / Save As | same | FS Access API with in-place save; input/download fallback; unsaved-change prompt; recent files (IDB) | MVP | M | fs | Planned (P3) | e2e |
+| Native project `.planar` | *Saving a Model*, *Opening a Saved Model* | Versioned zip: manifest, model, assets, thumbnail; validate; migrate | MVP | L | fflate | Partly done (P3): model save and load; assets and migrations P8 | Round-trip, corrupt, migrations |
+| New / Open / Save / Save As | same | FS Access API with in-place save; input/download fallback; unsaved-change prompt; recent files (IDB) | MVP | M | fs | Partly done (P3): new, open, save, save as; recent files P8 | e2e |
 | Templates | *Model Templates* | Units, style, settings, base geometry; choose default | Core | S | serialization | Planned (P8) | Integration |
-| Autosave & crash recovery | *Preferences > General* | Configurable interval (default 5 min), temp snapshots, recovery list on startup, deleted on clean close | MVP | M | IndexedDB | Planned (P3 basic, P8 versioned) | Integration + e2e crash test |
+| Autosave & crash recovery | *Preferences > General* | Configurable interval (default 5 min), temp snapshots, recovery list on startup, deleted on clean close | MVP | M | IndexedDB | Partly done (P3): interval autosave and recovery dialog; versioned snapshots P8 | Integration + e2e crash test |
 | Backups | same | Keep previous save as a recovery snapshot | Core | S | IDB | Planned (P8) | Integration |
 | Purge unused | *Managing In Model Styles…* etc. | Remove unused definitions, materials, styles, tags; optional prompt on save | Core | S | kernel | Planned (P8) | Counts |
 | glTF / GLB import & export | *Working with GLTF Files* | Meshes, hierarchy, PBR materials, textures; preserve origin option | Core | L | three GLTF loader/exporter | Planned (P8) | Fixtures |
@@ -222,19 +222,19 @@ Doc titles are shown in *italics* and map to entries in `help.sketchup.com/index
 
 | Feature | Reference | Required behavior | Pri | Cx | Dependencies | Status | Tests required |
 |---|---|---|---|---|---|---|---|
-| Application shell layout | *Navigating the SketchUp Interface* | Menubar, toolbar, tool palette, viewport, right dock, status bar with hints + VCB | MVP | M | React | Planned (P3) | e2e smoke |
-| Menus | same | File, Edit, View, Camera, Draw, Tools, Window, Help; driven by command registry; enabled/checked state | MVP→Core | M | commands | Planned (P3 basic, P9 full) | Unit + a11y |
+| Application shell layout | *Navigating the SketchUp Interface* | Menubar, toolbar, tool palette, viewport, right dock, status bar with hints + VCB | MVP | M | React | Partly done (P3): full layout; resizable dock P9 | e2e smoke |
+| Menus | same | File, Edit, View, Camera, Draw, Tools, Window, Help; driven by command registry; enabled/checked state | MVP→Core | M | commands | Partly done (P3): File, Edit, Camera, Tools, Help; remaining menus as features land | Unit + a11y |
 | Context menus | *Entity Context Menus* | Per entity type items listed in docs (only implemented commands shown) | Core | M | commands | Planned (P9) | Integration |
-| Toolbars | *Toolbars* | Toolbar sets (principal, drawing, edit, construction, camera, views, styles, sections, solid); show/hide; large icons | Core | M | commands | Planned (P3 basic, P9 customization) | a11y |
-| Panels / trays | *Dialog Boxes and Trays* | Right dock with collapsible, reorderable, resizable panels; open/close via Window menu; layout persisted | Core | M | UI | Planned (P3 basic, P9 full) | e2e |
+| Toolbars | *Toolbars* | Toolbar sets (principal, drawing, edit, construction, camera, views, styles, sections, solid); show/hide; large icons | Core | M | commands | Partly done (P3): main toolbar and tool palette; customization P9 | a11y |
+| Panels / trays | *Dialog Boxes and Trays* | Right dock with collapsible, reorderable, resizable panels; open/close via Window menu; layout persisted | Core | M | UI | Partly done (P3): Entity Info; more panels P5–P9 | e2e |
 | Instructor / hints | *Navigating the Interface* | Active tool help text in status bar and optional panel | Core | S | tools | Planned (P4) | Snapshot |
-| Command palette | *Searching in SketchUp*, *Search for Tools and Commands* | Shift+S (and `?`); fuzzy search; concept aliases; arrow/Enter; display commands keep active tool; inline shortcut edit | Core | M | commands | Planned (P9; basic in P3) | Unit + e2e |
-| Keyboard shortcuts | *Default Keyboard Shortcuts*, *Creating and Editing Shortcuts* | Defaults; customize; no leading digit; OS-reserved refusal; conflicts Keep/Replace; reset all; import/export JSON; persistence | Core | M | IDB | Planned (P3 routing, P9 editor) | Unit + e2e |
+| Command palette | *Searching in SketchUp*, *Search for Tools and Commands* | Shift+S (and `?`); fuzzy search; concept aliases; arrow/Enter; display commands keep active tool; inline shortcut edit | Core | M | commands | Partly done (P3): search and run with aliases; inline shortcut editing P9 | Unit + e2e |
+| Keyboard shortcuts | *Default Keyboard Shortcuts*, *Creating and Editing Shortcuts* | Defaults; customize; no leading digit; OS-reserved refusal; conflicts Keep/Replace; reset all; import/export JSON; persistence | Core | M | IDB | Partly done (P3): defaults routed through commands; customization P9 | Unit + e2e |
 | Preferences | *Preferences* subtree | Drawing (click style, continue line, lasso direction, crosshairs, pre-pick, rotation grips), General (autosave, backups, check problems, warnings reset, welcome), Graphics (AA, max texture size), Accessibility (colors), Compatibility (wheel invert), Workspace (large icons, reset), Template | Core | M | IDB | Planned (P9) | Integration |
 | Model Info | *Model Info* references | Units, dimensions, text, geo-location, animation, components (fade), statistics + purge + fix problems, credits (author only) | Core | M | kernel doc | Planned (P5–P9 incremental) | Integration |
 | Welcome / start screen | *Opening a Saved Model* | New from template, open file, recent files, recovered files | Core | S | IDB | Planned (P8) | e2e |
-| Accessibility | *Accessibility*, *VPAT* | Keyboard navigation, visible focus, ARIA, non-color-only indicators, color customization, UI scale, reduced motion | Core | M | UI | Planned (P3 baseline, P9 audit) | axe-core e2e |
-| Error handling | — (product requirement) | Error boundaries, toasts, recoverable errors, import validation, diagnostics panel (dev) | MVP | M | UI | Planned (P3 baseline, P11) | Integration |
-| PWA / offline install | — (product requirement) | Service worker precache (incl. wasm, HDR), manifest, versioned cache, offline start | MVP | S | vite-plugin-pwa | Planned (P3) | Offline e2e |
+| Accessibility | *Accessibility*, *VPAT* | Keyboard navigation, visible focus, ARIA, non-color-only indicators, color customization, UI scale, reduced motion | Core | M | UI | Partly done (P3): keyboard menus, focus, ARIA roles; audit P9 | axe-core e2e |
+| Error handling | — (product requirement) | Error boundaries, toasts, recoverable errors, import validation, diagnostics panel (dev) | MVP | M | UI | Partly done (P3): error boundaries, notifications, file validation | Integration |
+| PWA / offline install | — (product requirement) | Service worker precache (incl. wasm, HDR), manifest, versioned cache, offline start | MVP | S | vite-plugin-pwa | Done (P3) | Offline e2e |
 | Trackpad / 3D mouse | *Trackpad Controls* | Trackpad mode: pinch zoom, two-finger orbit/pan/zoom mapping; sensitivity/invert | Core | S | input | Planned (P9) | Unit |
 | Credits, classifications, IFC, dynamic/live components, extensions/Ruby API | various | — | Opt | — | — | Not planned | — |

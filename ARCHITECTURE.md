@@ -172,3 +172,26 @@ Folders are created when they get their first real module. Placeholder files are
 | manifold-3d for booleans | Robust manifold booleans; JavaScript CSG libraries aren't watertight |
 | TypeScript pinned to ~6.0 | typescript-eslint supports TypeScript below 6.1 only |
 | Hand-written menus, dialogs, palette and IndexedDB wrapper | Each is small; fewer dependencies means a smaller bundle and less supply-chain risk |
+| Platform (Mod key) from `navigator.platform`, not the user agent | User agents are routinely overridden; the OS platform matches the physical keyboard |
+
+## Dependencies
+
+Every runtime dependency is bundled; nothing is fetched at runtime.
+
+| Package | License | Layer | Why |
+|---|---|---|---|
+| `three` | MIT | render | WebGL rendering only; never the model's source of truth |
+| `react`, `react-dom` | MIT | ui | Interface chrome |
+| `zustand` | MIT | app (vanilla store), ui (React binding) | Small UI view-state store fed by editor events |
+| `robust-predicates` | Unlicense | kernel | Exact 2D orientation tests for planar topology |
+| `earcut` | ISC | kernel | Triangulating faces with holes |
+| `fflate` | MIT | io | ZIP container for `.planar` files |
+| `workbox-window` | MIT | main | Registering the offline service worker |
+
+| Development package | License | Why |
+|---|---|---|
+| `vite`, `@vitejs/plugin-react`, `typescript` | MIT / Apache-2.0 | Build and type checking |
+| `vite-plugin-pwa` (Workbox) | MIT | Generates the service worker precache and manifest at build time |
+| `vitest`, `@vitest/coverage-v8`, `fast-check`, `fake-indexeddb` | MIT / Apache-2.0 | Unit, property-based and storage tests |
+| `@playwright/test` | Apache-2.0 | End-to-end and offline tests |
+| `eslint`, `typescript-eslint`, `eslint-plugin-react-hooks`, `prettier` | MIT | Lint rules, including layer boundaries, and formatting |

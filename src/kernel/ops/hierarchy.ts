@@ -299,10 +299,38 @@ export function makeUnique(doc: ModelDocument, context: DefinitionId, instanceId
   });
 }
 
-/** Removes everything inside a definition. */
+/**
+ * Deletes instances. A group definition left without instances is deleted too, along with everything inside it.
+ * Component definitions stay available for reuse.
+ */
+export function deleteInstances(
+  doc: ModelDocument,
+  context: DefinitionId,
+  instanceIds: readonly InstanceId[],
+): void {
+  doc.transact('Delete', () => {
+    const store = doc.store(context);
+    for (const instanceId of instanceIds) {
+      const instance = store.instance(instanceId);
+      if (!instance) continue;
+      const definitionId = instance.definitionId;
+      removeInstance(doc, context, instanceId);
+      if (doc.getDefinition(definitionId).attributes.isGroup && doc.instancesOf(definitionId).length === 0) {
+        clearDefinition(doc, definitionId);
+        removeDefinition(doc, definitionId);
+      }
+    }
+  });
+}
+
+/** Removes everything inside a definition; nested groups that end up unused are deleted as well. */
 function clearDefinition(doc: ModelDocument, definitionId: DefinitionId): void {
   const store = doc.store(definitionId);
-  for (const instance of [...store.instances()]) removeInstance(doc, definitionId, instance.id);
+  deleteInstances(
+    doc,
+    definitionId,
+    [...store.instances()].map((instance) => instance.id),
+  );
   for (const face of [...store.faces()]) removeFace(doc, definitionId, face.id);
   for (const curve of [...store.curves()]) removeCurve(doc, definitionId, curve.id);
   for (const edge of [...store.edges()]) removeEdge(doc, definitionId, edge.id);

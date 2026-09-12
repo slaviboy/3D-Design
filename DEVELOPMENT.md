@@ -28,7 +28,8 @@ npm run dev          # http://localhost:5173
 | `npm test` / `test:watch` / `coverage` | Vitest |
 | `npm run build` | Typecheck, then a production build into `dist/` |
 | `npm run preview` | Serves `dist/` on port 4173 |
-| `npm run e2e` | Production build plus Playwright |
+| `npm run e2e` | Production build in `e2e` mode (adds the `window.__planar` test hook) plus Playwright |
+| `npm run bench` | Kernel benchmarks (`*.bench.ts`), results in `bench/results/` |
 | `npm run verify` | The full gate, required before every commit that closes a phase |
 
 ## Project conventions

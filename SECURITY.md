@@ -22,10 +22,14 @@ Production builds carry a Content-Security-Policy (`vite.config.ts`):
 | `style-src` | `'self'` | No inline `<style>` elements or style attributes |
 | `connect-src` | `'self' data: blob:` | `fetch`, XHR and WebSocket requests to other origins are blocked |
 | `img-src` | `'self' data: blob:` | Images from user files are decoded into blob or data URLs |
-| `worker-src` | `'self' blob:` | Only bundled workers |
+| `worker-src` | `'self' blob:` | Only bundled workers and the offline service worker |
+| `manifest-src` | `'self'` | The web app manifest used for installation |
 | `object-src` | `'none'` | No plugins |
 | `base-uri` | `'self'` | Prevents base-tag hijacking |
 | `form-action` | `'none'` | The app never submits forms |
+
+**Test hook.** Builds made with `vite build --mode e2e` expose `window.__planar` so end-to-end tests can inspect
+the model. The normal `npm run build` output never includes it.
 
 **Limits of a meta-tag policy:**
 - A policy set through a `<meta>` tag can't set `frame-ancestors`.
