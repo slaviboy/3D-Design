@@ -1,0 +1,240 @@
+# Planar — Feature Matrix
+
+Source: systematic reading of the local SketchUp help mirror (`../help.sketchup.com/`, sections *SketchUp* and
+*SketchUp for Web*, ~150 pages, 0 extraction failures). The documentation is used as a **behavioral reference
+only**. Planar is an original implementation with its own name, visual identity, icons, and text. No
+proprietary code, assets, or copy are reused.
+
+**Legend**
+
+- **Priority:** MVP = first usable modeling loop · Core = expected by a professional user · Adv = advanced · Opt = optional.
+- **Complexity:** S < 1 day · M = days · L = 1–2 weeks · XL = multi-week, high-risk.
+- **Status:** `Planned (Pn)` = scheduled for phase *n* of the roadmap · `In progress` · `Done` (Done only when UI +
+  domain + rendering + interaction + undo/redo + persistence + errors + tests + docs are all complete) ·
+  `Out of scope` (needs an online service).
+
+Doc titles are shown in *italics* and map to entries in `help.sketchup.com/index.md`.
+
+---
+
+## 1. Geometry kernel & model
+
+| Feature | Reference | Required behavior | Pri | Cx | Dependencies | Status | Tests required |
+|---|---|---|---|---|---|---|---|
+| Vertex / edge / face / loop topology | *Introducing Drawing Basics and Concepts* | Model = edges + faces; faces are planar polygons with holes; edges may bound 0..n faces (loose, manifold, non-manifold fins) | MVP | XL | math, tolerance | Planned (P2) | Invariant validator, primitives + inverse, fuzz |
+| Sticky geometry: auto-split | *Dividing, Splitting, and Exploding* | New edge touching or crossing an edge splits both at the intersection; collinear overlaps merge | MVP | XL | spatial index, robust-predicates | Planned (P2) | Crossing, T, collinear overlap, coincident regressions |
+| Auto-face creation | *Drawing Basics* | Closing a coplanar loop creates a face; redrawing an erased boundary edge re-creates the face | MVP | XL | planar embedding | Planned (P2) | Loop closure, nested loops, holes |
+| Face split | *Dividing, Splitting…* | Edge with both ends on a face boundary splits the face; the largest region keeps its id and materials | MVP | L | insertSegments | Planned (P2) | Split counts, attribute preservation |
+| Holes | *Drawing Basic Shapes* (circle on face) | Closed loop strictly inside a face → hole in outer face + new inner face | MVP | L | insertSegments | Planned (P2) | Circle-in-rect, nested holes |
+| Heal on erase | *Dividing, Splitting…* | Erasing the only edge between two coplanar same-normal faces merges them | MVP | L | insertSegments | Planned (P2) | Split → erase → single face |
+| Erase boundary edge deletes faces | *Erasing and Undoing* | Eraser on an edge removes the edge and the non-healable faces it bounds | MVP | M | kernel | Planned (P2) | Counts |
+| Dangling edges on faces | *Drawing Basics* | Non-closing edges on a face stay loose and do not split the face | MVP | M | embedding prune | Planned (P2) | Spur/bridge pruning |
+| Curves (arc / circle / polygon / polyline) | *Drawing Arcs*, *Drawing Basic Shapes* | Segments act as one entity; parameters kept (center, radius, segments) and editable in Entity Info; inference still sees each segment | MVP | L | kernel | Planned (P2 data, P4–P5 tools) | Curve split hook, param edits |
+| Weld / Explode Curve / Convert to polygon | *Dividing, Splitting…*, *Entity Context Menus* | Weld connected edges into a polyline curve; explode curve into segments | Core | M | curves | Planned (P5) | Round-trip |
+| Divide | *Dividing, Splitting…* | Preview division points, segment count by cursor or typed length; not on edges of curved surfaces | Core | S | kernel | Planned (P5) | Equal segments |
+| Soft / smooth / hidden edges, surfaces | *Softening, Smoothing, and Hiding Geometry* | Soft hides edge + forms surface; smooth shades; hidden = invisible without merging; Soften Edges panel (angle slider, smooth normals, soften coplanar) | Core | M | kernel, renderer | Planned (P5) | Flag ops, surface derivation |
+| Face orientation / Reverse Faces / Orient Faces | *3D Printing a Model*, *Entity Context Menus* | Front/back sides; reverse; orient consistently across connected faces; ground faces start back-side-up | Core | M | kernel | Planned (P4–P5) | Orientation propagation |
+| Groups | *Grouping Geometry* | Isolated context; make, edit (dbl-click/Enter), close, explode, lock, empty group | MVP | L | contexts | Planned (P2 data, P4 UI) | Isolation, explode merge, undo |
+| Components | *Components*, *Making Components*, *Editing All Instances*, *Changing a Single Instance*, *Component Axes* | Definition + instances; edit updates all; Make Unique; Change Axes; Reset Scale/Skew; Scale Definition; Flip Along; glue-to / cut opening / always face camera / shadows face sun (data P5, behavior P6+) | MVP→Core | L | contexts, instancing | Planned (P5) | Edit propagation, make unique, nested transforms |
+| Intersect Faces (model / selected / context) | *Modeling Complex 3D Shapes with the Solid Tools* | Creates intersection edges in the active context; shapes don't need to be solids | Adv | L | kernel | Planned (P6) | Box–box, box–cylinder |
+| Solid detection | *Solid Tools* | Group or component with closed volume, each edge exactly 2 faces; shown in Entity Info | Adv | M | kernel | Planned (P6) | Leak cases |
+| Solid tools | *Solid Tools* | Outer Shell, Union, Subtract (cutter deleted), Trim (cutter kept), Intersect, Split; preselect + context menu variants | Adv | XL | manifold-3d worker | Planned (P6) | Golden round trips, materials kept |
+| Check / repair model | *Preferences > General* (check for problems), *3D Modeling Issues* | Detect and fix invariant violations on open and save, with a report | Core | M | validator | Planned (P8) | Corrupted fixtures |
+| Canonical units & tolerance | *Managing Units of Measurement* | Stored in meters (float64); one tolerance module | MVP | S | — | Planned (P2) | Far-from-origin and tiny-feature regressions |
+
+## 2. Camera & navigation
+
+| Feature | Reference | Required behavior | Pri | Cx | Dependencies | Status | Tests required |
+|---|---|---|---|---|---|---|---|
+| Orbit (O) | *Viewing a Model*, *Using Your Mouse* | Drag orbits; middle mouse orbits temporarily in any tool; gravity keeps verticals; Shift pans | MVP | M | camera controller | Planned (P3) | Controller math |
+| Pan (H) | same | Drag pans; Shift + middle mouse pans temporarily | MVP | S | camera | Planned (P3) | Controller math |
+| Zoom (Z), wheel, FOV | same | Wheel zooms toward cursor; Zoom tool drag; speed scales with distance; Shift+drag or typed value changes FOV (degrees or mm focal length, range 1–120°) | MVP | M | camera | Planned (P3) | Zoom-to-cursor invariance |
+| Zoom Extents (Shift+Z), Zoom Selection, Zoom Window | same | Fit model, fit selection, fit dragged rectangle | MVP | S | bounds | Planned (P3) | Fit math |
+| Previous / Next view | *Viewing a Model* | Camera history stack (not undo) | Core | S | camera | Planned (P5) | Stack |
+| Projections | *Viewing a Model* | Perspective (default), Parallel, Two-Point Perspective | MVP | M | renderer | Planned (P3, two-point P7) | Projection tests |
+| Standard views | *Viewing a Model* | Top, Bottom, Front, Back, Left, Right, Iso; Align View to face or section | MVP | S | camera | Planned (P3) | Orientation |
+| Position Camera / Look Around / Walk | *Walking through a Model* | Eye height (default 1.676 m), look around, walk with collision; Shift vertical, Ctrl run, Alt disables collision | Adv | M | picking | Planned (P9) | Integration |
+| Camera clipping management | *Clipped or Missing Faces* | Dynamic near/far from model bounds; no clipping when switching projection | MVP | S | renderer | Planned (P3) | Near/far computation |
+
+## 3. Selection
+
+| Feature | Reference | Required behavior | Pri | Cx | Dependencies | Status | Tests required |
+|---|---|---|---|---|---|---|---|
+| Click select | *Selecting Geometry* | Single entity; empty space clears | MVP | S | CPU picking | Planned (P3) | Picker |
+| Double / triple click | same | Double on face = face + bounding edges; double on edge = edge + faces; triple = all connected | MVP | S | kernel queries | Planned (P3) | Sets |
+| Window / crossing box | same | Drag left→right: fully inside; right→left: touching | MVP | M | frustum queries | Planned (P3) | Frustum tests |
+| Modifiers | same | Ctrl add · Shift toggle · Shift+Ctrl subtract; cursor shows the mode | MVP | S | input router | Planned (P3) | Integration |
+| Select All / None | same | Ctrl+A; Ctrl+T (Win) / Shift+Cmd+A (Mac) | MVP | S | commands | Planned (P3) | Commands |
+| Context Select submenu | *Entity Context Menus* | Connected faces, all connected, same tag, same material, bounding edges, invert | Core | S | kernel | Planned (P9) | Sets |
+| Lasso | *Selecting Geometry* | Freehand or clicked polygon; clockwise = touching, counter-clockwise = inside (reversible in preferences) | Core | M | screen polygon tests | Planned (P5) | Winding |
+| Hierarchy-aware selection | *Grouping Geometry* | Outside a context, clicks pick the top-level instance; inside, pick entities; locked shown in locked color | MVP | M | contexts | Planned (P4) | Context paths |
+| Highlighting | *Customizing Modeling Settings* | Selection color, hover pre-highlight, locked color | MVP | M | selection texture | Planned (P3) | Visual |
+
+## 4. Inference & precision
+
+| Feature | Reference | Required behavior | Pri | Cx | Dependencies | Status | Tests required |
+|---|---|---|---|---|---|---|---|
+| Point inferences | *Introducing Drawing Basics and Concepts* | Endpoint, midpoint, arc midpoint, intersection, on edge, on face, center, origin, component origin, guide point, on guide, on section; "in group/component" variant | MVP | XL | spatial index | Planned (P4) | Priority table, pixel tolerance |
+| Linear inferences | same | On red/green/blue axis, from point, parallel, perpendicular, extend edge, perpendicular to face, tangent at vertex | MVP→Core | L | solver | Planned (P4 axis/from-point, P5 rest) | Solver |
+| Shape inferences | *Drawing Basic Shapes*, *Drawing Arcs* | Square, golden section, half/quarter/three-quarter circle | Core | S | tools | Planned (P5) | Tool tests |
+| Locks | *Drawing Basics* | Shift locks current inference; ↑ blue · → red · ← green · ↓ parallel/perpendicular; Shift+Alt locks to plane; Line tool Alt cycles all / off / parallel-perp | MVP | M | input | Planned (P4) | Lock state machine |
+| Visual indicators | same, *Accessibility* | Marker shape + tooltip text + color (never color-only); dotted guide lines; configurable axis and inference colors | MVP | M | overlays | Planned (P4) | Visual + a11y |
+| Measurements box (VCB) | *Using the Measurements Box* | Type during or after an op until the next op; retyping modifies the last op; tool-specific label | MVP | M | history rollback | Planned (P4) | Re-entry integration |
+| VCB grammar | same + tool pages | Lengths with units, `3' 6"`, fractions, `L,W`, `,W`, `L,`, negatives, `3x` / `3*` / `3/`, `[x,y,z]`, `<x,y,z>`, `10s`, `20c`, `24r`, degrees, slope `8:12`, per-axis scale `a,b,c` | MVP | M | units | Planned (P2 parser) | Exhaustive parser table |
+| Units | *Managing Units of Measurement* | Architectural / Decimal / Engineering / Fractional; length, area and volume units; precision; length and angle snapping; unit symbol toggle; force 0" | MVP | M | — | Planned (P2 lib, P9 UI) | Round-trips |
+| Tape Measure (T) | *Measuring Distance*, *Using Guides* | Measure / guide line / guide point (Ctrl cycles); offset guide by typed distance; rescale model or group by typed length with confirmation | Core | M | inference | Planned (P4 measure + guides, P5 rescale) | Integration |
+| Protractor | *Measuring Angles* | Plane by hover or arrows, Shift lock; vertex, baseline, angle → angled guide; 15° ticks with snap | Core | M | inference | Planned (P5) | Angle math |
+| Guides | *Using Guides* | Infinite guide lines, guide points; snap to them; hide / unhide / delete / delete all | Core | M | kernel entity | Planned (P4) | Inference |
+| Axes tool / Align Axes | *Adjusting the Drawing Axes* | Place origin + axes; double-click moves origin; Align Axes to face; Reset / Hide / Move dialog | Core | M | camera, inference | Planned (P5) | Transforms |
+| Entity Info | *Inspecting an Entity* | Type, solid status, count, length / radius / segments / area / volume, tag, hidden, locked, cast/receive shadows, instance name vs definition | Core | M | kernel | Planned (P3 basic, P5 full) | Panel integration |
+| Estimating height helper | *Estimating Height* | Not needed as a feature (formula doc) | Opt | — | — | Not planned | — |
+
+## 5. Drawing tools
+
+| Feature | Reference | Required behavior | Pri | Cx | Dependencies | Status | Tests required |
+|---|---|---|---|---|---|---|---|
+| Line (L) | *Drawing Basics* | Click-click chaining; length via VCB; `[ ]` and `< >` coordinates; Esc restarts; splits and creates faces | MVP | M | insertSegments, inference | Planned (P4) | Integration + e2e |
+| Rectangle (R) | *Drawing Basic Shapes* | On ground, faces or axis planes; square and golden-section inference; `L,W` VCB incl. partial and negative | MVP | M | same | Planned (P4) | Integration + e2e |
+| Rotated Rectangle | same | Base edge, then protractor angle + width; Alt baseline | Core | M | protractor | Planned (P5) | Integration |
+| Circle (C) | same | Sides typed before drawing; radius during/after; circle curve entity; ellipse via Scale | MVP | S | curves | Planned (P4) | Params |
+| Polygon | same | Sides then radius; faceted curve entity | MVP | S | curves | Planned (P4) | Params |
+| Arc (center) / Pie | *Drawing Arcs* | Center, start (radius), sweep angle; pie = closed face; `10s` / `20c` after drawing | Core | M | curves | Planned (P5) | Params |
+| 2-Point Arc (A) | same | Chord then bulge; half-circle inference; `24r` radius, `20s` segments; double-click fillet repeat; tangent arc with Alt lock | Core | M | curves | Planned (P5) | Params, tangent |
+| 3-Point Arc | same | Start, point on arc, end | Core | S | curves | Planned (P5) | Circumcircle math |
+| Freehand | *Drawing Freehand Shapes* | Press-drag-release polyline curve; arrow keys pick plane; closes on start point | Core | S | curves | Planned (P5) | Simplification |
+| 3D Text | *Adding Text, Labels, and Dimensions* | Text, bundled original font, height, filled / extruded, placed via move | Adv | L | font outlines | Planned (P6) | Geometry validity |
+
+## 6. Editing tools
+
+| Feature | Reference | Required behavior | Pri | Cx | Dependencies | Status | Tests required |
+|---|---|---|---|---|---|---|---|
+| Move (M) | *Moving Entities Around* | Reference point → destination; inference and axis lock (Shift, arrows); distance / `[ ]` / `< >` VCB; instance grips (Alt cycles grip sets) | MVP | L | transform ops | Planned (P4) | Integration + e2e |
+| Move copy + arrays | *Using the Measurements Box* | Ctrl toggles copy; `3x` / `3*` external array, `3/` internal divide, retypable | MVP | M | VCB re-entry | Planned (P4) | Integration + e2e |
+| Stretch + autofold | *Stretching Geometry* | Moving vertices / edges / faces stretches connected geometry; non-planar faces fold with new edges or the move is constrained; Alt toggles autofold | MVP | XL | kernel | Planned (P4) | Behavior matrix |
+| Eraser (E) | *Erasing and Undoing* | Click / drag-over edges; cannot erase faces directly; guides; Shift hide, Ctrl soften+smooth, Alt unsoften | MVP | M | kernel | Planned (P4) | Integration |
+| Delete command | *Erasing and Undoing* | Delete key erases the selection including faces | MVP | S | kernel | Planned (P3) | Commands |
+| Rotate (Q) | *Flipping, Mirroring, Rotating and Arrays* | Protractor plane by hover / Shift / arrows; vertex, start, angle; degrees or slope VCB; fold rotation by dragging an axis; Ctrl copy; radial arrays `4x` / `4/`; instance rotate grips | MVP | L | transforms | Planned (P5) | Integration + e2e |
+| Scale (S) | *Scaling Your Model or Parts of Your Model* | Grip box; corner = uniform, edge/face grips = axis scale; Shift uniform toggle; Ctrl about center; VCB factor, `a,b` / `a,b,c`, or lengths with units | MVP | L | transforms | Planned (P5) | Integration + e2e |
+| Flip / Mirror | *Flipping…* | Three planes through selection; click to flip; drag plane; Ctrl copy; Alt own vs context axes; custom plane from face; context menu Flip Along | Core | M | transforms | Planned (P5) | Determinant / orientation |
+| Offset (F) | *Offsetting a Line from Existing Geometry* | Face or coplanar connected edges; distance via cursor or VCB; overlap removal (Alt keeps); double-click repeats; arcs stay arcs | MVP | L | arrangement engine | Planned (P5) | Behavior matrix |
+| Push/Pull (P) | *Pushing and Pulling Shapes into 3D* | Stretch vs extrude; frame remains; through-cut deletes volume; pocket; Ctrl new starting face; double-click repeat; parallel-face inference; pre-pick | MVP | XL | kernel | Planned (P4) | Behavior matrix + e2e |
+| Follow Me | *Extruding with Follow Me* | Preselected path + click profile, or manual drag along path; lathe around circle; curve paths soften | Adv | L | kernel | Planned (P6) | Profile / path matrix |
+| Paint Bucket (B) | *Applying Materials* | Paint faces, edges, instances; Shift all matching, Ctrl connected, Ctrl+Shift same object, Alt sample; applies to preselection | MVP→Core | M | materials | Planned (P5 color, P7 full) | Integration + e2e |
+| Tag tool | *Controlling Visibility with Tags* | Assign active-panel tag; Alt sample, Shift replace all, Ctrl all instances | Core | S | tags | Planned (P5) | Integration |
+| Undo / Redo | *Erasing and Undoing* | Named operations; Ctrl+Z / Ctrl+Y (Cmd+Shift+Z); camera and selection not undoable; Esc cancels in-progress op | MVP | M | history | Planned (P2 kernel, P3 UI) | Hash identity + e2e |
+| Clipboard | *Grouping Geometry* (paste in place) | Cut / Copy / Paste / Paste In Place within the app (serialized fragment) | Core | M | serialization | Planned (P5) | Round-trip |
+| Hide / Unhide / Hide Rest of Model | *Softening…*, *Clipped or Missing Faces* | Hide selection, unhide selected / last / all, view hidden geometry, hide rest of model while editing | Core | S | kernel flags | Planned (P5) | Commands |
+
+## 7. Annotations
+
+| Feature | Reference | Required behavior | Pri | Cx | Dependencies | Status | Tests required |
+|---|---|---|---|---|---|---|---|
+| Linear dimensions | *Adding Text, Labels, and Dimensions* | Start/end on inference points or click an edge; offset within a plane; associative updates; custom text breaks association | Core | L | inference, overlays | Planned (P6) | Association |
+| Radius / diameter dimensions | same | On arcs and circles, stays in their plane | Core | M | curves | Planned (P6) | Params |
+| Screen text | same | Fixed to screen; edit by double-click | Core | S | overlays | Planned (P6) | Render |
+| Leader text / labels | same | Default text = component name or face area; pushpin / view-based / hidden leaders; arrow styles | Core | M | overlays | Planned (P6) | Render |
+| Text & dimension settings | *Model Info* | Font size, leader, arrow, alignment, update selected | Core | S | model info | Planned (P6) | Panel |
+| Angle measurement / annotation | *Measuring Angles* | Protractor readout; angled guides | Core | S | protractor | Planned (P5) | Math |
+
+## 8. Organization
+
+| Feature | Reference | Required behavior | Pri | Cx | Dependencies | Status | Tests required |
+|---|---|---|---|---|---|---|---|
+| Outliner | *Hierarchies in the Outliner* | Tree of groups / components / sections; expand/collapse all; rename; select sync; eye visibility; lock; drag reparent; filter; sort by name | Core | M | contexts, UI | Planned (P5) | Panel integration + e2e |
+| Tags | *Controlling Visibility with Tags* | Add / rename / delete (reassign) / purge; folders; visibility; active tag; color by tag; select all tagged; multi-select toggle | Core | M | kernel doc | Planned (P5) | Panel integration |
+| Tag dashes | *Applying Dashed Lines to Tags* | Per-tag dash pattern on edges; style dashes toggle | Core | S | edge shader | Planned (P7) | Visual |
+| Hierarchy-aware visibility | *Hierarchies in the Outliner* | Hidden parent hides children; tag visibility applies to instances and contents | Core | M | renderer | Planned (P5) | Visibility resolution |
+| Component browser (In Model + local library) | *Inserting Components*, *Organizing Component Collections* | Thumbnails, place with move, select instances, replace selected, purge unused, save to local library (IndexedDB) | Core | M | thumbnails, IDB | Planned (P5 in-model, P8 library) | Integration |
+| 3D Warehouse / Nearby models | *Components in 3D Warehouse* | — | — | — | online | Out of scope | — |
+
+## 9. Materials & textures
+
+| Feature | Reference | Required behavior | Pri | Cx | Dependencies | Status | Tests required |
+|---|---|---|---|---|---|---|---|
+| Material model | *Create Your Own Materials*, *Editing Materials* | Name, base color (RGB/HSL/HEX), opacity, roughness, metalness, normal/AO strength, texture + width/height (aspect lock), offset, rotation, double-sided | MVP→Core | M | kernel doc | Planned (P5 color, P7 full) | Serialization |
+| Materials panel | *Navigating the Materials Panel*, *Managing and Organizing Materials* | In Model list, bundled local library, user library (IDB), create / duplicate / edit / delete / purge unused, sample | Core | M | UI | Planned (P7) | Panel integration |
+| Default material & instance inheritance | *Applying Materials* | Default faces show front/back style colors; instance material fills default faces inside | Core | M | renderer buckets | Planned (P7) | Render resolution |
+| Replace material | *Replacing a Material* | Replace all uses of material A with B | Core | S | kernel | Planned (P7) | Counts |
+| Area per material | *Calculating Material Area* | Total area of faces using a material, in model units | Core | S | kernel | Planned (P7) | Math |
+| Planar UV mapping | *Positioning Textures* | Per-face UV from face plane + material scale / offset / rotation, front and back | Core | M | renderer | Planned (P7) | UV math |
+| Position Texture pins | same | Move / scale-rotate / scale-shear / distort; fixed vs free pins; flip, rotate, reset | Adv | L | UV projective map | Planned (P7) | Projective math |
+| Make Unique Texture, Combine Textures | *Entity Context Menus* | Bake a face's mapping into a new material | Opt | M | canvas | Planned (P7, may slip) | — |
+| Image import (image entity / as material) | *Importing and Using 2D Images* | Place image as a locked textured rectangle; explode; use as material; max texture size clamp | Core | M | io | Planned (P8) | Integration |
+| Generate textures (AI) | *Generate Textures* | — | — | — | online AI | Out of scope | — |
+
+## 10. Visualization
+
+| Feature | Reference | Required behavior | Pri | Cx | Dependencies | Status | Tests required |
+|---|---|---|---|---|---|---|---|
+| Face styles | *Face Styles* | Wireframe, hidden line, shaded, shaded with textures, monochrome, X-ray; front/back color; transparency on/off + quality | Core | M | StyleApplier | Planned (P7; shaded + monochrome in P3) | Visual + unit |
+| Edge styles | *Edge Styles* | Edges, back edges (dashed), profiles + width, depth cue, extension, endpoints, jitter, color all same / by material / by axis | Core | L | edge shader | Planned (P7; edges + profiles in P3) | Visual + unit |
+| Background | *Customizing a Model's Background with Styles* | Background, sky, horizon blend, ground, show ground from below | Core | S | renderer | Planned (P7) | Visual |
+| Modeling settings | *Customizing Modeling Settings…* | Colors: selected, locked, guides, inactive/active section, cuts, fill; toggles for hidden geometry, section planes/cuts/fill, axes, guides | Core | S | renderer | Planned (P7) | Visual |
+| Watermarks | *Watermarking a Model* | Background or overlay image; mask/blend; stretched / tiled / positioned | Opt | M | renderer | Planned (P7, may slip) | Visual |
+| Style management | *Managing In Model Styles…*, *Sharing Styles* | In-model styles, create / update / duplicate, bundled presets, export/import style JSON, fast-style badge | Core | M | serialization | Planned (P7) | Serialization |
+| Ambient occlusion | *Face Styles* | SSAO on/off, distance, intensity | Opt | M | postprocessing | Planned (P10, if perf allows) | Visual |
+| Fog | *Letting the Fog Roll into Your Model* | Start / end distance, background color or custom color; scene property | Opt | S | three fog | Planned (P7) | Visual |
+| Shadows | *Casting Real-World Shadows* | Toggle, date, time, light/dark, use sun for shading, on faces / on ground, per-entity cast/receive; sun from lat/long/north/time zone | Core | M | solar position | Planned (P7) | Solar math tests |
+| Geolocation (manual) | *Geolocation in Model Info* | Manual latitude, longitude, north angle, time zone; clear location | Core | S | model info | Planned (P7) | Serialization |
+| Add Location imagery / terrain / buildings | *Finding and Using Add Location* | — | — | — | online maps | Out of scope | — |
+| Environments | *Adding an Environment to a Model* | Local HDR/EXR import; skydome; reflections; rotation; exposures; set sun location; bundled original CC0 HDRs | Adv | M | RGBE/EXR loader, PMREM | Planned (P7) | Integration |
+| Scenes | *Creating Scenes* | Tabs; add / update / delete / reorder; name, description, include in animation; per-property save flags; thumbnails | Core | M | scene capture | Planned (P7) | Capture/apply + e2e |
+| Scene animation | *Animating Scenes* | Smooth transitions (time), delay, play/stop; reduced-motion respected | Core | S | camera tween | Planned (P7) | Tween math |
+| Video export | *Animating Scenes* | WebM via MediaRecorder (only format a browser can record offline) | Opt | M | canvas capture | Planned (P8, optional) | e2e smoke |
+| Section planes | *Creating and Using Section Planes* | Place on face with Shift/arrow orientation; name + symbol; one active cut per context; reverse; align view; move/rotate; display planes/cuts toggles | Core | L | clipping | Planned (P7) | Integration + e2e |
+| Section fill | same | Closed-loop fill color; troubleshoot markers at gaps | Core | L | kernel slice | Planned (P7) | Slice loops |
+| Create group from slice | same | Slice edges as a new group | Core | S | kernel slice | Planned (P7) | Counts |
+| Photo Match | *Photo Matching* | — | Opt | L | camera calibration | Not planned (candidate after P11) | — |
+
+## 10b. Terrain
+
+| Feature | Reference | Required behavior | Pri | Cx | Dependencies | Status | Tests required |
+|---|---|---|---|---|---|---|---|
+| Sandbox From Scratch / From Contours | *Creating 3D Terrain* | Grid terrain group; TIN from contour edges | Opt | L | triangulation | Not planned (candidate after P11) | — |
+| Smoove / Add Detail / Flip Edge / Stamp / Drape | *Sculpting and Fine Tuning Terrain* | Terrain editing | Opt | L | kernel | Not planned | — |
+
+## 11. Files, import & export
+
+| Feature | Reference | Required behavior | Pri | Cx | Dependencies | Status | Tests required |
+|---|---|---|---|---|---|---|---|
+| Native project `.planar` | *Saving a Model*, *Opening a Saved Model* | Versioned zip: manifest, model, assets, thumbnail; validate; migrate | MVP | L | fflate | Planned (P3 basic, P8 full) | Round-trip, corrupt, migrations |
+| New / Open / Save / Save As | same | FS Access API with in-place save; input/download fallback; unsaved-change prompt; recent files (IDB) | MVP | M | fs | Planned (P3) | e2e |
+| Templates | *Model Templates* | Units, style, settings, base geometry; choose default | Core | S | serialization | Planned (P8) | Integration |
+| Autosave & crash recovery | *Preferences > General* | Configurable interval (default 5 min), temp snapshots, recovery list on startup, deleted on clean close | MVP | M | IndexedDB | Planned (P3 basic, P8 versioned) | Integration + e2e crash test |
+| Backups | same | Keep previous save as a recovery snapshot | Core | S | IDB | Planned (P8) | Integration |
+| Purge unused | *Managing In Model Styles…* etc. | Remove unused definitions, materials, styles, tags; optional prompt on save | Core | S | kernel | Planned (P8) | Counts |
+| glTF / GLB import & export | *Working with GLTF Files* | Meshes, hierarchy, PBR materials, textures; preserve origin option | Core | L | three GLTF loader/exporter | Planned (P8) | Fixtures |
+| OBJ (+MTL) import & export | *Exporting OBJ Files* | Import: meshes + MTL colors/textures from the selected file set. Export: triangulate, two-sided, edges, textures, swap YZ, units, selection only | Core | M | three OBJ loader/exporter + own MTL writer | Planned (P8) | Fixtures |
+| STL import & export | *Importing and Exporting STL Files* | Import: units (default mm), merge coplanar, preserve origin, swap YZ. Export: binary/ASCII, units, selection only, swap YZ | Core | M | three STL | Planned (P8) | Fixtures |
+| COLLADA import & export | *Importing and Exporting COLLADA Files* | Merge coplanar; export two-sided, edges, triangulate, selection, hidden, hierarchy, textures | Core | M | three Collada | Planned (P8) | Fixtures |
+| 3DS import | *Importing and Exporting 3DS Files* | Meshes + textures from zip / file set; merge coplanar; units | Core | M | three TDS loader | Planned (P8) | Fixtures |
+| 3DS export | same | 65,536-vertex mesh splitting, 8.3 texture names | Opt | L | custom writer | Not promised (evaluate in P8) | — |
+| FBX export | *Exporting FBX Files* | Binary FBX writer (no import) | Opt | L | custom writer | Not promised (evaluate in P8) | — |
+| DXF import | *Importing and Exporting CAD Files* | Lines, polylines, 3DFACE, layers → tags | Opt | L | parser | Not promised (evaluate in P8) | — |
+| DWG, KMZ, VRML, XSI, USDZ, IFC, DEM | various | — | Opt | — | — | Not planned | — |
+| Image import | *Importing and Exporting Image Files* | PNG / JPG / WebP (browser-decodable); size clamp | Core | S | io | Planned (P8) | Fixtures |
+| PNG export | same | View size or custom W/H, transparent background, anti-alias, line scale | Core | M | renderer | Planned (P8) | e2e |
+| Merge coplanar / orient faces on import | *STL*, *CAD* docs | Regroup triangles into polygons; consistent orientation | Core | L | meshToKernel | Planned (P8) | Fixtures |
+| Printing | *Printing Views of SketchUp Models* | Browser print of the current view (print stylesheet with rendered image) | Opt | S | PNG export | Planned (P9) | Smoke |
+| Trimble Connect / cloud save / collaboration | *File Management (Web)* | — | — | — | online | Out of scope | — |
+
+## 12. Application UX
+
+| Feature | Reference | Required behavior | Pri | Cx | Dependencies | Status | Tests required |
+|---|---|---|---|---|---|---|---|
+| Application shell layout | *Navigating the SketchUp Interface* | Menubar, toolbar, tool palette, viewport, right dock, status bar with hints + VCB | MVP | M | React | Planned (P3) | e2e smoke |
+| Menus | same | File, Edit, View, Camera, Draw, Tools, Window, Help; driven by command registry; enabled/checked state | MVP→Core | M | commands | Planned (P3 basic, P9 full) | Unit + a11y |
+| Context menus | *Entity Context Menus* | Per entity type items listed in docs (only implemented commands shown) | Core | M | commands | Planned (P9) | Integration |
+| Toolbars | *Toolbars* | Toolbar sets (principal, drawing, edit, construction, camera, views, styles, sections, solid); show/hide; large icons | Core | M | commands | Planned (P3 basic, P9 customization) | a11y |
+| Panels / trays | *Dialog Boxes and Trays* | Right dock with collapsible, reorderable, resizable panels; open/close via Window menu; layout persisted | Core | M | UI | Planned (P3 basic, P9 full) | e2e |
+| Instructor / hints | *Navigating the Interface* | Active tool help text in status bar and optional panel | Core | S | tools | Planned (P4) | Snapshot |
+| Command palette | *Searching in SketchUp*, *Search for Tools and Commands* | Shift+S (and `?`); fuzzy search; concept aliases; arrow/Enter; display commands keep active tool; inline shortcut edit | Core | M | commands | Planned (P9; basic in P3) | Unit + e2e |
+| Keyboard shortcuts | *Default Keyboard Shortcuts*, *Creating and Editing Shortcuts* | Defaults; customize; no leading digit; OS-reserved refusal; conflicts Keep/Replace; reset all; import/export JSON; persistence | Core | M | IDB | Planned (P3 routing, P9 editor) | Unit + e2e |
+| Preferences | *Preferences* subtree | Drawing (click style, continue line, lasso direction, crosshairs, pre-pick, rotation grips), General (autosave, backups, check problems, warnings reset, welcome), Graphics (AA, max texture size), Accessibility (colors), Compatibility (wheel invert), Workspace (large icons, reset), Template | Core | M | IDB | Planned (P9) | Integration |
+| Model Info | *Model Info* references | Units, dimensions, text, geo-location, animation, components (fade), statistics + purge + fix problems, credits (author only) | Core | M | kernel doc | Planned (P5–P9 incremental) | Integration |
+| Welcome / start screen | *Opening a Saved Model* | New from template, open file, recent files, recovered files | Core | S | IDB | Planned (P8) | e2e |
+| Accessibility | *Accessibility*, *VPAT* | Keyboard navigation, visible focus, ARIA, non-color-only indicators, color customization, UI scale, reduced motion | Core | M | UI | Planned (P3 baseline, P9 audit) | axe-core e2e |
+| Error handling | — (product requirement) | Error boundaries, toasts, recoverable errors, import validation, diagnostics panel (dev) | MVP | M | UI | Planned (P3 baseline, P11) | Integration |
+| PWA / offline install | — (product requirement) | Service worker precache (incl. wasm, HDR), manifest, versioned cache, offline start | MVP | S | vite-plugin-pwa | Planned (P3) | Offline e2e |
+| Trackpad / 3D mouse | *Trackpad Controls* | Trackpad mode: pinch zoom, two-finger orbit/pan/zoom mapping; sensitivity/invert | Core | S | input | Planned (P9) | Unit |
+| Credits, classifications, IFC, dynamic/live components, extensions/Ruby API | various | — | Opt | — | — | Not planned | — |
