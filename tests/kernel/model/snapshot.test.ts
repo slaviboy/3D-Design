@@ -1,0 +1,171 @@
+import { describe, expect, it } from 'vitest';
+import { translation } from '../../../src/kernel/math/mat4';
+import { vec3 } from '../../../src/kernel/math/vec3';
+import type { ModelDocument } from '../../../src/kernel/model/ModelDocument';
+import {
+  addInstance,
+  addMaterial,
+  addTag,
+  setFaceAttributes,
+  setInstanceAttributes,
+} from '../../../src/kernel/model/mutations';
+import {
+  createSnapshot,
+  hashDocument,
+  restoreSnapshot,
+  SNAPSHOT_FORMAT,
+} from '../../../src/kernel/model/snapshot';
+import { insertCurve } from '../../../src/kernel/ops/curves';
+import { makeComponent, makeGroup } from '../../../src/kernel/ops/hierarchy';
+import { boxEdges, counts, draw, expectValid, newDocument, rectangle, segment } from '../helpers';
+
+function richDocument(): ModelDocument {
+  const doc = newDocument();
+  draw(doc, rectangle(0, 0, 2, 1));
+  insertCurve(doc, doc.rootDefinitionId, {
+    kind: 'circle',
+    center: vec3(1, 0.5, 0),
+    normal: vec3(0, 0, 1),
+    xAxis: vec3(1, 0, 0),
+    radius: 0.25,
+    segments: 12,
+  });
+  draw(doc, boxEdges(5, 0, 0, 6, 1, 1));
+  const boxFaces = [...doc.rootStore.faces()].filter((face) => doc.rootStore.faceBounds(face.id).minX >= 5);
+  const group = makeGroup(doc, doc.rootDefinitionId, { faces: boxFaces.map((face) => face.id) });
+  const component = makeComponent(doc, doc.rootDefinitionId, { instances: [group.instance] }, 'Crate');
+  doc.transact('Decorate', () => {
+    const material = addMaterial(doc, { name: 'Oak', color: { r: 0.5, g: 0.35, b: 0.2 }, opacity: 1 });
+    const tag = addTag(doc, { name: 'Furniture', visible: true });
+    const firstFace = [...doc.rootStore.faces()][0];
+    if (firstFace) setFaceAttributes(doc, doc.rootDefinitionId, firstFace.id, { frontMaterialId: material });
+    setInstanceAttributes(doc, doc.rootDefinitionId, component.instance, { tagId: tag, name: 'Crate A' });
+    addInstance(doc, doc.rootDefinitionId, component.definition, translation(vec3(0, 3, 0)));
+  });
+  return doc;
+}
+
+function roundTrip(doc: ModelDocument): ModelDocument {
+  const result = restoreSnapshot(JSON.parse(JSON.stringify(createSnapshot(doc))));
+  if (!result.ok) throw new Error(result.error);
+  return result.value;
+}
+
+function mutableSnapshot(
+  doc: ModelDocument,
+): Record<string, unknown> & { definitions: Record<string, unknown>[] } {
+  return JSON.parse(JSON.stringify(createSnapshot(doc))) as Record<string, unknown> & {
+    definitions: Record<string, unknown>[];
+  };
+}
+
+describe('document snapshots', () => {
+  it('round-trips a document with curves, holes, groups, components, materials and tags', () => {
+    const doc = richDocument();
+    const restored = roundTrip(doc);
+    expect(hashDocument(restored)).toBe(hashDocument(doc));
+    expect(restored.ids.next).toBe(doc.ids.next);
+    expect(restored.canUndo).toBe(false);
+    expectValid(restored);
+  });
+
+  it('keeps allocating ids above every restored id', () => {
+    const restored = roundTrip(richDocument());
+    const nextBefore = restored.ids.next;
+    const { createdEdges } = draw(restored, [segment([20, 0, 0], [21, 0, 0])]);
+    expect(createdEdges[0]).toBeGreaterThanOrEqual(nextBefore);
+  });
+
+  it('changes the hash on edits and restores it on undo', () => {
+    const doc = richDocument();
+    const before = hashDocument(doc);
+    draw(doc, [segment([30, 0, 0], [31, 0, 0])]);
+    expect(hashDocument(doc)).not.toBe(before);
+    doc.undo();
+    expect(hashDocument(doc)).toBe(before);
+  });
+
+  it('rejects input that is not a Planar snapshot', () => {
+    expect(restoreSnapshot(null)).toMatchObject({ ok: false });
+    expect(restoreSnapshot({ format: 'other', version: 1 })).toMatchObject({
+      ok: false,
+      error: 'This is not a Planar document',
+    });
+    expect(restoreSnapshot({ format: SNAPSHOT_FORMAT, version: 99 })).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('Unsupported document version'),
+    });
+  });
+
+  it('reports structural errors with paths', () => {
+    const snapshot = mutableSnapshot(richDocument());
+    const [root] = snapshot.definitions;
+    if (!root) throw new Error('expected a definition');
+    (root.vertices as Record<string, unknown>[])[0] = { id: -4, position: { x: 'a', y: 0, z: 0 } };
+    const result = restoreSnapshot(snapshot);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('$.definitions[0].vertices[0].id');
+      expect(result.error).toContain('$.definitions[0].vertices[0].position.x');
+    }
+  });
+
+  it('rejects duplicate ids, ids at or above nextId, and a missing root', () => {
+    const doc = richDocument();
+    const duplicate = mutableSnapshot(doc);
+    const tags = duplicate.tags as { id: number }[];
+    const materials = duplicate.materials as { id: number }[];
+    if (tags[0] && materials[0]) tags[0].id = materials[0].id;
+    expect(restoreSnapshot(duplicate)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('more than once'),
+    });
+
+    const tooHigh = mutableSnapshot(doc);
+    tooHigh.nextId = 2;
+    expect(restoreSnapshot(tooHigh)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('not below nextId'),
+    });
+
+    const noRoot = mutableSnapshot(doc);
+    noRoot.rootDefinitionId = 999_999;
+    expect(restoreSnapshot(noRoot)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('root definition'),
+    });
+  });
+
+  it('rejects snapshots whose geometry breaks kernel invariants', () => {
+    const doc = newDocument();
+    draw(doc, rectangle(0, 0, 1, 1));
+    const snapshot = mutableSnapshot(doc) as Record<string, unknown> & {
+      definitions: { faces: Record<string, unknown>[] }[];
+    };
+    const root = snapshot.definitions[0];
+    const face = root?.faces[0];
+    if (!root || !face) throw new Error('expected a face');
+    const nextId = snapshot.nextId as number;
+    root.faces.push({ ...face, id: nextId });
+    snapshot.nextId = nextId + 1;
+    const result = restoreSnapshot(snapshot);
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('overlapping-faces') });
+  });
+
+  it('rejects references to entities that do not exist', () => {
+    const doc = newDocument();
+    draw(doc, [segment([0, 0, 0], [1, 0, 0])]);
+    const snapshot = mutableSnapshot(doc) as unknown as { definitions: { edges: { v1: number }[] }[] };
+    const edge = snapshot.definitions[0]?.edges[0];
+    if (edge) edge.v1 = 12345;
+    expect(restoreSnapshot(snapshot)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('does not exist'),
+    });
+  });
+
+  it('restores an empty document', () => {
+    const restored = roundTrip(newDocument());
+    expect(counts(restored)).toEqual({ v: 0, e: 0, f: 0 });
+  });
+});

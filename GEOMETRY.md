@@ -74,11 +74,12 @@ saving:
    across all loops of one face.
 9. Loops are closed: each edge use ends at the vertex where the next one starts, taking `reversed` into account. Every
    loop has at least 3 edges.
-10. Loops are simple: no vertex repeats within a loop, and no two loops of the same face share a vertex. A boundary
-    that touches itself is represented as separate faces.
+10. Each loop is simple: no vertex repeats within a loop. Different loops of the same face may touch at a single
+    vertex (for example, a hole whose corner touches the outer boundary), but never share an edge.
 11. Every vertex of a face lies within `EPS_LEN` of the face's plane.
 12. The outer loop is counter-clockwise around the face normal (positive signed area), and inner loops are clockwise.
-13. Inner loops lie strictly inside the outer loop, are pairwise disjoint, and are not nested.
+13. Inner loops lie inside the outer loop and do not overlap or nest. They may touch the outer loop or each other at
+    single vertices.
 14. No two faces in a context cover overlapping regions of the same plane.
 15. A curve's edges form one connected, ordered chain, and each of those edges' `curveId` points back to the curve.
 16. Every entity a primitive touched is in the dirty set, which means rebuilding all caches from scratch produces
@@ -126,9 +127,13 @@ for the active context, plus options such as `autoFace`.
    around its destination, then trace the cycles.
 8. **Prune.** An edge whose two half-edges lie on the same cycle is a spur or a bridge. Remove it from the embedding
    and re-trace; it stays a loose edge in the model. Repeat until nothing changes.
-9. **Classify cycles.** A positive signed area is a region boundary. A negative one is the outside of a connected
-   component and becomes a hole candidate, assigned to the smallest positive cycle that contains it (exact
-   point-in-polygon test).
+9. **Classify cycles.**
+   - A traced cycle that passes through the same vertex twice (a region pinched at a vertex) is first split there
+     into simple loops. A pinched region boundary yields one counter-clockwise outer loop plus clockwise loops that
+     are holes touching it; a pinched component outline yields several clockwise loops.
+   - A positive signed area is a region boundary. A negative one is the outside of a connected component and becomes
+     a hole candidate, assigned to the smallest positive cycle from another component that contains a point strictly
+     inside it (exact point-in-polygon test).
 10. **Decide faces.** Pick a sample point strictly inside each region (the centroid of its largest triangle).
     - If an existing face covers the sample and has identical loops: leave it unchanged.
     - If an existing face covers the sample but its loops differ: **split** it. The largest region keeps the face's id,

@@ -9,7 +9,7 @@ proprietary code, assets, or copy are reused.
 
 - **Priority:** MVP = first usable modeling loop · Core = expected by a professional user · Adv = advanced · Opt = optional.
 - **Complexity:** S < 1 day · M = days · L = 1–2 weeks · XL = multi-week, high-risk.
-- **Status:** `Planned (Pn)` = scheduled for phase *n* of the roadmap · `In progress` · `Done` (Done only when UI +
+- **Status:** `Planned (Pn)` = scheduled for phase *n* of the roadmap · `Kernel done (Pn)` = domain logic and its tests are complete, but UI, rendering or interaction are still pending · `In progress` · `Done` (Done only when UI +
   domain + rendering + interaction + undo/redo + persistence + errors + tests + docs are all complete) ·
   `Out of scope` (needs an online service).
 
@@ -21,26 +21,26 @@ Doc titles are shown in *italics* and map to entries in `help.sketchup.com/index
 
 | Feature | Reference | Required behavior | Pri | Cx | Dependencies | Status | Tests required |
 |---|---|---|---|---|---|---|---|
-| Vertex / edge / face / loop topology | *Introducing Drawing Basics and Concepts* | Model = edges + faces; faces are planar polygons with holes; edges may bound 0..n faces (loose, manifold, non-manifold fins) | MVP | XL | math, tolerance | Planned (P2) | Invariant validator, primitives + inverse, fuzz |
-| Sticky geometry: auto-split | *Dividing, Splitting, and Exploding* | New edge touching or crossing an edge splits both at the intersection; collinear overlaps merge | MVP | XL | spatial index, robust-predicates | Planned (P2) | Crossing, T, collinear overlap, coincident regressions |
-| Auto-face creation | *Drawing Basics* | Closing a coplanar loop creates a face; redrawing an erased boundary edge re-creates the face | MVP | XL | planar embedding | Planned (P2) | Loop closure, nested loops, holes |
-| Face split | *Dividing, Splitting…* | Edge with both ends on a face boundary splits the face; the largest region keeps its id and materials | MVP | L | insertSegments | Planned (P2) | Split counts, attribute preservation |
-| Holes | *Drawing Basic Shapes* (circle on face) | Closed loop strictly inside a face → hole in outer face + new inner face | MVP | L | insertSegments | Planned (P2) | Circle-in-rect, nested holes |
-| Heal on erase | *Dividing, Splitting…* | Erasing the only edge between two coplanar same-normal faces merges them | MVP | L | insertSegments | Planned (P2) | Split → erase → single face |
-| Erase boundary edge deletes faces | *Erasing and Undoing* | Eraser on an edge removes the edge and the non-healable faces it bounds | MVP | M | kernel | Planned (P2) | Counts |
-| Dangling edges on faces | *Drawing Basics* | Non-closing edges on a face stay loose and do not split the face | MVP | M | embedding prune | Planned (P2) | Spur/bridge pruning |
-| Curves (arc / circle / polygon / polyline) | *Drawing Arcs*, *Drawing Basic Shapes* | Segments act as one entity; parameters kept (center, radius, segments) and editable in Entity Info; inference still sees each segment | MVP | L | kernel | Planned (P2 data, P4–P5 tools) | Curve split hook, param edits |
+| Vertex / edge / face / loop topology | *Introducing Drawing Basics and Concepts* | Model = edges + faces; faces are planar polygons with holes; edges may bound 0..n faces (loose, manifold, non-manifold fins) | MVP | XL | math, tolerance | Kernel done (P2) | Invariant validator, primitives + inverse, fuzz |
+| Sticky geometry: auto-split | *Dividing, Splitting, and Exploding* | New edge touching or crossing an edge splits both at the intersection; collinear overlaps merge | MVP | XL | spatial index, robust-predicates | Kernel done (P2) | Crossing, T, collinear overlap, coincident regressions |
+| Auto-face creation | *Drawing Basics* | Closing a coplanar loop creates a face; redrawing an erased boundary edge re-creates the face | MVP | XL | planar embedding | Kernel done (P2) | Loop closure, nested loops, holes |
+| Face split | *Dividing, Splitting…* | Edge with both ends on a face boundary splits the face; the largest region keeps its id and materials | MVP | L | insertSegments | Kernel done (P2) | Split counts, attribute preservation |
+| Holes | *Drawing Basic Shapes* (circle on face) | Closed loop strictly inside a face → hole in outer face + new inner face | MVP | L | insertSegments | Kernel done (P2) | Circle-in-rect, nested holes |
+| Heal on erase | *Dividing, Splitting…* | Erasing the only edge between two coplanar same-normal faces merges them | MVP | L | insertSegments | Kernel done (P2) | Split → erase → single face |
+| Erase boundary edge deletes faces | *Erasing and Undoing* | Eraser on an edge removes the edge and the non-healable faces it bounds | MVP | M | kernel | Kernel done (P2) | Counts |
+| Dangling edges on faces | *Drawing Basics* | Non-closing edges on a face stay loose and do not split the face | MVP | M | embedding prune | Kernel done (P2) | Spur/bridge pruning |
+| Curves (arc / circle / polygon / polyline) | *Drawing Arcs*, *Drawing Basic Shapes* | Segments act as one entity; parameters kept (center, radius, segments) and editable in Entity Info; inference still sees each segment | MVP | L | kernel | Kernel done (P2); tools P4–P5 | Curve split hook, param edits |
 | Weld / Explode Curve / Convert to polygon | *Dividing, Splitting…*, *Entity Context Menus* | Weld connected edges into a polyline curve; explode curve into segments | Core | M | curves | Planned (P5) | Round-trip |
 | Divide | *Dividing, Splitting…* | Preview division points, segment count by cursor or typed length; not on edges of curved surfaces | Core | S | kernel | Planned (P5) | Equal segments |
 | Soft / smooth / hidden edges, surfaces | *Softening, Smoothing, and Hiding Geometry* | Soft hides edge + forms surface; smooth shades; hidden = invisible without merging; Soften Edges panel (angle slider, smooth normals, soften coplanar) | Core | M | kernel, renderer | Planned (P5) | Flag ops, surface derivation |
 | Face orientation / Reverse Faces / Orient Faces | *3D Printing a Model*, *Entity Context Menus* | Front/back sides; reverse; orient consistently across connected faces; ground faces start back-side-up | Core | M | kernel | Planned (P4–P5) | Orientation propagation |
-| Groups | *Grouping Geometry* | Isolated context; make, edit (dbl-click/Enter), close, explode, lock, empty group | MVP | L | contexts | Planned (P2 data, P4 UI) | Isolation, explode merge, undo |
-| Components | *Components*, *Making Components*, *Editing All Instances*, *Changing a Single Instance*, *Component Axes* | Definition + instances; edit updates all; Make Unique; Change Axes; Reset Scale/Skew; Scale Definition; Flip Along; glue-to / cut opening / always face camera / shadows face sun (data P5, behavior P6+) | MVP→Core | L | contexts, instancing | Planned (P5) | Edit propagation, make unique, nested transforms |
+| Groups | *Grouping Geometry* | Isolated context; make, edit (dbl-click/Enter), close, explode, lock, empty group | MVP | L | contexts | Kernel done (P2); UI P4 | Isolation, explode merge, undo |
+| Components | *Components*, *Making Components*, *Editing All Instances*, *Changing a Single Instance*, *Component Axes* | Definition + instances; edit updates all; Make Unique; Change Axes; Reset Scale/Skew; Scale Definition; Flip Along; glue-to / cut opening / always face camera / shadows face sun (data P5, behavior P6+) | MVP→Core | L | contexts, instancing | Kernel core done (P2): make, edit all, make unique, explode; UI and glue/cut P5 | Edit propagation, make unique, nested transforms |
 | Intersect Faces (model / selected / context) | *Modeling Complex 3D Shapes with the Solid Tools* | Creates intersection edges in the active context; shapes don't need to be solids | Adv | L | kernel | Planned (P6) | Box–box, box–cylinder |
 | Solid detection | *Solid Tools* | Group or component with closed volume, each edge exactly 2 faces; shown in Entity Info | Adv | M | kernel | Planned (P6) | Leak cases |
 | Solid tools | *Solid Tools* | Outer Shell, Union, Subtract (cutter deleted), Trim (cutter kept), Intersect, Split; preselect + context menu variants | Adv | XL | manifold-3d worker | Planned (P6) | Golden round trips, materials kept |
 | Check / repair model | *Preferences > General* (check for problems), *3D Modeling Issues* | Detect and fix invariant violations on open and save, with a report | Core | M | validator | Planned (P8) | Corrupted fixtures |
-| Canonical units & tolerance | *Managing Units of Measurement* | Stored in meters (float64); one tolerance module | MVP | S | — | Planned (P2) | Far-from-origin and tiny-feature regressions |
+| Canonical units & tolerance | *Managing Units of Measurement* | Stored in meters (float64); one tolerance module | MVP | S | — | Kernel done (P2) | Far-from-origin and tiny-feature regressions |
 
 ## 2. Camera & navigation
 
@@ -80,8 +80,8 @@ Doc titles are shown in *italics* and map to entries in `help.sketchup.com/index
 | Locks | *Drawing Basics* | Shift locks current inference; ↑ blue · → red · ← green · ↓ parallel/perpendicular; Shift+Alt locks to plane; Line tool Alt cycles all / off / parallel-perp | MVP | M | input | Planned (P4) | Lock state machine |
 | Visual indicators | same, *Accessibility* | Marker shape + tooltip text + color (never color-only); dotted guide lines; configurable axis and inference colors | MVP | M | overlays | Planned (P4) | Visual + a11y |
 | Measurements box (VCB) | *Using the Measurements Box* | Type during or after an op until the next op; retyping modifies the last op; tool-specific label | MVP | M | history rollback | Planned (P4) | Re-entry integration |
-| VCB grammar | same + tool pages | Lengths with units, `3' 6"`, fractions, `L,W`, `,W`, `L,`, negatives, `3x` / `3*` / `3/`, `[x,y,z]`, `<x,y,z>`, `10s`, `20c`, `24r`, degrees, slope `8:12`, per-axis scale `a,b,c` | MVP | M | units | Planned (P2 parser) | Exhaustive parser table |
-| Units | *Managing Units of Measurement* | Architectural / Decimal / Engineering / Fractional; length, area and volume units; precision; length and angle snapping; unit symbol toggle; force 0" | MVP | M | — | Planned (P2 lib, P9 UI) | Round-trips |
+| VCB grammar | same + tool pages | Lengths with units, `3' 6"`, fractions, `L,W`, `,W`, `L,`, negatives, `3x` / `3*` / `3/`, `[x,y,z]`, `<x,y,z>`, `10s`, `20c`, `24r`, degrees, slope `8:12`, per-axis scale `a,b,c` | MVP | M | units | Parser done (P2); UI P4 | Exhaustive parser table |
+| Units | *Managing Units of Measurement* | Architectural / Decimal / Engineering / Fractional; length, area and volume units; precision; length and angle snapping; unit symbol toggle; force 0" | MVP | M | — | Library done (P2); UI P9 | Round-trips |
 | Tape Measure (T) | *Measuring Distance*, *Using Guides* | Measure / guide line / guide point (Ctrl cycles); offset guide by typed distance; rescale model or group by typed length with confirmation | Core | M | inference | Planned (P4 measure + guides, P5 rescale) | Integration |
 | Protractor | *Measuring Angles* | Plane by hover or arrows, Shift lock; vertex, baseline, angle → angled guide; 15° ticks with snap | Core | M | inference | Planned (P5) | Angle math |
 | Guides | *Using Guides* | Infinite guide lines, guide points; snap to them; hide / unhide / delete / delete all | Core | M | kernel entity | Planned (P4) | Inference |
@@ -121,7 +121,7 @@ Doc titles are shown in *italics* and map to entries in `help.sketchup.com/index
 | Follow Me | *Extruding with Follow Me* | Preselected path + click profile, or manual drag along path; lathe around circle; curve paths soften | Adv | L | kernel | Planned (P6) | Profile / path matrix |
 | Paint Bucket (B) | *Applying Materials* | Paint faces, edges, instances; Shift all matching, Ctrl connected, Ctrl+Shift same object, Alt sample; applies to preselection | MVP→Core | M | materials | Planned (P5 color, P7 full) | Integration + e2e |
 | Tag tool | *Controlling Visibility with Tags* | Assign active-panel tag; Alt sample, Shift replace all, Ctrl all instances | Core | S | tags | Planned (P5) | Integration |
-| Undo / Redo | *Erasing and Undoing* | Named operations; Ctrl+Z / Ctrl+Y (Cmd+Shift+Z); camera and selection not undoable; Esc cancels in-progress op | MVP | M | history | Planned (P2 kernel, P3 UI) | Hash identity + e2e |
+| Undo / Redo | *Erasing and Undoing* | Named operations; Ctrl+Z / Ctrl+Y (Cmd+Shift+Z); camera and selection not undoable; Esc cancels in-progress op | MVP | M | history | Kernel done (P2); UI P3 | Hash identity + e2e |
 | Clipboard | *Grouping Geometry* (paste in place) | Cut / Copy / Paste / Paste In Place within the app (serialized fragment) | Core | M | serialization | Planned (P5) | Round-trip |
 | Hide / Unhide / Hide Rest of Model | *Softening…*, *Clipped or Missing Faces* | Hide selection, unhide selected / last / all, view hidden geometry, hide rest of model while editing | Core | S | kernel flags | Planned (P5) | Commands |
 

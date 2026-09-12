@@ -5,6 +5,7 @@ export default defineConfig({
     include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
     exclude: ['tests/e2e/**', 'node_modules/**'],
     environment: 'node',
+    benchmark: { include: ['tests/bench/**/*.bench.ts'] },
     coverage: {
       provider: 'v8',
       include: ['src/**'],

@@ -96,7 +96,12 @@ axe-core runs inside Playwright from the UX phase, and fails on serious or criti
 
 ### Benchmarks (`tests/bench`)
 
-`vitest bench` for kernel operations. A Playwright performance page measures:
+`npm run bench` (`vitest bench --run`) runs the kernel benchmarks. In Vitest 5 a benchmark is a test in a
+`*.bench.ts` file that uses the `bench` fixture. Vitest runs those files only in bench mode
+(`test.benchmark.include` in `vitest.config.ts`), so the slow 100k-entity cases stay out of `npm test`. Each benchmark
+writes its result to `bench/results/<name>.json`.
+
+From the performance phase, a Playwright performance page measures:
 
 - FPS and p95 frame time during a scripted orbit
 - heap usage

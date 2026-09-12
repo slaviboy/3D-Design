@@ -60,6 +60,15 @@ export default defineConfig(
   { files: ['tests/**/*.{ts,tsx}', '*.config.{ts,js}'], languageOptions: { globals: globals.node } },
   { files: ['**/*.js'], extends: [tseslint.configs.disableTypeChecked] },
   {
+    // Vitest's asymmetric matchers (expect.closeTo, expect.stringContaining, …) are typed `any`.
+    // Tests narrow branded ids with `as` casts; the assertion-style rule would turn those into forbidden `!` assertions.
+    files: ['tests/**/*.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/non-nullable-type-assertion-style': 'off',
+    },
+  },
+  {
     files: ['src/ui/**/*.{ts,tsx}'],
     plugins: { 'react-hooks': reactHooks },
     rules: {
