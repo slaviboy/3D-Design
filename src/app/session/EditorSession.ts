@@ -7,7 +7,7 @@ import { Selection } from '../selection/Selection';
 import type { ToolPreview } from '../tools/Tool';
 
 export type SessionEventKind =
-  'document' | 'model' | 'selection' | 'camera' | 'file' | 'context' | 'preview' | 'active-tag';
+  'document' | 'model' | 'selection' | 'camera' | 'file' | 'context' | 'preview' | 'active-tag' | 'view';
 
 export interface SessionEvent {
   readonly kind: SessionEventKind;
@@ -38,6 +38,8 @@ export class EditorSession {
   #preview: ToolPreview | null = null;
   #activeTagId: TagId | null = null;
   #camera: CameraState;
+  #showSectionPlanes = true;
+  #showSectionCuts = true;
   #revision = 0;
   #savedRevision = 0;
   #documentName = UNTITLED_DOCUMENT_NAME;
@@ -159,6 +161,28 @@ export class EditorSession {
     if (tagId === this.#activeTagId) return;
     this.#activeTagId = tagId;
     this.#emit({ kind: 'active-tag' });
+  }
+
+  /** Whether section plane rectangles are drawn. View state, not part of the model. */
+  get showSectionPlanes(): boolean {
+    return this.#showSectionPlanes;
+  }
+
+  /** Whether active section planes clip the view and show filled cuts. View state, not part of the model. */
+  get showSectionCuts(): boolean {
+    return this.#showSectionCuts;
+  }
+
+  setSectionDisplay(options: { readonly planes?: boolean; readonly cuts?: boolean }): void {
+    const planes = options.planes ?? this.#showSectionPlanes;
+    const cuts = options.cuts ?? this.#showSectionCuts;
+    if (planes === this.#showSectionPlanes && cuts === this.#showSectionCuts) return;
+    this.#showSectionPlanes = planes;
+    this.#showSectionCuts = cuts;
+    // Hidden section planes can't be picked, so they leave the selection.
+    if (!planes) this.#selection = this.#selection.filter((ref) => ref.kind !== 'section');
+    this.#emit({ kind: 'view' });
+    this.#emit({ kind: 'selection' });
   }
 
   setCamera(camera: CameraState): void {

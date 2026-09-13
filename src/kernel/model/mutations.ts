@@ -1,5 +1,7 @@
 import { KernelError } from '../errors';
-import type { AnnotationId } from '../ids';
+import type { AnnotationId, SceneId, SectionPlaneId } from '../ids';
+import { formatLocalDateTime, parseLocalDateTime } from '../sun/solar';
+import type { SceneState, SectionPlaneState, ShadowSettings } from './types';
 import {
   DEFAULT_ANNOTATION_ATTRIBUTES,
   type AnnotationAttributes,
@@ -590,4 +592,207 @@ export function updateAnnotation(
   if (patch.geometry) assertValidAnnotation(patch.geometry);
   if (to.geometry === from.geometry && shallowEqual(from.attributes, to.attributes)) return;
   doc.apply({ kind: 'annotation.update', context, id, from, to });
+}
+
+// -------------------------------------------------------------------------------------------------- section planes
+
+const sameVec = (a: Vec3, b: Vec3): boolean => a.x === b.x && a.y === b.y && a.z === b.z;
+
+function assertValidSectionPlane(point: Vec3, normal: Vec3): Vec3 {
+  const unit = isFiniteVec3(point) ? normalize(normal) : null;
+  if (!unit)
+    throw new KernelError('invalid-geometry', 'A section plane needs a finite point and a non-zero normal');
+  return unit;
+}
+
+/** Deactivates every other active plane in the context, so at most one stays active. */
+function deactivateOthers(doc: ModelDocument, context: DefinitionId, keep: SectionPlaneId | null): void {
+  for (const plane of [...doc.store(context).sectionPlanes()]) {
+    if (plane.active && plane.id !== keep) updateSectionPlane(doc, context, plane.id, { active: false });
+  }
+}
+
+/** Adds a section plane. `normal` may have any non-zero length; it is stored normalized. */
+export function addSectionPlane(
+  doc: ModelDocument,
+  context: DefinitionId,
+  state: Omit<SectionPlaneState, 'active'> & { readonly active?: boolean },
+): SectionPlaneId {
+  const normal = assertValidSectionPlane(state.point, state.normal);
+  const active = state.active ?? false;
+  if (active) deactivateOthers(doc, context, null);
+  const id = doc.ids.allocate() as SectionPlaneId;
+  doc.apply({
+    kind: 'section.add',
+    context,
+    data: {
+      id,
+      name: state.name,
+      point: { x: state.point.x, y: state.point.y, z: state.point.z },
+      normal,
+      active,
+    },
+  });
+  return id;
+}
+
+export function removeSectionPlane(doc: ModelDocument, context: DefinitionId, id: SectionPlaneId): void {
+  const plane = doc.store(context).getSectionPlane(id);
+  doc.apply({ kind: 'section.remove', context, data: plane });
+}
+
+/** Renames, moves, flips or (de)activates a section plane. Activating one deactivates the others in its context. */
+export function updateSectionPlane(
+  doc: ModelDocument,
+  context: DefinitionId,
+  id: SectionPlaneId,
+  patch: Partial<SectionPlaneState>,
+): void {
+  const plane = doc.store(context).getSectionPlane(id);
+  const from: SectionPlaneState = {
+    name: plane.name,
+    point: plane.point,
+    normal: plane.normal,
+    active: plane.active,
+  };
+  const point = patch.point ?? from.point;
+  const normal = patch.normal ? assertValidSectionPlane(point, patch.normal) : from.normal;
+  if (patch.point) assertValidSectionPlane(point, normal);
+  const to: SectionPlaneState = {
+    name: patch.name ?? from.name,
+    point,
+    normal,
+    active: patch.active ?? from.active,
+  };
+  if (
+    to.name === from.name &&
+    to.active === from.active &&
+    sameVec(to.point, from.point) &&
+    sameVec(to.normal, from.normal)
+  ) {
+    return;
+  }
+  if (to.active && !from.active) deactivateOthers(doc, context, id);
+  doc.apply({ kind: 'section.update', context, id, from, to });
+}
+
+/** Makes `id` the active section plane of the context, or deactivates all of them when `id` is null. */
+export function setActiveSectionPlane(
+  doc: ModelDocument,
+  context: DefinitionId,
+  id: SectionPlaneId | null,
+): void {
+  if (id === null) deactivateOthers(doc, context, null);
+  else updateSectionPlane(doc, context, id, { active: true });
+}
+
+// -------------------------------------------------------------------------------------------------- shadows
+
+const UNIT_RANGE_KEYS = ['light', 'dark'] as const;
+
+/** Checks and normalizes shadow settings; throws a KernelError for values out of range. */
+export function normalizeShadowSettings(settings: ShadowSettings): ShadowSettings {
+  const dateTime = parseLocalDateTime(settings.dateTime);
+  const finite = [
+    settings.latitude,
+    settings.longitude,
+    settings.northAngle,
+    settings.light,
+    settings.dark,
+  ].every(Number.isFinite);
+  if (
+    !dateTime ||
+    !finite ||
+    Math.abs(settings.latitude) > 90 ||
+    Math.abs(settings.longitude) > 180 ||
+    UNIT_RANGE_KEYS.some((key) => settings[key] < 0 || settings[key] > 1)
+  ) {
+    throw new KernelError(
+      'invalid-operation',
+      'Shadow settings need a valid date and time, latitude −90…90, longitude −180…180, and light and dark 0…1',
+    );
+  }
+  return {
+    enabled: settings.enabled,
+    dateTime: formatLocalDateTime(dateTime),
+    latitude: settings.latitude,
+    longitude: settings.longitude,
+    northAngle: ((settings.northAngle % 360) + 360) % 360,
+    light: settings.light,
+    dark: settings.dark,
+    useSunForShading: settings.useSunForShading,
+    onFaces: settings.onFaces,
+    onGround: settings.onGround,
+  };
+}
+
+export function setShadowSettings(doc: ModelDocument, patch: Partial<ShadowSettings>): void {
+  const from = doc.shadows;
+  const to = normalizeShadowSettings({ ...from, ...patch });
+  if (shallowEqual(from, to)) return;
+  doc.apply({ kind: 'document.shadows', from, to });
+}
+
+// -------------------------------------------------------------------------------------------------- scenes
+
+function assertValidSceneState(state: SceneState): void {
+  if (state.name.trim() === '') throw new KernelError('invalid-operation', 'A scene needs a name');
+  const camera = state.camera;
+  if (
+    camera &&
+    (![camera.eye, camera.target, camera.up].every(isFiniteVec3) ||
+      !Number.isFinite(camera.fovDegrees) ||
+      !Number.isFinite(camera.orthoHalfHeight))
+  ) {
+    throw new KernelError('invalid-geometry', 'A scene camera must be finite');
+  }
+  if (state.shadows) normalizeShadowSettings(state.shadows);
+}
+
+export function addScene(doc: ModelDocument, state: SceneState, index = doc.scenes.length): SceneId {
+  assertValidSceneState(state);
+  const id = doc.ids.allocate() as SceneId;
+  doc.apply({ kind: 'scene.add', data: { ...state, id }, index });
+  return id;
+}
+
+export function removeScene(doc: ModelDocument, id: SceneId): void {
+  const index = doc.scenes.findIndex((scene) => scene.id === id);
+  const scene = doc.scenes[index];
+  if (!scene) throw new KernelError('missing-entity', `Scene ${String(id)} does not exist`);
+  doc.apply({ kind: 'scene.remove', data: scene, index });
+}
+
+export function updateScene(doc: ModelDocument, id: SceneId, patch: Partial<SceneState>): void {
+  const scene = doc.scene(id);
+  if (!scene) throw new KernelError('missing-entity', `Scene ${String(id)} does not exist`);
+  const from: SceneState = {
+    name: scene.name,
+    description: scene.description,
+    includeInAnimation: scene.includeInAnimation,
+    saves: scene.saves,
+    camera: scene.camera,
+    hiddenTags: scene.hiddenTags,
+    sections: scene.sections,
+    shadows: scene.shadows,
+    axes: scene.axes,
+  };
+  const to: SceneState = { ...from, ...patch };
+  assertValidSceneState(to);
+  if (shallowEqual<SceneState>(from, to)) return;
+  doc.apply({ kind: 'scene.update', id, from, to });
+}
+
+/** Puts the scenes in the given order, which must list every scene exactly once. */
+export function reorderScenes(doc: ModelDocument, order: readonly SceneId[]): void {
+  const from = doc.scenes.map((scene) => scene.id);
+  if (
+    order.length !== from.length ||
+    new Set(order).size !== order.length ||
+    !order.every((id) => doc.scene(id))
+  ) {
+    throw new KernelError('invalid-operation', 'A scene order must list every scene exactly once');
+  }
+  if (order.every((id, index) => id === from[index])) return;
+  doc.apply({ kind: 'scene.reorder', from, to: [...order] });
 }

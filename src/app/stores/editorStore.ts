@@ -1,6 +1,6 @@
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import type { AnnotationId, DefinitionId } from '../../kernel/ids';
-import type { AnnotationKind } from '../../kernel/model/types';
+import type { AnnotationKind, SceneData, ShadowSettings } from '../../kernel/model/types';
 import { collectAnnotationLabels, type AnnotationLabel } from '../annotations/annotationLabels';
 import { projectToScreen, type Projection } from '../camera/camera';
 import type { Editor, EditorNotification, InputRequest } from '../Editor';
@@ -66,6 +66,17 @@ export interface EditorViewState {
   readonly inputRequest: InputRequest | null;
   /** Dimension and text labels in viewport pixels. */
   readonly annotationLabels: readonly ScreenAnnotationLabel[];
+  /** Selected section planes. */
+  readonly selectionSections: number;
+  /** Scenes in display order (replaced whenever a scene changes). */
+  readonly scenes: readonly SceneData[];
+  readonly activeSceneId: number | null;
+  readonly animationPlaying: boolean;
+  readonly sceneTransitionSeconds: number;
+  readonly sceneDelaySeconds: number;
+  readonly shadows: ShadowSettings;
+  readonly showSectionPlanes: boolean;
+  readonly showSectionCuts: boolean;
 }
 
 export interface EditorStore extends StoreApi<EditorViewState> {
@@ -146,6 +157,15 @@ export function createEditorStore(editor: Editor): EditorStore {
       openPanels: editor.openPanels,
       inputRequest: editor.inputRequest,
       annotationLabels: screenLabels(),
+      selectionSections: selection.count('section'),
+      scenes: doc.scenes,
+      activeSceneId: editor.activeSceneId,
+      animationPlaying: editor.isAnimationPlaying,
+      sceneTransitionSeconds: editor.sceneTransitionSeconds,
+      sceneDelaySeconds: editor.sceneDelaySeconds,
+      shadows: doc.shadows,
+      showSectionPlanes: session.showSectionPlanes,
+      showSectionCuts: session.showSectionCuts,
     };
   };
   const store = createStore<EditorViewState>(snapshot);

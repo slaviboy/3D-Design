@@ -889,3 +889,156 @@
   background: transparent;
   border-color: transparent;
 }
+
+/* Scene tabs ------------------------------------------------------------------------------------------ */
+
+.scene-tabs {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 5;
+  height: var(--scene-tabs-height, 28px);
+  background: var(--chrome-bg);
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+.workspace__viewport:has(.scene-tabs) .viewport {
+  top: var(--scene-tabs-height, 28px);
+}
+
+.scene-tabs__list {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  height: 100%;
+  padding: 3px 6px 0;
+  overflow-x: auto;
+}
+
+.scene-tabs__tab {
+  padding: 0 12px;
+  font: inherit;
+  font-size: 12px;
+  color: inherit;
+  white-space: nowrap;
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 3px 3px 0 0;
+}
+
+.scene-tabs__tab:hover {
+  background: var(--hover-bg);
+}
+
+.scene-tabs__tab--active {
+  color: var(--accent);
+  background: var(--surface-bg);
+  border-color: var(--chrome-border);
+}
+
+.scene-tabs__menu {
+  min-width: 180px;
+}
+
+/* Scenes panel ---------------------------------------------------------------------------------------- */
+
+.scenes__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.scenes__list {
+  max-height: 180px;
+  margin: 0 0 8px;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--chrome-border);
+  border-radius: 3px;
+}
+
+.scenes__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 6px;
+}
+
+.scenes__row:hover {
+  background: var(--hover-bg);
+}
+
+.scenes__row--active {
+  color: var(--accent);
+  background: var(--pressed-bg);
+}
+
+.scenes__badge {
+  font-size: 11px;
+  color: var(--muted-fg);
+}
+
+.scenes__details,
+.scenes__animation {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.scenes__saves {
+  display: grid;
+  gap: 2px;
+  margin: 2px 0 0;
+  padding: 4px 8px 6px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 3px;
+}
+
+.scenes__saves legend {
+  padding: 0 4px;
+  color: var(--muted-fg);
+}
+
+.field--stacked {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+}
+
+.scenes__description {
+  height: auto;
+  padding: 3px 6px;
+  resize: vertical;
+}
+
+/* Shadows panel --------------------------------------------------------------------------------------- */
+
+.shadows {
+  display: grid;
+  gap: 6px;
+}
+
+.shadows__toggle {
+  justify-self: start;
+}
+
+.shadows__sun {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted-fg);
+}
+
+.shadows__range {
+  display: grid;
+  gap: 2px;
+}
+
+.shadows__range-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted-fg);
+}

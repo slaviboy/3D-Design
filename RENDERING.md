@@ -125,7 +125,8 @@ form. These are the known differences from the target design, each scheduled for
 | Instanced screen-space edge quads with profiles and styles | 1 px `LineSegments`; soft and hidden edges skipped | Visualization phase |
 | Selection state in a `DataTexture` | A separate overlay mesh for selected faces and edges, plus box outlines for instances | Performance phase, if measurements show a need |
 | Chunk-relative positions against float32 jitter | World positions in float32 buffers | Performance phase |
-| Styles, shadows, environments, sections | Fixed front and back colors, ambient plus one directional light | Visualization phase |
+| Styles and environments | Fixed front and back colors | Visualization phase |
+| Shadows and sections | Implemented in Phase 7 in a simpler form; see "Current implementation (Phase 7)" below | Later refinements noted there |
 | Overlay sprites for inference markers and dimensions | Tool previews are world-space `LineSegments` without depth test; inference markers and tooltips are DOM elements positioned over the canvas | Visualization phase |
 | Dashed guides clipped to the view | Solid guide lines drawn 1 km to each side of their anchor, excluded from the bounds that set the clipping planes | Visualization phase |
 
@@ -135,3 +136,57 @@ instances of a definition, and invalidation driven by the kernel's change events
 While a group or component is open, geometry outside it is drawn with transparent materials (30 % opacity). The
 open context and everything inside it keep the normal materials. The face or edges a tool would act on are tinted
 with the hover color, separately from the selection overlay.
+
+## Current implementation (Phase 7): shadows and section planes
+
+### Sun and shadows (`src/render/shadows/ShadowController.ts`)
+
+- **Sun position.** `src/kernel/sun/solar.ts` implements the NOAA solar calculator equations (after Meeus): Julian
+  century, the sun's apparent longitude and declination, the equation of time, the hour angle, and elevation with
+  NOAA's refraction correction. It is tested against the NREL SPA reference case and Meeus's worked examples, all
+  within 0.5°. `sunDirection` turns azimuth and altitude into a world vector using the document's north angle (clockwise
+  from +Y). Time comes from the settings' local date-time and UTC offset; there are no named time zones or
+  daylight-saving rules.
+- **Lights.** One directional light and one ambient light. Their intensities scale with `light` and `dark`; the
+  default settings give exactly the fixed intensities of earlier phases. The light direction follows the sun when
+  shadows are on or "use sun for shading" is set, and otherwise stays at the old fixed direction. With the sun below
+  the horizon the directional light is switched off.
+- **Shadow map.** `renderer.shadowMap.enabled` follows the "enabled" setting. The orthographic shadow camera is fitted
+  to the bounding sphere of the visible model, not to the view, so the map is re-rendered (`autoUpdate` is off, and
+  `needsUpdate` is set) only after model, selection, context or settings changes. Orbiting, panning and zooming never
+  re-render the shadow map. PCF filtering, a 2048² map, and a normal bias of about 1.5 texels.
+- **Per-instance flags.** The model renderer stores each instance's `castShadows` and `receiveShadows` on its group; the
+  controller sets `castShadow` and `receiveShadow` on the face meshes below it (an instance that doesn't cast also stops
+  everything nested inside it from casting). Faces receive only when "on faces" is set. Edges neither cast nor receive.
+- **Ground.** A `ShadowMaterial` plane at z = 0 under the model center, eight bounding radii wide, receives shadows when
+  "on ground" is set. It draws only the shadows, never a visible ground.
+
+### Section planes (`src/render/sections/`)
+
+- **Clipping.** After each rebuild of the model tree, `SectionOverlay` walks the per-instance groups. A context with an
+  active plane contributes a world-space `THREE.Plane` (the stored plane transformed by that instance's world matrix,
+  facing away from the removed side). Every mesh and line set of that context and of everything nested inside it is
+  clipped by the planes of its own context and all enclosing contexts. Because materials are shared between instances,
+  `ClippingMaterials` gives clipped objects cached clones with their own `clippingPlanes`, and disposes clones a pass
+  no longer uses. `renderer.localClippingEnabled` is on.
+- **Cut fill.** `sectionCut` (kernel, `ops/sections.ts`) intersects the plane with every visible face of the context
+  (vertices within the length tolerance count as in front of the plane, so touching vertices and in-plane edges pair up
+  consistently), joins the segments into closed loops on a welding grid, treats nested loops as holes by even-odd
+  depth, and triangulates with earcut. The overlay draws the triangles in a solid dark color with a polygon offset, per
+  instance, and caches the cut per context until the model changes. It only slices the context's own faces: geometry
+  inside nested groups is clipped but gets no fill of its own unless its own context has an active plane.
+- **Plane display.** Each section plane is drawn as a translucent rectangle with an outline (orange while active, blue
+  while selected), sized to the content bounds of its context (`sectionRectangle`, 15 % beyond the bounding sphere).
+  The same rectangle is used for picking, so what is drawn is what can be clicked.
+- **View toggles.** "Section Planes" hides the rectangles; "Section Cuts" turns clipping and fills off. Both are session
+  view state, not model data.
+
+### Known limitations
+
+- CPU picking and inference do not respect clipping: geometry cut away by a section can still be hovered and picked.
+- Section planes are picked by the outline of their rectangle only, not by clicking inside it, and are not included in
+  window or crossing selection or Select All. They can't yet be moved or rotated with Move and Rotate, and Align View is
+  not implemented.
+- Fills are one solid color (no hatch pattern), and there are no markers at gaps in open outlines.
+- The ground receiver is a finite plane and does not follow the camera; very large or far-away models may need a
+  larger extent. Shadow quality is fixed (no cascades).

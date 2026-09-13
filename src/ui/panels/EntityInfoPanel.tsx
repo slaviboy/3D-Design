@@ -33,6 +33,24 @@ export function EntityInfoPanel() {
         {info.title}
       </p>
       <div className="entity-info__fields">
+        {fields.section && (
+          <>
+            <TextField
+              label="Section plane name"
+              value={fields.section.name}
+              onCommit={(name) =>
+                fields.section ? editor.renameSectionPlane(fields.section.id, name) : false
+              }
+            />
+            <CheckField
+              label="Active cut"
+              value={fields.section.active}
+              onChange={() => {
+                if (fields.section) editor.toggleSectionPlaneActive(fields.section.id);
+              }}
+            />
+          </>
+        )}
         {fields.name !== undefined && selectedInstance !== undefined && (
           <TextField
             label="Instance name"

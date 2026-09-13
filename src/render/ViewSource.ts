@@ -18,7 +18,7 @@ export interface ViewCamera {
 }
 
 export interface ViewEntityRef {
-  readonly kind: 'face' | 'edge' | 'instance';
+  readonly kind: 'face' | 'edge' | 'instance' | 'section';
   readonly id: number;
 }
 
@@ -48,5 +48,9 @@ export interface ViewSource {
   /** Instance ids of the open groups and components, outermost first. Everything outside is drawn faded. */
   readonly editPath: readonly number[];
   readonly preview: ViewPreview | null;
+  /** Draw section plane rectangles. */
+  readonly showSectionPlanes: boolean;
+  /** Clip at active section planes and fill the cuts. */
+  readonly showSectionCuts: boolean;
   subscribe(listener: (change: ViewChange) => void): () => void;
 }

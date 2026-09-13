@@ -62,6 +62,40 @@ import { DimensionTool } from './tools/DimensionTool';
 import { TextTool } from './tools/TextTool';
 import { removeAnnotation, updateAnnotation } from '../kernel/model/mutations';
 import { AxesTool } from './tools/AxesTool';
+import type { SceneId, SectionPlaneId } from '../kernel/ids';
+import type { Vec3 } from '../kernel/math/vec3';
+import type { SectionPlaneView } from '../kernel/model/EntityStore';
+import {
+  addScene as addSceneMutation,
+  addSectionPlane,
+  removeScene as removeSceneMutation,
+  removeSectionPlane,
+  reorderScenes,
+  setShadowSettings,
+  updateScene as updateSceneMutation,
+  updateSectionPlane,
+} from '../kernel/model/mutations';
+import {
+  DEFAULT_SCENE_SAVES,
+  type SceneSaves,
+  type SceneState,
+  type ShadowSettings,
+} from '../kernel/model/types';
+import { createGroupFromSlice as createGroupFromSliceOp } from '../kernel/ops/sections';
+import {
+  applySceneModelState,
+  CameraTransition,
+  captureSceneState,
+  createSystemClock,
+  DEFAULT_SCENE_DELAY_SECONDS,
+  DEFAULT_SCENE_TRANSITION_SECONDS,
+  MAX_SCENE_SECONDS,
+  sceneCamera,
+  uniqueSceneName,
+  type AnimationClock,
+} from './scenes/scenes';
+import { SectionPlaneTool } from './tools/SectionPlaneTool';
+import { joinShadowDateTime, type ShadowDateTimeParts } from './shadows/shadowSettings';
 import { CircleTool } from './tools/CircleTool';
 import { EraserTool } from './tools/EraserTool';
 import { FreehandTool } from './tools/FreehandTool';
@@ -114,7 +148,8 @@ export type EditorEvent =
   | { readonly kind: 'measurement' }
   | { readonly kind: 'ui-request'; readonly request: UiRequest }
   | { readonly kind: 'panels' }
-  | { readonly kind: 'input-request' };
+  | { readonly kind: 'input-request' }
+  | { readonly kind: 'scenes' };
 
 /** Attributes Entity Info and commands can change on the selection. Each applies to the kinds that have it. */
 export interface SelectionAttributePatch {
@@ -153,6 +188,27 @@ export interface EditorEnvironment {
   readonly fileAccess?: FileAccess;
   /** Asks the user whether unsaved changes may be discarded. Without it, changes are discarded silently. */
   readonly confirmDiscardChanges?: (documentName: string) => Promise<boolean>;
+  /** Time source for scene transitions and animation. Defaults to the system clock. */
+  readonly clock?: AnimationClock;
+  /** Whether the user asked for reduced motion; scene changes are then instant. Defaults to the media query. */
+  readonly prefersReducedMotion?: () => boolean;
+}
+
+function systemPrefersReducedMotion(): boolean {
+  const query = (globalThis as { matchMedia?: (query: string) => { matches: boolean } }).matchMedia;
+  return query?.('(prefers-reduced-motion: reduce)').matches ?? false;
+}
+
+/** A name like `Section 2` that no section plane in the document uses. */
+function uniqueSectionName(doc: ModelDocument): string {
+  const names = new Set<string>();
+  for (const definition of doc.definitions()) {
+    for (const plane of definition.store.sectionPlanes()) names.add(plane.name);
+  }
+  for (let n = 1; ; n++) {
+    const name = `Section ${String(n)}`;
+    if (!names.has(name)) return name;
+  }
 }
 
 function errorMessage(error: unknown): string {
@@ -187,11 +243,26 @@ export class Editor {
   readonly #placementTool = new ComponentPlacementTool();
   #openPanels: readonly PanelId[] = DEFAULT_OPEN_PANELS;
   #inputRequest: InputRequest | null = null;
+  readonly #clock: AnimationClock;
+  readonly #cameraTransition: CameraTransition;
+  #activeSceneId: SceneId | null = null;
+  #animationPlaying = false;
+  #animationTimer: number | null = null;
+  #sceneTransitionSeconds = DEFAULT_SCENE_TRANSITION_SECONDS;
+  #sceneDelaySeconds = DEFAULT_SCENE_DELAY_SECONDS;
 
   constructor(environment: EditorEnvironment) {
     this.#environment = environment;
     this.platform = environment.platform;
     this.appVersion = environment.appVersion;
+    this.#clock = environment.clock ?? createSystemClock();
+    this.#cameraTransition = new CameraTransition(this.#clock);
+    this.session.subscribe((event) => {
+      if (event.kind !== 'document') return;
+      this.stopAnimation();
+      this.#activeSceneId = null;
+      this.#emit({ kind: 'scenes' });
+    });
     registerDefaultCommands(this.commands);
     this.shortcuts = ShortcutMap.fromCommands(this.commands.all());
     this.tools = new ToolManager(
@@ -222,6 +293,7 @@ export class Editor {
         new OffsetTool(),
         new DimensionTool(),
         new TextTool(),
+        new SectionPlaneTool(),
         this.#placementTool,
       ],
       SELECT_TOOL_ID,
@@ -357,6 +429,10 @@ export class Editor {
 
   /** Handles a key press: the active tool sees it first, then the shortcut map. Returns true when consumed. */
   handleKey(input: KeyChordInput): boolean {
+    if (this.#animationPlaying && input.key === 'Escape') {
+      this.stopAnimation();
+      return true;
+    }
     if (this.#handleMeasurementKey(input)) return true;
     const chord = chordFromKeyboard(input, this.platform);
     if (!chord) return false;
@@ -379,7 +455,7 @@ export class Editor {
 
   pickAt(
     screen: ScreenPoint,
-    options: Pick<PickRequest, 'edgeTolerancePx' | 'includeSoftEdges'> = {},
+    options: Pick<PickRequest, 'edgeTolerancePx' | 'includeSoftEdges' | 'includeSectionPlanes'> = {},
   ): PickHit | null {
     const { session } = this;
     return pick(session.doc, session.activeContext, session.activeContextTransform, {
@@ -488,6 +564,7 @@ export class Editor {
       deleteInstances(doc, context, selection.ids('instance') as InstanceId[]);
       deleteFaces(doc, context, selection.ids('face') as FaceId[]);
       eraseEdges(doc, context, selection.ids('edge') as EdgeId[]);
+      for (const id of selection.ids('section')) removeSectionPlane(doc, context, id as SectionPlaneId);
     });
     session.setSelection(Selection.EMPTY);
   }
@@ -972,6 +1049,352 @@ export class Editor {
 
   togglePanel(panel: PanelId): void {
     this.setPanelOpen(panel, !this.isPanelOpen(panel));
+  }
+
+  // ---------------------------------------------------------------------------------------------- section planes
+
+  /** Adds an active section plane to the open context (local coordinates) and selects it. */
+  placeSectionPlane(point: Vec3, normal: Vec3): SectionPlaneId {
+    const { session } = this;
+    const doc = session.doc;
+    const context = session.activeContext;
+    const id = doc.transact('Place Section Plane', () =>
+      addSectionPlane(doc, context, { name: uniqueSectionName(doc), point, normal, active: true }),
+    );
+    session.setSectionDisplay({ planes: true, cuts: true });
+    session.setSelection(Selection.of([{ kind: 'section', id }]));
+    return id;
+  }
+
+  /** The selected section plane when the selection is exactly one section plane. */
+  selectedSectionPlane(): SectionPlaneView | null {
+    const { session } = this;
+    const [id] = session.selection.ids('section');
+    if (id === undefined || session.selection.size !== 1) return null;
+    return session.doc.store(session.activeContext).sectionPlane(id as SectionPlaneId) ?? null;
+  }
+
+  #sectionPlaneOrSelected(id: SectionPlaneId | undefined): SectionPlaneView | null {
+    const { session } = this;
+    const plane =
+      id === undefined
+        ? this.selectedSectionPlane()
+        : session.doc.store(session.activeContext).sectionPlane(id);
+    if (!plane) this.notify('error', 'Select a section plane first');
+    return plane ?? null;
+  }
+
+  /** Activates the section plane (deactivating the others in its context), or deactivates it when active. */
+  toggleSectionPlaneActive(id?: SectionPlaneId): void {
+    const plane = this.#sectionPlaneOrSelected(id);
+    if (!plane) return;
+    const { session } = this;
+    const doc = session.doc;
+    doc.transact(plane.active ? 'Deactivate Section Cut' : 'Activate Section Cut', () => {
+      updateSectionPlane(doc, session.activeContext, plane.id, { active: !plane.active });
+    });
+  }
+
+  /** Flips which side of the section plane is cut away. */
+  reverseSectionPlane(id?: SectionPlaneId): void {
+    const plane = this.#sectionPlaneOrSelected(id);
+    if (!plane) return;
+    const { session } = this;
+    const doc = session.doc;
+    const { x, y, z } = plane.normal;
+    doc.transact('Reverse Section Plane', () => {
+      updateSectionPlane(doc, session.activeContext, plane.id, { normal: { x: -x, y: -y, z: -z } });
+    });
+  }
+
+  renameSectionPlane(id: SectionPlaneId, name: string): boolean {
+    const trimmed = name.trim();
+    if (trimmed === '') {
+      this.notify('error', 'A section plane needs a name');
+      return false;
+    }
+    const { session } = this;
+    const doc = session.doc;
+    if (!doc.store(session.activeContext).sectionPlane(id)) return false;
+    doc.transact('Rename Section Plane', () => {
+      updateSectionPlane(doc, session.activeContext, id, { name: trimmed });
+    });
+    return true;
+  }
+
+  /** Makes a group of the edges where the selected section plane cuts the open context's faces, and selects it. */
+  createGroupFromSlice(id?: SectionPlaneId): void {
+    const plane = this.#sectionPlaneOrSelected(id);
+    if (!plane) return;
+    const { session } = this;
+    const doc = session.doc;
+    const context = session.activeContext;
+    const tagId = session.activeTagId;
+    this.tools.cancel();
+    const created = doc.transact('Create Group from Slice', () => {
+      const made = createGroupFromSliceOp(doc, context, plane.id);
+      if (tagId !== null) setInstanceAttributes(doc, context, made.instance, { tagId });
+      return made;
+    });
+    session.setSelection(Selection.of([{ kind: 'instance', id: created.instance }]));
+  }
+
+  /** Shows or hides section plane rectangles and section cuts. View state; not undoable. */
+  setSectionDisplay(options: { readonly planes?: boolean; readonly cuts?: boolean }): void {
+    this.session.setSectionDisplay(options);
+  }
+
+  // ---------------------------------------------------------------------------------------------- shadows
+
+  get shadowSettings(): ShadowSettings {
+    return this.session.doc.shadows;
+  }
+
+  /** Changes shadow settings in one undoable step. Returns false (and notifies) when a value is invalid. */
+  updateShadowSettings(patch: Partial<ShadowSettings>): boolean {
+    const doc = this.session.doc;
+    try {
+      doc.transact('Shadow Settings', () => {
+        setShadowSettings(doc, patch);
+      });
+      return true;
+    } catch (error) {
+      this.notify('error', errorMessage(error));
+      return false;
+    }
+  }
+
+  /** Changes the date, the time of day or the UTC offset of the shadow settings, keeping the other parts. */
+  setShadowDateTime(patch: Partial<ShadowDateTimeParts>): boolean {
+    const dateTime = joinShadowDateTime(this.session.doc.shadows.dateTime, patch);
+    if (dateTime === null) {
+      this.notify('error', 'Enter a valid date and time');
+      return false;
+    }
+    return this.updateShadowSettings({ dateTime });
+  }
+
+  // ---------------------------------------------------------------------------------------------- scenes
+
+  /** The scene applied or added most recently; the scene tabs highlight it. */
+  get activeSceneId(): SceneId | null {
+    return this.#activeSceneId !== null && this.session.doc.scene(this.#activeSceneId)
+      ? this.#activeSceneId
+      : null;
+  }
+
+  get isAnimationPlaying(): boolean {
+    return this.#animationPlaying;
+  }
+
+  get sceneTransitionSeconds(): number {
+    return this.#sceneTransitionSeconds;
+  }
+
+  get sceneDelaySeconds(): number {
+    return this.#sceneDelaySeconds;
+  }
+
+  /** Scene transition and animation delay, in seconds (0 to 60). Editor settings, not saved in the model. */
+  setSceneTiming(timing: { readonly transitionSeconds?: number; readonly delaySeconds?: number }): void {
+    const clamp = (value: number | undefined, fallback: number): number =>
+      value === undefined || !Number.isFinite(value)
+        ? fallback
+        : Math.min(MAX_SCENE_SECONDS, Math.max(0, value));
+    this.#sceneTransitionSeconds = clamp(timing.transitionSeconds, this.#sceneTransitionSeconds);
+    this.#sceneDelaySeconds = clamp(timing.delaySeconds, this.#sceneDelaySeconds);
+    this.#emit({ kind: 'scenes' });
+  }
+
+  /** Adds a scene that saves the current view and model state, after the other scenes. */
+  addScene(name?: string): SceneId {
+    const { session } = this;
+    const doc = session.doc;
+    const trimmed = name?.trim() ?? '';
+    const state = captureSceneState(doc, session.camera, {
+      name: trimmed === '' ? uniqueSceneName(doc) : trimmed,
+      description: '',
+      includeInAnimation: true,
+      saves: DEFAULT_SCENE_SAVES,
+    });
+    const id = doc.transact('Add Scene', () => addSceneMutation(doc, state));
+    this.#activeSceneId = id;
+    this.#emit({ kind: 'scenes' });
+    return id;
+  }
+
+  /** Saves the current view and model state into a scene, for the properties it saves. */
+  updateSceneFromView(id: SceneId | null = this.activeSceneId): void {
+    const { session } = this;
+    const doc = session.doc;
+    const scene = id === null ? undefined : doc.scene(id);
+    if (!scene) {
+      this.notify('error', 'Choose a scene to update');
+      return;
+    }
+    const captured = captureSceneState(doc, session.camera, scene);
+    doc.transact('Update Scene', () => {
+      updateSceneMutation(doc, scene.id, captured);
+    });
+  }
+
+  /** Changes which properties a scene saves. Newly saved properties take their current values. */
+  setSceneSaves(id: SceneId, patch: Partial<SceneSaves>): void {
+    const { session } = this;
+    const doc = session.doc;
+    const scene = doc.scene(id);
+    if (!scene) return;
+    const saves: SceneSaves = { ...scene.saves, ...patch };
+    const captured = captureSceneState(doc, session.camera, { ...scene, saves });
+    const keep = <K extends keyof SceneState>(key: K, flag: keyof SceneSaves): SceneState[K] =>
+      scene.saves[flag] && saves[flag] ? scene[key] : captured[key];
+    doc.transact('Scene Properties', () => {
+      updateSceneMutation(doc, id, {
+        saves,
+        camera: keep('camera', 'camera'),
+        hiddenTags: keep('hiddenTags', 'visibleTags'),
+        sections: keep('sections', 'activeSections'),
+        shadows: keep('shadows', 'shadows'),
+        axes: keep('axes', 'axes'),
+      });
+    });
+  }
+
+  /** Renames a scene, or changes its description or whether it plays in the animation. */
+  updateSceneDetails(
+    id: SceneId,
+    patch: { readonly name?: string; readonly description?: string; readonly includeInAnimation?: boolean },
+  ): boolean {
+    const doc = this.session.doc;
+    if (!doc.scene(id)) return false;
+    const name = patch.name?.trim();
+    if (name === '') {
+      this.notify('error', 'A scene needs a name');
+      return false;
+    }
+    doc.transact(name !== undefined ? 'Rename Scene' : 'Scene Properties', () => {
+      updateSceneMutation(doc, id, {
+        ...(name !== undefined ? { name } : {}),
+        ...(patch.description !== undefined ? { description: patch.description } : {}),
+        ...(patch.includeInAnimation !== undefined ? { includeInAnimation: patch.includeInAnimation } : {}),
+      });
+    });
+    return true;
+  }
+
+  removeScene(id: SceneId | null = this.activeSceneId): void {
+    const doc = this.session.doc;
+    if (id === null || !doc.scene(id)) return;
+    doc.transact('Delete Scene', () => {
+      removeSceneMutation(doc, id);
+    });
+    if (this.#activeSceneId === id) this.#activeSceneId = null;
+    this.#emit({ kind: 'scenes' });
+  }
+
+  /** Moves a scene earlier (−1) or later (+1) in the list. */
+  moveScene(id: SceneId, offset: -1 | 1): void {
+    const doc = this.session.doc;
+    const order = doc.scenes.map((scene) => scene.id);
+    const index = order.indexOf(id);
+    const target = index + offset;
+    if (index < 0 || target < 0 || target >= order.length) return;
+    order.splice(index, 1);
+    order.splice(target, 0, id);
+    doc.transact('Move Scene', () => {
+      reorderScenes(doc, order);
+    });
+  }
+
+  /**
+   * Shows a scene: tag visibility, section planes, shadows and axes change in one undoable step, and the camera
+   * moves there over the transition time (instantly with reduced motion). Camera moves are not undoable.
+   */
+  applyScene(id: SceneId): void {
+    if (this.#animationPlaying) this.stopAnimation();
+    this.#showScene(id, () => undefined);
+  }
+
+  /** Applies the next (or previous) scene after the active one. */
+  applyAdjacentScene(offset: -1 | 1): void {
+    const scenes = this.session.doc.scenes;
+    if (scenes.length === 0) return;
+    const index = scenes.findIndex((scene) => scene.id === this.activeSceneId);
+    const next = scenes[(index + offset + scenes.length) % scenes.length] ?? scenes[0];
+    if (next) this.applyScene(next.id);
+  }
+
+  /** Cycles through the scenes included in the animation until stopped (Escape stops it). */
+  playAnimation(): void {
+    const included = this.session.doc.scenes.filter((scene) => scene.includeInAnimation);
+    if (included.length === 0) {
+      this.notify('info', 'Add scenes and include them in the animation first');
+      return;
+    }
+    this.stopAnimation();
+    this.tools.cancel();
+    this.#animationPlaying = true;
+    this.#emit({ kind: 'scenes' });
+    const step = (): void => {
+      if (!this.#animationPlaying) return;
+      const scenes = this.session.doc.scenes.filter((scene) => scene.includeInAnimation);
+      if (scenes.length === 0) {
+        this.stopAnimation();
+        return;
+      }
+      const current = scenes.findIndex((scene) => scene.id === this.#activeSceneId);
+      const next = scenes[(current + 1) % scenes.length] ?? scenes[0];
+      if (!next) return;
+      this.#showScene(next.id, () => {
+        if (!this.#animationPlaying) return;
+        this.#animationTimer = this.#clock.setTimer(() => {
+          this.#animationTimer = null;
+          step();
+        }, this.#sceneDelaySeconds * 1000);
+      });
+    };
+    step();
+  }
+
+  stopAnimation(): void {
+    const wasPlaying = this.#animationPlaying;
+    this.#animationPlaying = false;
+    this.#cameraTransition.cancel();
+    if (this.#animationTimer !== null) this.#clock.clearTimer(this.#animationTimer);
+    this.#animationTimer = null;
+    if (wasPlaying) this.#emit({ kind: 'scenes' });
+  }
+
+  #showScene(id: SceneId, onArrived: () => void): void {
+    const { session } = this;
+    const doc = session.doc;
+    const scene = doc.scene(id);
+    if (!scene) return;
+    this.#activeSceneId = id;
+    this.#emit({ kind: 'scenes' });
+    try {
+      doc.transact(`Show Scene ${scene.name}`, () => {
+        applySceneModelState(doc, scene);
+      });
+    } catch (error) {
+      this.notify('error', errorMessage(error));
+    }
+    const camera = sceneCamera(scene);
+    if (!camera) {
+      onArrived();
+      return;
+    }
+    const reduced = (this.#environment.prefersReducedMotion ?? systemPrefersReducedMotion)();
+    const duration = reduced ? 0 : this.#sceneTransitionSeconds * 1000;
+    this.#cameraTransition.start(
+      session.camera,
+      camera,
+      duration,
+      (next) => {
+        session.setCamera(next);
+      },
+      onArrived,
+    );
   }
 
   // ---------------------------------------------------------------------------------------------- files

@@ -1,4 +1,4 @@
-import type { DefinitionId, EdgeId, FaceId, InstanceId, TagId } from '../../kernel/ids';
+import type { DefinitionId, EdgeId, FaceId, InstanceId, SectionPlaneId, TagId } from '../../kernel/ids';
 import { distance } from '../../kernel/math/vec3';
 import type { ModelDocument } from '../../kernel/model/ModelDocument';
 import type { CurveKind } from '../../kernel/model/types';
@@ -28,6 +28,8 @@ export interface EntityInfoFields {
   readonly name?: string;
   /** Exactly one component instance is selected. */
   readonly definition?: { readonly id: DefinitionId; readonly name: string };
+  /** Exactly one section plane is selected. */
+  readonly section?: { readonly id: SectionPlaneId; readonly name: string; readonly active: boolean };
 }
 
 export interface EntityInfo {
@@ -70,6 +72,11 @@ export function selectionFields(
 ): EntityInfoFields {
   if (selection.isEmpty) return {};
   const store = doc.store(context);
+  const [sectionId] = selection.ids('section');
+  if (sectionId !== undefined && selection.size === 1) {
+    const plane = store.getSectionPlane(sectionId as SectionPlaneId);
+    return { section: { id: plane.id, name: plane.name, active: plane.active } };
+  }
   const instances = (selection.ids('instance') as InstanceId[]).map((id) => store.getInstance(id));
   const faces = (selection.ids('face') as FaceId[]).map((id) => store.getFace(id));
   const edges = (selection.ids('edge') as EdgeId[]).map((id) => store.getEdge(id));
@@ -124,6 +131,15 @@ function summarize(
         { label: 'Edges', value: String(store.edgeCount) },
         { label: 'Groups and components', value: String(store.instanceCount) },
       ],
+    };
+  }
+
+  const sections = selection.ids('section') as SectionPlaneId[];
+  if (selection.size === 1 && sections[0] !== undefined) {
+    const plane = store.getSectionPlane(sections[0]);
+    return {
+      title: 'Section Plane',
+      rows: [{ label: 'Cut', value: plane.active ? 'Active' : 'Inactive' }],
     };
   }
 
@@ -194,5 +210,6 @@ function summarize(
     rows.push({ label: 'Edges', value: String(edges.length) });
     rows.push({ label: 'Total length', value: formatLength(totalLength(), units) });
   }
+  if (sections.length > 0) rows.push({ label: 'Section planes', value: String(sections.length) });
   return { title: plural(selection.size, 'entity', 'entities'), rows };
 }

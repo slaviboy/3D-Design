@@ -7,8 +7,13 @@ import type {
   FaceId,
   GuideId,
   InstanceId,
+  SectionPlaneId,
   VertexId,
 } from '../ids';
+import type { SectionPlaneData, SectionPlaneState } from './types';
+
+/** A section plane as stored; records are replaced on every change. */
+export type SectionPlaneView = SectionPlaneData;
 import { aabbFromPoints, type Aabb } from '../math/aabb';
 import type { Mat4 } from '../math/mat4';
 import { planeFromPolygon, type Plane } from '../math/plane';
@@ -150,6 +155,7 @@ export class EntityStore {
   readonly #instances = new Map<InstanceId, InstanceRecord>();
   readonly #guides = new Map<GuideId, GuideRecord>();
   readonly #annotations = new Map<AnnotationId, AnnotationRecord>();
+  readonly #sectionPlanes = new Map<SectionPlaneId, SectionPlaneData>();
 
   readonly #vertexGrid = new VertexHashGrid();
   readonly #edgeTree = new AabbTree();
@@ -197,8 +203,33 @@ export class EntityStore {
       this.#curves.size === 0 &&
       this.#instances.size === 0 &&
       this.#guides.size === 0 &&
-      this.#annotations.size === 0
+      this.#annotations.size === 0 &&
+      this.#sectionPlanes.size === 0
     );
+  }
+
+  get sectionPlaneCount(): number {
+    return this.#sectionPlanes.size;
+  }
+
+  sectionPlane(id: SectionPlaneId): SectionPlaneView | undefined {
+    return this.#sectionPlanes.get(id);
+  }
+
+  getSectionPlane(id: SectionPlaneId): SectionPlaneView {
+    const record = this.#sectionPlanes.get(id);
+    if (!record) throw this.#missing('Section plane', id);
+    return record;
+  }
+
+  sectionPlanes(): IterableIterator<SectionPlaneView> {
+    return this.#sectionPlanes.values();
+  }
+
+  /** The active section plane of this context, if any. */
+  activeSectionPlane(): SectionPlaneView | undefined {
+    for (const plane of this.#sectionPlanes.values()) if (plane.active) return plane;
+    return undefined;
   }
 
   vertex(id: VertexId): VertexView | undefined {
@@ -573,6 +604,20 @@ export class EntityStore {
     if (!record) throw this.#missing('Annotation', id);
     record.geometry = state.geometry;
     record.attributes = state.attributes;
+  }
+
+  applyAddSectionPlane(data: SectionPlaneData): void {
+    if (this.#sectionPlanes.has(data.id)) throw this.#duplicate('Section plane', data.id);
+    this.#sectionPlanes.set(data.id, { ...data });
+  }
+
+  applyRemoveSectionPlane(id: SectionPlaneId): void {
+    if (!this.#sectionPlanes.delete(id)) throw this.#missing('Section plane', id);
+  }
+
+  applyUpdateSectionPlane(id: SectionPlaneId, state: SectionPlaneState): void {
+    if (!this.#sectionPlanes.has(id)) throw this.#missing('Section plane', id);
+    this.#sectionPlanes.set(id, { ...state, id });
   }
 
   // ---------------------------------------------------------------------------------------------- internals

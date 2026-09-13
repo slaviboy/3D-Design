@@ -47,8 +47,8 @@ example.planar
   "tagFolders": [],
   "styles": [ /* StyleSpec */ ],
   "activeStyleId": 3,
-  "scenes": [{ "id": 4, "name": "Front", "saves": { "camera": true, ... }, "camera": { ... }, ... }],
-  "shadows": { ... }, "geo": { "latitude": 0, "longitude": 0, "northAngle": 0, "timeZone": 0 },
+  "scenes": [{ "id": 4, "name": "Front", "saves": { "camera": true, ... }, "camera": { ... }, ... }],  // only when present
+  "shadows": { "enabled": true, "dateTime": "2026-06-21T14:00:00+02:00", "latitude": 48.2, ... },  // only when not default
   "environment": null,
   "camera": { ... },
   "rootDefinitionId": 5,
@@ -66,6 +66,39 @@ example.planar
   }]
 }
 ```
+
+### Scenes, section planes and shadow settings (implemented)
+
+The current `model.json` is the kernel snapshot (`src/kernel/model/snapshot.ts`). These three parts are written only
+when they hold something, so documents that don't use them keep their exact bytes and content hash, and files saved
+before they existed load unchanged.
+
+- **Section planes** (per definition, `sectionPlanes`, present only when the definition has any):
+  `{ "id", "name", "point": {x,y,z}, "normal": {x,y,z}, "active" }`, in the definition's own coordinates.
+  - `normal` must be a unit vector. Geometry on the side it points to is cut away while the plane is active.
+  - At most one plane per definition may be active; a file with two is rejected (`multiple-active-sections`).
+  - Section plane ids share the document id space and must be below `nextId`.
+- **Shadow settings** (document level, `shadows`, present only when any field differs from the default):
+  - `enabled`, `useSunForShading`, `onFaces`, `onGround`: booleans.
+  - `dateTime`: local date and time with its UTC offset, always written as `YYYY-MM-DDTHH:MM:SS±HH:MM`. Offsets
+    range from −12:00 to +14:00. There is no named time zone and no daylight-saving rule: the offset is what
+    the user chose.
+  - `latitude` (−90…90), `longitude` (−180…180) and `northAngle` (degrees clockwise, seen from above, from the
+    model's +Y axis to true north, stored in 0…360). Location is entered by hand; nothing is looked up online.
+  - `light` and `dark`: 0…1. The defaults (0.8 and 0.45) reproduce the lighting of earlier versions.
+- **Scenes** (document level, `scenes`, in display order, present only when there are scenes):
+  - `id`, `name` (not empty), `description`, `includeInAnimation`.
+  - `saves`: `{ "camera", "visibleTags", "activeSections", "shadows", "axes" }` booleans.
+  - Saved values, each `null` when its flag was off at the last update:
+    - `camera`: `{ eye, target, up, fovDegrees, projection: "perspective" | "parallel", orthoHalfHeight }`;
+    - `hiddenTags`: tag ids that were hidden;
+    - `sections`: `[{ "context": definitionId, "plane": sectionPlaneId | null }]`, one entry per definition that had
+      section planes;
+    - `shadows`: a full shadow settings object;
+    - `axes`: `{ origin, xAxis, yAxis }`.
+  - Scenes may refer to tags, definitions or section planes deleted after the scene was saved. Such references are
+    kept in the file and skipped when the scene is shown.
+  - The scene transition time and animation delay are editor settings and are not stored in the file yet.
 
 Bulk geometry is stored as columnar typed arrays encoded in base64. Compared with arrays of small objects, this is
 smaller, parses faster, and transfers to workers without copying. The exact field list is fixed in

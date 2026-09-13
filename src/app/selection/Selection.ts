@@ -1,4 +1,4 @@
-export type SelectableKind = 'face' | 'edge' | 'instance';
+export type SelectableKind = 'face' | 'edge' | 'instance' | 'section';
 
 /** Reference to a selectable entity in the active editing context. */
 export interface EntityRef {
@@ -6,7 +6,7 @@ export interface EntityRef {
   readonly id: number;
 }
 
-const KIND_ORDER: Readonly<Record<SelectableKind, number>> = { instance: 0, face: 1, edge: 2 };
+const KIND_ORDER: Readonly<Record<SelectableKind, number>> = { instance: 0, face: 1, edge: 2, section: 3 };
 
 function keyOf(ref: EntityRef): string {
   return `${ref.kind}:${String(ref.id)}`;

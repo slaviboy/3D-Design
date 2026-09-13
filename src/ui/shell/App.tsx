@@ -13,6 +13,9 @@ import { EntityInfoPanel } from '../panels/EntityInfoPanel';
 import { OutlinerPanel } from '../panels/OutlinerPanel';
 import { SoftenPanel } from '../panels/SoftenPanel';
 import { TagsPanel } from '../panels/TagsPanel';
+import { ScenesPanel } from '../panels/ScenesPanel';
+import { ShadowsPanel } from '../panels/ShadowsPanel';
+import { SceneTabs } from '../scenes/SceneTabs';
 import { StatusBar } from '../statusbar/StatusBar';
 import { Toolbar, ToolPalette } from '../toolbar/Toolbar';
 import { ViewportHost } from '../viewport/ViewportHost';
@@ -83,6 +86,9 @@ export function App({ recovery }: { readonly recovery?: RecoveryOptions }) {
       <div className="workspace">
         <ToolPalette />
         <main className="workspace__viewport" aria-label="Modeling workspace">
+          <ErrorBoundary area="the scene tabs">
+            <SceneTabs />
+          </ErrorBoundary>
           <ErrorBoundary area="the 3D view">
             <ViewportHost />
           </ErrorBoundary>
@@ -111,6 +117,16 @@ export function App({ recovery }: { readonly recovery?: RecoveryOptions }) {
           {openPanels.includes('soften') && (
             <ErrorBoundary area="the Soften Edges panel">
               <SoftenPanel />
+            </ErrorBoundary>
+          )}
+          {openPanels.includes('scenes') && (
+            <ErrorBoundary area="the Scenes panel">
+              <ScenesPanel />
+            </ErrorBoundary>
+          )}
+          {openPanels.includes('shadows') && (
+            <ErrorBoundary area="the Shadows panel">
+              <ShadowsPanel />
             </ErrorBoundary>
           )}
         </aside>

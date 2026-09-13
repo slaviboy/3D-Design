@@ -445,6 +445,11 @@ export class ModelRenderer {
         childPath = onPath && pathDepth + 1 < editPath.length ? pathDepth + 1 : null;
       }
       const child = this.#buildNode(doc, instance.definitionId, nested, childFaded, childPath, editPath);
+      // Read by the shadow controller, which sets castShadow and receiveShadow on the meshes below.
+      Object.assign(child.userData, {
+        castShadows: instance.attributes.castShadows,
+        receiveShadows: instance.attributes.receiveShadows,
+      });
       child.matrix.fromArray(instance.transform);
       child.matrixWorldNeedsUpdate = true;
       group.add(child);

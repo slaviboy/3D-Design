@@ -40,6 +40,7 @@ const PATHS: Readonly<Record<string, string>> = {
   'tool.text': 'M4 4h12M10 4v12M7 16h6',
   'tool.offset': 'M3 3h14v14H3zM7 7h6v6H7z',
   'tool.axes': 'M5 15V3M5 15h12M5 15l-3 3M3 5l2-2 2 2M15 13l2 2-2 2',
+  'tool.sectionPlane': 'M3 6l9-3v11l-9 3zM12 8.5h5M15 6.5l2 2-2 2',
 };
 
 export function hasIcon(commandId: string): boolean {

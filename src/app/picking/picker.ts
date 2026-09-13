@@ -7,6 +7,7 @@ import { add, distance, dot, length, scale, sub, type Vec3 } from '../../kernel/
 import type { ModelDocument } from '../../kernel/model/ModelDocument';
 import type { Loop } from '../../kernel/model/types';
 import { isTagVisible } from '../../kernel/model/visibility';
+import { contextContentBounds, sectionRectangle } from '../../kernel/ops/sections';
 import {
   rayThroughScreen,
   worldUnitsPerPixel,
@@ -29,7 +30,12 @@ export interface PickRequest {
   readonly edgeTolerancePx?: number;
   /** Also pick soft edges, which are normally skipped (the eraser needs them to unsoften). */
   readonly includeSoftEdges?: boolean;
+  /** Also pick the section planes of the context by their outlines (only the Select tool wants them). */
+  readonly includeSectionPlanes?: boolean;
 }
+
+/** Length of the pick ray used against section plane outlines; longer than any parallel-projection back-off. */
+const SECTION_PICK_RAY_LENGTH = 1e7;
 
 export interface PickHit {
   /** A face or edge of the picked context, or the top-level instance that contains the hit. */
@@ -72,11 +78,51 @@ export function pick(
       pickEdges(doc, visit, request, tolerancePx, worldRay, candidates);
     },
   );
+  if (request.includeSectionPlanes === true) {
+    pickSectionPlanes(doc, context, contextTransform, request, tolerancePx, worldRay, candidates);
+  }
   let best: Candidate | null = null;
   for (const candidate of candidates) {
     if (!best || candidate.distance - candidate.bias < best.distance - best.bias) best = candidate;
   }
   return best ? { ref: best.ref, distance: best.distance, point: best.point } : null;
+}
+
+/** Section planes of the context are picked by the outline of their rectangle, like edges. */
+function pickSectionPlanes(
+  doc: ModelDocument,
+  context: DefinitionId,
+  contextTransform: Mat4,
+  request: PickRequest,
+  tolerancePx: number,
+  worldRay: Ray,
+  candidates: Candidate[],
+): void {
+  const store = doc.store(context);
+  if (store.sectionPlaneCount === 0) return;
+  const bounds = contextContentBounds(doc, context);
+  const rayEnd = add(worldRay.origin, scale(worldRay.direction, SECTION_PICK_RAY_LENGTH));
+  for (const plane of store.sectionPlanes()) {
+    const corners = sectionRectangle(plane, bounds).map((corner) => transformPoint(contextTransform, corner));
+    let best: Candidate | null = null;
+    for (const [index, a] of corners.entries()) {
+      const b = corners[(index + 1) % corners.length] ?? a;
+      const closest = closestPointsOnSegments(worldRay.origin, rayEnd, a, b);
+      const toleranceWorld =
+        tolerancePx * worldUnitsPerPixel(request.camera, closest.pointOnSecond, request.size);
+      if (closest.distance > toleranceWorld) continue;
+      const along = dot(sub(closest.pointOnSecond, worldRay.origin), worldRay.direction);
+      if (!best || along < best.distance) {
+        best = {
+          ref: { kind: 'section', id: plane.id },
+          distance: along,
+          point: closest.pointOnSecond,
+          bias: toleranceWorld,
+        };
+      }
+    }
+    if (best) candidates.push(best);
+  }
 }
 
 function pickFaces(doc: ModelDocument, visit: RayVisit, candidates: Candidate[]): void {
