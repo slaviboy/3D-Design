@@ -48,7 +48,7 @@ test('dimensions an edge and edits the dimension text', async ({ page }) => {
   await clickWorld(page, { x: (bounds.minX + bounds.maxX) / 2, y: bounds.minY - 0.4, z: 0 });
 
   const label = page.getByTestId('annotation-label');
-  await expect(label).toHaveText('2000 mm');
+  await expect(label).toHaveText('2000mm');
 
   await label.click();
   const dialog = page.getByRole('dialog', { name: 'Dimension Text' });
@@ -58,5 +58,5 @@ test('dimensions an edge and edits the dimension text', async ({ page }) => {
   await expect(label).toHaveText('Width');
 
   await page.keyboard.press('ControlOrMeta+Z');
-  await expect(label).toHaveText('2000 mm');
+  await expect(label).toHaveText('2000mm');
 });
