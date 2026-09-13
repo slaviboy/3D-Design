@@ -3,6 +3,8 @@
   "private": true,
   "version": "0.1.0",
   "description": "Offline, local-first browser 3D modeling application",
+  "license": "Apache-2.0",
+  "author": "Stanislav Georgiev (https://github.com/slaviboy)",
   "type": "module",
   "engines": {
     "node": "^22.12.0 || ^24.0.0 || >=26.0.0"

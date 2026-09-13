@@ -1,0 +1,9 @@
+Planar
+Copyright (C) 2026 Stanislav Georgiev
+https://github.com/slaviboy
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The production build bundles third-party open-source packages (for example three, react, react-dom, zustand,
+fflate, earcut, robust-predicates and manifold-3d). Each keeps its own license, which ships with the package in
+node_modules/<package>/LICENSE.

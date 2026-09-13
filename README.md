@@ -31,3 +31,10 @@ documents are added as their phases begin.
 Planar's workflows are modeled on public documentation for SketchUp. That documentation is used only as a
 **behavioral reference**. Planar is an independent, original implementation and is not affiliated with Trimble
 or SketchUp. It does not reuse their code, assets, icons or text.
+
+## License
+
+Copyright (C) 2026 Stanislav Georgiev ([slaviboy](https://github.com/slaviboy)).
+
+Licensed under the [Apache License, Version 2.0](LICENSE). Third-party packages keep their own licenses; see
+[NOTICE](NOTICE).

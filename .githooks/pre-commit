@@ -1,0 +1,33 @@
+#!/bin/sh
+#
+# Copyright (C) 2026 Stanislav Georgiev
+# https://github.com/slaviboy
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# Project commit rules (see CLAUDE.md): the right author, license headers on every source file, no secrets.
+
+expected_name="slaviboy"
+expected_email="slavi94slavi94@gmail.com"
+name=$(git var GIT_AUTHOR_IDENT | sed -E 's/ <.*//')
+email=$(git var GIT_AUTHOR_IDENT | sed -E 's/.*<(.*)>.*/\1/')
+if [ "$name" != "$expected_name" ] || [ "$email" != "$expected_email" ]; then
+  echo "pre-commit: commits must be authored by $expected_name <$expected_email> (got $name <$email>)." >&2
+  echo "pre-commit: run: git config user.name \"$expected_name\" && git config user.email \"$expected_email\"" >&2
+  exit 1
+fi
+
+npx vitest run tests/architecture/licenseHeaders.test.ts tests/architecture/secrets.test.ts --reporter=dot >/dev/null 2>&1 || {
+  echo "pre-commit: license header or secret check failed; run: npx vitest run tests/architecture" >&2
+  exit 1
+}
