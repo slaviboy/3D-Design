@@ -5,7 +5,8 @@
 - **Node.js 22.12+, 24 (LTS, recommended), or 26+.** This matches Vitest 5's supported engines. Node 25 works but
   npm warns with `EBADENGINE`.
 - **npm 10 or newer.**
-- **Playwright browsers,** for the end-to-end tests. Install them once with `npx playwright install chromium`.
+- **Playwright browsers,** for the end-to-end tests, which run in Chromium, WebKit and Firefox. Install them once with
+  `npx playwright install chromium webkit firefox`. Run one browser with `npx playwright test --project=chromium`.
 
 Development needs network access only to install packages. The built application never uses the network.
 

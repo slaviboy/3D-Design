@@ -67,3 +67,26 @@ Project files, imported 3D models and images are all treated as hostile.
 ## Reporting
 
 Security issues should be reported privately to the project maintainers, not in public issue trackers.
+
+## Bundle audit (Phase 11, 2026-09-13)
+
+The production build (`dist/`) was scanned for URLs and network APIs, as a check beyond the E2E network guard.
+Every hit is accounted for:
+
+| Finding | Where | Why it is safe |
+|---|---|---|
+| `fetch` and `XMLHttpRequest` in the Emscripten loader | `boolean.worker-*.js` (manifold-3d) | Loads the worker's own `.wasm` file from the same origin (`credentials: 'same-origin'`); the file is precached for offline use |
+| `fetch` in three.js `FileLoader` and `ImageBitmapLoader` | `io.worker-*.js` | Reachable only through glTF loading. `src/io/import/gltf.ts` rewrites every buffer into one embedded binary chunk and drops images before the loader runs, so it has nothing to fetch. Other formats resolve references only among the picked files (`fileSet.ts`) and warn about external ones. `tests/io/importFormats.test.ts` asserts `fetch` is never called |
+| `http://www.w3.org/1999/xhtml` | `io.worker-*.js` (three.js) | An XML namespace name passed to `createElementNS`, not a request |
+| `https://bit.ly/wb-precache` | `workbox-*.js` | Text inside a Workbox console warning, never requested |
+
+No `WebSocket`, `EventSource` or `sendBeacon` call exists in the bundle. Even if one were added, the
+Content-Security-Policy above blocks connections to other origins.
+
+To repeat the audit after a build:
+
+```sh
+grep -ohE "https?://[^\"' )]+" dist/*.js dist/assets/*.js | sort | uniq -c
+grep -ohE "(fetch\(|new XMLHttpRequest|new WebSocket|sendBeacon|new EventSource)" dist/assets/*.js | sort | uniq -c
+```
+
