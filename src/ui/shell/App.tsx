@@ -3,6 +3,7 @@ import { isEditableTarget } from '../../app/shortcuts/shortcuts';
 import type { RecoveryRepository, RecoverySnapshot } from '../../io/idb/recovery';
 import { ErrorBoundary } from '../common/ErrorBoundary';
 import { Notifications } from '../common/Notifications';
+import { InputDialog } from '../dialogs/InputDialog';
 import { RecoveryDialog } from '../dialogs/RecoveryDialog';
 import { useEditor, useEditorState } from '../EditorContext';
 import { MenuBar } from '../menubar/MenuBar';
@@ -10,6 +11,7 @@ import { CommandPalette } from '../palette/CommandPalette';
 import { ComponentsPanel } from '../panels/ComponentsPanel';
 import { EntityInfoPanel } from '../panels/EntityInfoPanel';
 import { OutlinerPanel } from '../panels/OutlinerPanel';
+import { SoftenPanel } from '../panels/SoftenPanel';
 import { TagsPanel } from '../panels/TagsPanel';
 import { StatusBar } from '../statusbar/StatusBar';
 import { Toolbar, ToolPalette } from '../toolbar/Toolbar';
@@ -28,6 +30,7 @@ export function App({ recovery }: { readonly recovery?: RecoveryOptions }) {
   const isDirty = useEditorState((state) => state.isDirty);
   const paletteRequests = useEditorState((state) => state.commandPaletteRequests);
   const openPanels = useEditorState((state) => state.openPanels);
+  const inputRequest = useEditorState((state) => state.inputRequest);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [recoverable, setRecoverable] = useState<readonly RecoverySnapshot[]>([]);
 
@@ -105,10 +108,16 @@ export function App({ recovery }: { readonly recovery?: RecoveryOptions }) {
               <TagsPanel />
             </ErrorBoundary>
           )}
+          {openPanels.includes('soften') && (
+            <ErrorBoundary area="the Soften Edges panel">
+              <SoftenPanel />
+            </ErrorBoundary>
+          )}
         </aside>
       </div>
       <StatusBar />
       <Notifications />
+      {inputRequest && <InputDialog request={inputRequest} />}
       {paletteOpen && (
         <CommandPalette
           onClose={() => {

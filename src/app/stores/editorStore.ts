@@ -1,6 +1,6 @@
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { projectToScreen, type Projection } from '../camera/camera';
-import type { Editor, EditorNotification } from '../Editor';
+import type { Editor, EditorNotification, InputRequest } from '../Editor';
 import type { InferenceKind } from '../inference/inference';
 import type { PanelId } from '../panels/panels';
 import type { ToolOverlay } from '../tools/Tool';
@@ -48,6 +48,8 @@ export interface EditorViewState {
   readonly editPath: readonly number[];
   /** Panels shown in the dock. */
   readonly openPanels: readonly PanelId[];
+  /** A question the editor is waiting for the user to answer. */
+  readonly inputRequest: InputRequest | null;
 }
 
 export interface EditorStore extends StoreApi<EditorViewState> {
@@ -96,6 +98,7 @@ export function createEditorStore(editor: Editor): EditorStore {
       activeTagId: session.activeTagId,
       editPath: session.editPath,
       openPanels: editor.openPanels,
+      inputRequest: editor.inputRequest,
     };
   };
   const store = createStore<EditorViewState>(snapshot);

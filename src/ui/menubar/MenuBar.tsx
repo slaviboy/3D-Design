@@ -32,6 +32,10 @@ export const MENUS: readonly MenuDefinition[] = [
       'edit.flipY',
       'edit.flipZ',
       null,
+      'edit.divide',
+      'edit.weld',
+      'edit.explodeCurve',
+      null,
       'edit.openGroup',
       'edit.closeGroup',
       null,
@@ -84,6 +88,7 @@ export const MENUS: readonly MenuDefinition[] = [
       'tool.pushPull',
       'tool.rotate',
       'tool.scale',
+      'tool.offset',
       null,
       'tool.tapeMeasure',
       'tool.protractor',
@@ -95,7 +100,10 @@ export const MENUS: readonly MenuDefinition[] = [
       'tool.zoom',
     ],
   },
-  { label: 'Window', items: ['window.entityInfo', 'window.outliner', 'window.components', 'window.tags'] },
+  {
+    label: 'Window',
+    items: ['window.entityInfo', 'window.outliner', 'window.components', 'window.tags', 'window.soften'],
+  },
   { label: 'Help', items: ['help.commandPalette'] },
 ];
 

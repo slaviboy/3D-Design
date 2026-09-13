@@ -35,6 +35,7 @@ const TOOL_PALETTE: readonly string[] = [
   'tool.move',
   'tool.rotate',
   'tool.scale',
+  'tool.offset',
   'tool.tapeMeasure',
   'tool.protractor',
   'tool.orbit',

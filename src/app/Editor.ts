@@ -1,4 +1,4 @@
-import type { DefinitionId, EdgeId, FaceId, InstanceId, TagId } from '../kernel/ids';
+import type { DefinitionId, EdgeId, FaceId, InstanceId, TagId, CurveId } from '../kernel/ids';
 import { ModelDocument } from '../kernel/model/ModelDocument';
 import {
   addTag as addTagMutation,
@@ -43,7 +43,7 @@ import { CommandRegistry } from './commands/CommandRegistry';
 import { registerDefaultCommands } from './commands/defaultCommands';
 import { listComponentDefinitions, type ComponentRow } from './components/componentList';
 import { definitionBounds } from './geometry/bounds';
-import { PANEL_IDS, type PanelId } from './panels/panels';
+import { PANEL_IDS, type PanelId, DEFAULT_OPEN_PANELS } from './panels/panels';
 import { hasLockedInstance, isInstanceLocked, LOCKED_MESSAGE } from './selection/locking';
 import { nextTagColor, uniqueTagName } from './tags/tags';
 import { ComponentPlacementTool, PLACE_COMPONENT_TOOL_ID } from './tools/ComponentPlacementTool';
@@ -54,7 +54,10 @@ import { allSelectableRefs } from './selection/queries';
 import { Selection, type EntityRef } from './selection/Selection';
 import { EditorSession, UNTITLED_DOCUMENT_NAME } from './session/EditorSession';
 import { chordFromKeyboard, ShortcutMap, type KeyChordInput, type Platform } from './shortcuts/shortcuts';
+import { divideEdge, explodeCurve, weldEdges } from '../kernel/ops/curveEdit';
+import { softenEdgesByAngle } from '../kernel/ops/soften';
 import { ArcTool } from './tools/ArcTool';
+import { OffsetTool } from './tools/OffsetTool';
 import { AxesTool } from './tools/AxesTool';
 import { CircleTool } from './tools/CircleTool';
 import { EraserTool } from './tools/EraserTool';
@@ -91,13 +94,24 @@ export interface EditorNotification {
 }
 
 /** Requests for the UI layer to show something (the editor never touches the DOM). */
+/** A value the editor needs from the user, shown by the UI as a small dialog. */
+export interface InputRequest {
+  readonly title: string;
+  readonly label: string;
+  readonly initial: string;
+  readonly confirmLabel: string;
+  /** Uses the entered text. Throwing shows the error and closes the dialog. */
+  readonly submit: (value: string) => void;
+}
+
 export type UiRequest = 'command-palette';
 
 export type EditorEvent =
   | { readonly kind: 'notifications' }
   | { readonly kind: 'measurement' }
   | { readonly kind: 'ui-request'; readonly request: UiRequest }
-  | { readonly kind: 'panels' };
+  | { readonly kind: 'panels' }
+  | { readonly kind: 'input-request' };
 
 /** Attributes Entity Info and commands can change on the selection. Each applies to the kinds that have it. */
 export interface SelectionAttributePatch {
@@ -168,7 +182,8 @@ export class Editor {
   #nextNotificationId = 1;
   #measurementText = '';
   readonly #placementTool = new ComponentPlacementTool();
-  #openPanels: readonly PanelId[] = PANEL_IDS;
+  #openPanels: readonly PanelId[] = DEFAULT_OPEN_PANELS;
+  #inputRequest: InputRequest | null = null;
 
   constructor(environment: EditorEnvironment) {
     this.#environment = environment;
@@ -201,6 +216,7 @@ export class Editor {
         new RotatedRectangleTool(),
         new ProtractorTool(),
         new AxesTool(),
+        new OffsetTool(),
         this.#placementTool,
       ],
       SELECT_TOOL_ID,
@@ -297,6 +313,30 @@ export class Editor {
 
   requestUi(request: UiRequest): void {
     this.#emit({ kind: 'ui-request', request });
+  }
+
+  /** The pending question for the user, if any. */
+  get inputRequest(): InputRequest | null {
+    return this.#inputRequest;
+  }
+
+  requestInput(request: InputRequest): void {
+    this.#inputRequest = request;
+    this.#emit({ kind: 'input-request' });
+  }
+
+  /** Answers the pending input request with `value`, or cancels it with null. */
+  resolveInput(value: string | null): void {
+    const request = this.#inputRequest;
+    if (!request) return;
+    this.#inputRequest = null;
+    this.#emit({ kind: 'input-request' });
+    if (value === null) return;
+    try {
+      request.submit(value);
+    } catch (error) {
+      this.notify('error', errorMessage(error));
+    }
   }
 
   // ---------------------------------------------------------------------------------------------- commands & keys
@@ -462,6 +502,93 @@ export class Editor {
       transformEntities(doc, session.activeContext, selection, scalingAbout(center, factors)),
     );
     session.setSelection(Selection.of(refsOfResult(result)));
+  }
+
+  // ---------------------------------------------------------------------------------------------- curves & softening
+
+  #selectedEdgeIds(): EdgeId[] {
+    return this.session.selection.ids('edge') as EdgeId[];
+  }
+
+  /** Asks how many segments to divide the one selected edge into. */
+  divideSelection(): void {
+    const edges = this.#selectedEdgeIds();
+    const [edgeId] = edges;
+    if (edgeId === undefined || edges.length !== 1) {
+      this.notify('error', 'Select one edge to divide');
+      return;
+    }
+    this.requestInput({
+      title: 'Divide Edge',
+      label: 'Number of segments',
+      initial: '2',
+      confirmLabel: 'Divide',
+      submit: (value) => {
+        this.divideEdge(edgeId, Number(value.trim()));
+      },
+    });
+  }
+
+  divideEdge(edgeId: EdgeId, segments: number): void {
+    const { session } = this;
+    this.tools.cancel();
+    const edges = divideEdge(session.doc, session.activeContext, edgeId, segments);
+    session.setSelection(Selection.of(edges.map((id): EntityRef => ({ kind: 'edge', id }))));
+  }
+
+  /** Joins the selected connected edges into one curve. */
+  weldSelection(): void {
+    const { session } = this;
+    const edges = this.#selectedEdgeIds();
+    if (edges.length < 2) throw new Error('Select at least two connected edges to weld');
+    this.tools.cancel();
+    const doc = session.doc;
+    doc.transact('Weld Edges', () => weldEdges(doc, session.activeContext, edges));
+  }
+
+  /** Turns the curves of the selected edges back into separate edges. Returns how many curves were exploded. */
+  explodeCurvesInSelection(): number {
+    const { session } = this;
+    const doc = session.doc;
+    const store = doc.store(session.activeContext);
+    const curves = new Set<CurveId>();
+    for (const edgeId of this.#selectedEdgeIds()) {
+      const curve = store.edge(edgeId)?.curve;
+      if (curve !== undefined && curve !== null) curves.add(curve);
+    }
+    if (curves.size === 0) return 0;
+    this.tools.cancel();
+    doc.transact('Explode Curve', () => {
+      for (const curve of curves) explodeCurve(doc, session.activeContext, curve);
+    });
+    return curves.size;
+  }
+
+  /**
+   * Softens the selected edges, and the edges of selected faces, whose faces meet at up to `maxAngleDegrees`.
+   * Returns how many edges changed.
+   */
+  softenSelection(options: {
+    readonly maxAngleDegrees: number;
+    readonly softenCoplanar: boolean;
+    readonly smooth: boolean;
+  }): number {
+    const { session } = this;
+    const doc = session.doc;
+    const context = session.activeContext;
+    const store = doc.store(context);
+    const edges = new Set(this.#selectedEdgeIds());
+    for (const faceId of session.selection.ids('face') as FaceId[]) {
+      if (store.face(faceId)) for (const edgeId of store.faceEdges(faceId)) edges.add(edgeId);
+    }
+    if (edges.size === 0) throw new Error('Select edges or faces to soften');
+    return doc.transact('Soften Edges', () =>
+      softenEdgesByAngle(doc, context, [...edges], {
+        maxAngleRadians: (options.maxAngleDegrees * Math.PI) / 180,
+        softenCoplanar: options.softenCoplanar,
+        smooth: options.smooth,
+      }),
+    );
   }
 
   // ---------------------------------------------------------------------------------------------- groups & components

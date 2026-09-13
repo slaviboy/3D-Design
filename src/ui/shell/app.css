@@ -826,3 +826,38 @@
   border-radius: 50%;
   background: transparent;
 }
+
+/* Soften Edges panel and input dialog ---------------------------------------------------------------- */
+
+.soften {
+  display: grid;
+  gap: 8px;
+}
+
+.soften__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.soften__check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.input-dialog__field {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.input-dialog__input {
+  height: 28px;
+  padding: 0 8px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--surface-bg);
+  border: 1px solid var(--chrome-border);
+  border-radius: 3px;
+}

@@ -2,6 +2,7 @@ import type { InstanceId } from '../../kernel/ids';
 import { setModelAxes } from '../../kernel/model/mutations';
 import { DEFAULT_MODEL_AXES } from '../../kernel/model/types';
 import { AXES_TOOL_ID } from '../tools/AxesTool';
+import { OFFSET_TOOL_ID } from '../tools/OffsetTool';
 import type { StandardView } from '../camera/camera';
 import type { Editor } from '../Editor';
 import { PANELS } from '../panels/panels';
@@ -254,6 +255,42 @@ export function registerDefaultCommands(registry: CommandRegistry<Editor>): void
     toolCommand(SCALE_TOOL_ID, 'Scale', 'S', ['resize', 'stretch', 'mirror', 'enlarge']),
     toolCommand(PROTRACTOR_TOOL_ID, 'Protractor', null, ['angle', 'angled guide']),
     toolCommand(AXES_TOOL_ID, 'Axes', null, ['move axes', 'origin', 'drawing axes']),
+    toolCommand(OFFSET_TOOL_ID, 'Offset', 'F', ['inset', 'outline', 'parallel copy', 'wall thickness']),
+    {
+      id: 'edit.divide',
+      label: 'Divide…',
+      category: 'Edit',
+      description: 'Split the selected edge into equal parts',
+      aliases: ['split edge', 'segments'],
+      isEnabled: (editor) =>
+        editor.session.selection.count('edge') === 1 && editor.session.selection.size === 1,
+      run: (editor) => {
+        editor.divideSelection();
+      },
+    },
+    {
+      id: 'edit.weld',
+      label: 'Weld Edges',
+      category: 'Edit',
+      description: 'Join the selected connected edges into one curve',
+      aliases: ['join edges', 'polyline', 'combine curve'],
+      isEnabled: (editor) => editor.session.selection.count('edge') >= 2,
+      run: (editor) => {
+        editor.weldSelection();
+      },
+    },
+    {
+      id: 'edit.explodeCurve',
+      label: 'Explode Curve',
+      category: 'Edit',
+      description: 'Turn the curves of the selected edges back into separate edges',
+      aliases: ['unweld', 'split curve'],
+      isEnabled: (editor) => editor.session.selection.count('edge') > 0,
+      run: (editor) => {
+        if (editor.explodeCurvesInSelection() === 0)
+          editor.notify('info', 'None of the selected edges belong to a curve');
+      },
+    },
     {
       id: 'axes.reset',
       label: 'Reset Axes',
