@@ -283,16 +283,17 @@ describe('Editor', () => {
 });
 
 describe('autosave', () => {
-  it('writes recovery snapshots only for unsaved changes and removes them after saving', async () => {
+  it('writes versioned recovery snapshots only for unsaved changes and removes them after saving', async () => {
     const editor = createTestEditor({ fileAccess: new MemoryFileAccess() });
     const repository = new MemoryRecoveryRepository();
+    let time = 1000;
     let tick: (() => void) | null = null;
     const autosave = new AutosaveController({
       session: editor.session,
       repository,
       encode: () => editor.encodeDocument(),
       sessionId: 'session-a',
-      now: () => 1000,
+      now: () => time,
       timers: {
         setInterval: (callback, milliseconds) => {
           expect(milliseconds).toBe(DEFAULT_AUTOSAVE_INTERVAL_MS);
@@ -309,16 +310,24 @@ describe('autosave', () => {
     draw(editor.session.doc, rectangle(0, 0, 1, 1));
     expect(await autosave.tick()).toBe(true);
     expect(await autosave.tick()).toBe(false);
-    expect(repository.snapshots.get('session-a')).toMatchObject({ documentName: 'Untitled', savedAt: 1000 });
+    expect([...repository.snapshots.values()]).toMatchObject([
+      { sessionId: 'session-a', kind: 'autosave', documentName: 'Untitled', savedAt: 1000 },
+    ]);
 
-    draw(editor.session.doc, rectangle(2, 0, 3, 1));
-    expect(tick).not.toBeNull();
-    (tick as unknown as () => void)();
-    await vi.waitFor(() => {
-      expect(editor.loadFile(repository.snapshots.get('session-a')?.bytes ?? new Uint8Array(), 'x')).toBe(
-        true,
-      );
-    });
+    for (const [index, start] of [2, 4, 6].entries()) {
+      draw(editor.session.doc, rectangle(start, 0, start + 1, 1));
+      time = 2000 + index * 1000;
+      expect(tick).not.toBeNull();
+      (tick as unknown as () => void)();
+      await vi.waitFor(async () => {
+        expect((await repository.list())[0]?.savedAt).toBe(time);
+      });
+    }
+    // Three versions are kept per session; the newest restores the latest work.
+    expect(repository.snapshots.size).toBe(3);
+    const [newest] = await repository.list();
+    expect(editor.loadFile(newest?.bytes ?? new Uint8Array(), 'x', null, { dirty: true })).toBe(true);
+    expect([...editor.session.doc.rootStore.faces()]).toHaveLength(4);
 
     await editor.saveFile();
     await vi.waitFor(() => {
@@ -333,6 +342,8 @@ describe('autosave', () => {
     for (let i = 0; i < 4; i++) {
       await repository.put({
         id: `old-${String(i)}`,
+        sessionId: `old-${String(i)}`,
+        kind: 'autosave',
         documentName: 'x',
         savedAt: i,
         bytes: new Uint8Array(),
@@ -350,7 +361,10 @@ describe('autosave', () => {
     });
     draw(editor.session.doc, rectangle(0, 0, 1, 1));
     await autosave.tick();
-    expect([...repository.snapshots.keys()].sort()).toEqual(['current', 'old-3']);
+    expect([...repository.snapshots.values()].map((snapshot) => snapshot.sessionId).sort()).toEqual([
+      'current',
+      'old-3',
+    ]);
 
     const failing = new AutosaveController({
       session: editor.session,
@@ -358,6 +372,7 @@ describe('autosave', () => {
         put: () => Promise.reject(new Error('quota')),
         list: () => repository.list(),
         delete: () => Promise.reject(new Error('gone')),
+        deleteSession: () => Promise.reject(new Error('gone')),
         prune: () => Promise.resolve(),
       },
       encode: () => editor.encodeDocument(),
@@ -367,5 +382,28 @@ describe('autosave', () => {
     expect(await failing.tick()).toBe(false);
     await failing.discard();
     expect(onError).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the previous save as a backup before saving over a file', async () => {
+    const files = new MemoryFileAccess();
+    const editor = createTestEditor({ fileAccess: files });
+    const repository = new MemoryRecoveryRepository();
+    editor.setBackupRepository(repository, 'tab');
+    expect(editor.commands.isEnabled('file.backups', editor)).toBe(true);
+
+    draw(editor.session.doc, rectangle(0, 0, 1, 1));
+    await editor.saveFile();
+    expect(repository.snapshots.size).toBe(0);
+
+    draw(editor.session.doc, rectangle(2, 0, 3, 1));
+    await editor.saveFile();
+    const [backup] = await repository.list();
+    expect(backup).toMatchObject({ kind: 'backup', sessionId: 'tab', documentName: 'Untitled' });
+    const restored = createTestEditor();
+    expect(restored.loadFile(backup?.bytes ?? new Uint8Array(), 'backup')).toBe(true);
+    expect([...restored.session.doc.rootStore.faces()]).toHaveLength(1);
+
+    await editor.saveFileAs();
+    expect(repository.snapshots.size).toBe(1);
   });
 });

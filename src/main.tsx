@@ -66,6 +66,7 @@ async function start(): Promise<void> {
       },
     });
     autosave.start();
+    editor.setBackupRepository(repository, autosave.sessionId);
     recovery = { repository, sessionId: autosave.sessionId };
     window.addEventListener('pagehide', () => {
       if (!editor.session.isDirty) void autosave.discard();

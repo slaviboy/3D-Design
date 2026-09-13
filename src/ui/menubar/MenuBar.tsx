@@ -11,7 +11,16 @@ interface MenuDefinition {
 export const MENUS: readonly MenuDefinition[] = [
   {
     label: 'File',
-    items: ['file.new', 'file.open', null, 'file.save', 'file.saveAs', null, 'file.openSample'],
+    items: [
+      'file.new',
+      'file.open',
+      null,
+      'file.save',
+      'file.saveAs',
+      'file.backups',
+      null,
+      'file.openSample',
+    ],
   },
   {
     label: 'Edit',

@@ -90,7 +90,8 @@ smaller, parses faster, and transfers to workers without copying. The exact fiel
 
 ## Migrations
 
-- **Location.** `src/io/format/migrations/` holds one pure function per version step (`v1ToV2`, …).
+- **Location.** `src/io/format/migrations.ts` maps each schema version to a pure function that upgrades a parsed
+  `model.json` by one step; `migrateModel` chains them. Schema 1 is the first release, so the table is still empty.
 - **Tests.** Each migration has fixture files from the previous version and a test that asserts the migrated result
   validates.
 - **Compatibility promise.** Every earlier schema version stays loadable.
@@ -99,7 +100,7 @@ smaller, parses faster, and transfers to workers without copying. The exact fiel
 
 | Store | Content |
 |---|---|
-| `recovery` | Autosave snapshots per session: `{sessionId, documentName, savedAt, bytes}`, keeping the last N (default 5) |
+| `recovery` | Versioned snapshots `{id, sessionId, kind: autosave \| backup, documentName, savedAt, bytes}`: the 3 newest versions of each kind per session, for the 5 newest sessions. Records written before versions existed read as autosaves whose session is their id |
 | `recent` | Recently opened files: name, time, thumbnail, and a File System Access handle where supported |
 | `libraries` | User materials, components, styles, environments |
 | `settings` | Preferences, keyboard shortcuts, panel layout |

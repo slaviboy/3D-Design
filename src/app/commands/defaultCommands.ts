@@ -95,6 +95,17 @@ export function registerDefaultCommands(registry: CommandRegistry<Editor>): void
       run: (editor) => editor.saveFileAs(),
     },
     {
+      id: 'file.backups',
+      label: 'Restore Backup…',
+      category: 'File',
+      description: 'Open a previous version of a file, kept each time you saved over it',
+      aliases: ['backup', 'previous version', 'history'],
+      isEnabled: (editor) => editor.hasBackups,
+      run: (editor) => {
+        editor.requestUi('backups');
+      },
+    },
+    {
       id: 'file.openSample',
       label: 'Open Sample Model',
       category: 'File',

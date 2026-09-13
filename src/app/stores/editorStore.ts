@@ -56,6 +56,8 @@ export interface EditorViewState {
   readonly notifications: readonly EditorNotification[];
   /** Increments each time something asks for the command palette. */
   readonly commandPaletteRequests: number;
+  /** Increments each time something asks for the backups list. */
+  readonly backupRequests: number;
   /** The tag new groups and components go on; null for untagged. */
   readonly activeTagId: number | null;
   /** Instance ids of the open groups and components, outermost first. */
@@ -76,6 +78,7 @@ export interface EditorStore extends StoreApi<EditorViewState> {
 export function createEditorStore(editor: Editor): EditorStore {
   let selectionVersion = 0;
   let commandPaletteRequests = 0;
+  let backupRequests = 0;
   let labelsRevision = -1;
   let worldLabels: readonly AnnotationLabel[] = [];
   // Labels are collected when the model changes and projected on every refresh, since the camera moves often.
@@ -141,6 +144,7 @@ export function createEditorStore(editor: Editor): EditorStore {
       projection: session.camera.projection,
       notifications: editor.notifications,
       commandPaletteRequests,
+      backupRequests,
       activeTagId: session.activeTagId,
       editPath: session.editPath,
       openPanels: editor.openPanels,
@@ -159,7 +163,10 @@ export function createEditorStore(editor: Editor): EditorStore {
     }),
     editor.tools.subscribe(refresh),
     editor.subscribe((event) => {
-      if (event.kind === 'ui-request') commandPaletteRequests++;
+      if (event.kind === 'ui-request') {
+        if (event.request === 'backups') backupRequests++;
+        else commandPaletteRequests++;
+      }
       refresh();
     }),
   ];

@@ -29,10 +29,12 @@ export function App({ recovery }: { readonly recovery?: RecoveryOptions }) {
   const documentName = useEditorState((state) => state.documentName);
   const isDirty = useEditorState((state) => state.isDirty);
   const paletteRequests = useEditorState((state) => state.commandPaletteRequests);
+  const backupRequests = useEditorState((state) => state.backupRequests);
   const openPanels = useEditorState((state) => state.openPanels);
   const inputRequest = useEditorState((state) => state.inputRequest);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [recoverable, setRecoverable] = useState<readonly RecoverySnapshot[]>([]);
+  const [backups, setBackups] = useState<readonly RecoverySnapshot[] | null>(null);
 
   useEffect(() => {
     document.title = `${isDirty ? '• ' : ''}${documentName} — Planar`;
@@ -41,6 +43,21 @@ export function App({ recovery }: { readonly recovery?: RecoveryOptions }) {
   useEffect(() => {
     if (paletteRequests > 0) setPaletteOpen(true);
   }, [paletteRequests]);
+
+  useEffect(() => {
+    if (backupRequests === 0 || !recovery) return;
+    recovery.repository.list().then(
+      (snapshots) => {
+        setBackups(snapshots.filter((snapshot) => snapshot.kind === 'backup'));
+      },
+      (error: unknown) => {
+        editor.notify(
+          'error',
+          `Backups are unavailable: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      },
+    );
+  }, [backupRequests, editor, recovery]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -58,7 +75,11 @@ export function App({ recovery }: { readonly recovery?: RecoveryOptions }) {
     if (!recovery) return;
     try {
       const snapshots = await recovery.repository.list();
-      setRecoverable(snapshots.filter((snapshot) => snapshot.id !== recovery.sessionId));
+      setRecoverable(
+        snapshots.filter(
+          (snapshot) => snapshot.kind === 'autosave' && snapshot.sessionId !== recovery.sessionId,
+        ),
+      );
     } catch (error) {
       editor.notify(
         'error',
@@ -122,6 +143,27 @@ export function App({ recovery }: { readonly recovery?: RecoveryOptions }) {
         <CommandPalette
           onClose={() => {
             setPaletteOpen(false);
+          }}
+        />
+      )}
+      {backups && (
+        <RecoveryDialog
+          title="Restore a backup"
+          intro="Planar keeps the previous version of a file each time you save over it. Backups are stored only on this device."
+          emptyText="There are no backups yet. One is kept the next time you save over a file."
+          snapshots={backups}
+          onRestore={(snapshot) => {
+            if (editor.loadFile(snapshot.bytes, `${snapshot.documentName} (backup)`, null, { dirty: true })) {
+              setBackups(null);
+            }
+          }}
+          onDiscard={(snapshot) => {
+            void recovery?.repository.delete(snapshot.id).then(() => {
+              setBackups((current) => current?.filter((entry) => entry.id !== snapshot.id) ?? null);
+            });
+          }}
+          onClose={() => {
+            setBackups(null);
           }}
         />
       )}

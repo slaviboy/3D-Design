@@ -2,7 +2,13 @@ import { Editor } from '../../src/app/Editor';
 import type { CameraState, ViewportSize } from '../../src/app/camera/camera';
 import { vec3 } from '../../src/kernel/math/vec3';
 import type { FileAccess, OpenedFile, SavedFile } from '../../src/io/fs/types';
-import type { RecoveryRepository, RecoverySnapshot } from '../../src/io/idb/recovery';
+import {
+  snapshotsBeyondRetention,
+  type RecoveryKind,
+  type RecoveryRepository,
+  type RecoverySnapshot,
+  type RetentionPolicy,
+} from '../../src/io/idb/recovery';
 import type { PointerInput } from '../../src/app/tools/Tool';
 
 export const VIEW_SIZE: ViewportSize = { width: 200, height: 200 };
@@ -59,8 +65,20 @@ export class MemoryRecoveryRepository implements RecoveryRepository {
     return Promise.resolve();
   }
 
-  async prune(keep: number): Promise<void> {
-    for (const stale of (await this.list()).slice(keep)) this.snapshots.delete(stale.id);
+  deleteSession(sessionId: string, kind?: RecoveryKind): Promise<void> {
+    for (const snapshot of [...this.snapshots.values()]) {
+      if (snapshot.sessionId === sessionId && (kind === undefined || snapshot.kind === kind)) {
+        this.snapshots.delete(snapshot.id);
+      }
+    }
+    return Promise.resolve();
+  }
+
+  prune(policy: RetentionPolicy): Promise<void> {
+    for (const stale of snapshotsBeyondRetention([...this.snapshots.values()], policy)) {
+      this.snapshots.delete(stale.id);
+    }
+    return Promise.resolve();
   }
 }
 

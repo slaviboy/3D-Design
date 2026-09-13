@@ -122,30 +122,62 @@ describe('.planar files', () => {
 });
 
 describe('IndexedDB recovery repository', () => {
-  it('stores, lists newest first, prunes and deletes snapshots', async () => {
+  const version = (id: string, sessionId: string, kind: 'autosave' | 'backup', savedAt: number) => ({
+    id,
+    sessionId,
+    kind,
+    documentName: id,
+    savedAt,
+    bytes: new Uint8Array([savedAt]),
+  });
+
+  it('keeps versions newest first, prunes by version and session, and deletes by session', async () => {
     const repository = new IndexedDbRecoveryRepository(await openPlanarDatabase(new IDBFactory()));
-    const bytes = new Uint8Array([1, 2, 3]);
-    await repository.put({ id: 'a', documentName: 'First', savedAt: 1, bytes });
-    await repository.put({ id: 'b', documentName: 'Second', savedAt: 3, bytes });
-    await repository.put({ id: 'c', documentName: 'Third', savedAt: 2, bytes });
-    expect((await repository.list()).map((snapshot) => snapshot.id)).toEqual(['b', 'c', 'a']);
-    await repository.prune(2);
-    expect((await repository.list()).map((snapshot) => snapshot.id)).toEqual(['b', 'c']);
-    await repository.prune(5);
-    await repository.delete('b');
+    for (const snapshot of [
+      version('a1', 's1', 'autosave', 1),
+      version('a2', 's1', 'autosave', 2),
+      version('a3', 's1', 'autosave', 3),
+      version('a4', 's1', 'autosave', 4),
+      version('b1', 's2', 'autosave', 5),
+      version('k1', 's1', 'backup', 6),
+    ]) {
+      await repository.put(snapshot);
+    }
+    const ids = async () => (await repository.list()).map((snapshot) => snapshot.id);
+    expect(await ids()).toEqual(['k1', 'b1', 'a4', 'a3', 'a2', 'a1']);
+
+    await repository.prune({ versionsPerSession: 2, sessions: 5 });
+    expect(await ids()).toEqual(['k1', 'b1', 'a4', 'a3']);
+    await repository.prune({ versionsPerSession: 5, sessions: 1 });
+    expect(await ids()).toEqual(['k1', 'a4', 'a3']);
+
+    await repository.deleteSession('s1', 'autosave');
     const [remaining] = await repository.list();
-    expect(remaining).toMatchObject({ id: 'c', documentName: 'Third' });
-    expect(remaining?.bytes).toEqual(bytes);
+    expect(remaining).toMatchObject({ id: 'k1', kind: 'backup', sessionId: 's1' });
+    expect(remaining?.bytes).toEqual(new Uint8Array([6]));
+    await repository.deleteSession('s1');
+    expect(await repository.list()).toEqual([]);
+  });
+
+  it('reads snapshots stored before versions existed, and skips malformed records', async () => {
+    const db = await openPlanarDatabase(new IDBFactory());
+    const transaction = db.transaction('recovery', 'readwrite');
+    const store = transaction.objectStore('recovery');
+    store.put({ id: 'legacy-session', documentName: 'Old', savedAt: 7, bytes: new Uint8Array([1]) });
+    store.put({ id: 'broken', documentName: 3 });
+    await new Promise((resolve) => {
+      transaction.oncomplete = resolve;
+    });
+    const [legacy, ...rest] = await new IndexedDbRecoveryRepository(db).list();
+    expect(legacy).toMatchObject({ id: 'legacy-session', sessionId: 'legacy-session', kind: 'autosave' });
+    expect(rest).toEqual([]);
   });
 
   it('reopens an existing database without losing data', async () => {
     const factory = new IDBFactory();
-    await new IndexedDbRecoveryRepository(await openPlanarDatabase(factory)).put({
-      id: 'kept',
-      documentName: 'Kept',
-      savedAt: 5,
-      bytes: new Uint8Array([9]),
-    });
+    await new IndexedDbRecoveryRepository(await openPlanarDatabase(factory)).put(
+      version('kept', 's', 'autosave', 5),
+    );
     const reopened = new IndexedDbRecoveryRepository(await openPlanarDatabase(factory));
     expect(await reopened.list()).toHaveLength(1);
   });

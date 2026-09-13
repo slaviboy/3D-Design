@@ -25,6 +25,7 @@ import { METRIC_UNIT_SETTINGS, type UnitSettings } from '../kernel/units/units';
 import { parseMeasurement } from '../kernel/vcb/parseMeasurement';
 import { decodePlanarFile, encodePlanarFile, PLANAR_FILE_EXTENSION } from '../io/format/planarFile';
 import type { FileAccess } from '../io/fs/types';
+import { DEFAULT_RETENTION, recoverySnapshotId, type RecoveryRepository } from '../io/idb/recovery';
 import {
   DEFAULT_CAMERA,
   orbit,
@@ -109,7 +110,7 @@ export interface InputRequest {
   readonly submit: (value: string) => void;
 }
 
-export type UiRequest = 'command-palette';
+export type UiRequest = 'command-palette' | 'backups';
 
 export type EditorEvent =
   | { readonly kind: 'notifications' }
@@ -191,6 +192,9 @@ export class Editor {
   readonly #placementTool = new ComponentPlacementTool();
   #openPanels: readonly PanelId[] = DEFAULT_OPEN_PANELS;
   #inputRequest: InputRequest | null = null;
+  #backups: { readonly repository: RecoveryRepository; readonly sessionId: string } | null = null;
+  /** The bytes last written to or read from the document's file, kept as a backup before it is overwritten. */
+  #lastSavedBytes: Uint8Array | null = null;
   #booleans: BooleanEngine | null = null;
 
   constructor(environment: EditorEnvironment) {
@@ -992,10 +996,20 @@ export class Editor {
     return this.#environment.fileAccess !== undefined;
   }
 
+  /** Where the previous version of a file is kept before saving over it. Without one, no backups are made. */
+  setBackupRepository(repository: RecoveryRepository, sessionId: string): void {
+    this.#backups = { repository, sessionId };
+  }
+
+  get hasBackups(): boolean {
+    return this.#backups !== null;
+  }
+
   async newDocument(): Promise<void> {
     if (!(await this.#confirmDiscard())) return;
     this.tools.cancel();
     this.session.replaceDocument(new ModelDocument(), { name: UNTITLED_DOCUMENT_NAME });
+    this.#lastSavedBytes = null;
     this.session.setCamera(DEFAULT_CAMERA);
   }
 
@@ -1003,6 +1017,7 @@ export class Editor {
     if (!(await this.#confirmDiscard())) return;
     this.tools.cancel();
     this.session.replaceDocument(createSampleModel(), { name: SAMPLE_MODEL_NAME });
+    this.#lastSavedBytes = null;
     this.setStandardView('iso');
   }
 
@@ -1031,6 +1046,7 @@ export class Editor {
       fileHandle,
       dirty: options.dirty === true,
     });
+    this.#lastSavedBytes = options.dirty === true ? null : bytes;
     this.zoomExtents();
     return true;
   }
@@ -1052,15 +1068,39 @@ export class Editor {
     const access = this.#environment.fileAccess;
     if (!access) return false;
     const { session } = this;
+    const bytes = this.encodeDocument();
+    if (!chooseLocation && session.fileHandle !== null) await this.#backUpLastSave();
     const result = await access.save(
-      this.encodeDocument(),
+      bytes,
       `${session.documentName}${PLANAR_FILE_EXTENSION}`,
       chooseLocation ? null : session.fileHandle,
     );
     if (!result) return false;
+    this.#lastSavedBytes = bytes;
     session.markSaved(withoutExtension(result.name), result.handle);
     this.notify('info', `Saved ${result.name}`);
     return true;
+  }
+
+  /** Keeps the previously saved version of the file as a local backup before it is overwritten. */
+  async #backUpLastSave(): Promise<void> {
+    const backups = this.#backups;
+    const previous = this.#lastSavedBytes;
+    if (!backups || !previous) return;
+    const savedAt = Date.now();
+    try {
+      await backups.repository.put({
+        id: recoverySnapshotId(backups.sessionId, 'backup', savedAt),
+        sessionId: backups.sessionId,
+        kind: 'backup',
+        documentName: this.session.documentName,
+        savedAt,
+        bytes: previous,
+      });
+      await backups.repository.prune(DEFAULT_RETENTION);
+    } catch (error) {
+      this.notify('error', `Could not keep a backup of the previous save: ${errorMessage(error)}`);
+    }
   }
 
   async #confirmDiscard(): Promise<boolean> {
