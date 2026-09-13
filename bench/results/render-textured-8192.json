@@ -1,0 +1,20 @@
+{
+  "benchmark": "render-textured-8192",
+  "entities": 10010,
+  "boxes": 385,
+  "texture": "8192x8192 RGB PNG, every face painted on both sides",
+  "textureFileBytes": 1441779,
+  "fileBytes": 1532090,
+  "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Max, Unspecified Version)",
+  "loadMs": 151,
+  "textureReadyMs": 831,
+  "frames": 120,
+  "medianFrameMs": 16.7,
+  "p95FrameMs": 16.8,
+  "medianFps": 59.9,
+  "jsHeapUsedMb": {
+    "beforeLoad": 5.5,
+    "afterLoad": 10.9,
+    "afterOrbit": 11.4
+  }
+}

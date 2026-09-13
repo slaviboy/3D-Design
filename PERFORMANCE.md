@@ -108,7 +108,170 @@ preview port).
 - Not covered yet: heavier styles (profiles, back edges, shadows, X-ray), textured models, and single models larger
   than 100k entities.
 
+## Phase 10: save/load, import, export, textures, memory and edits
+
+**Environment.** 2026-09-13, Apple M1 Max, 32 GB, macOS (Darwin 25.5).
+- **Node benchmarks** (`npm run bench`, `tests/bench/ioPerformance.bench.ts`): Node.js 25.5.0 and Vitest 5, with
+  unbundled TypeScript through Vite's transform. Each test times its workload with `performance.now()`: one warm-up
+  run, then 3–10 samples, and it reports the median. The import runs are timed once.
+- **Memory in Node:** `process.memoryUsage()` after a forced garbage collection, reported as V8 heap and array
+  buffers. Mesh positions and texture bytes are typed arrays, so they count as array buffers, not heap.
+- **Browser benchmarks** (`npm run bench:render`, `tests/perf/render.perf.ts`): Playwright 1.63 with headless
+  Chromium (build 1243) on the ANGLE Metal renderer (Apple M1 Max).
+- **Models:** the same box grids as the frame-rate benchmarks (26 entities per box), built by
+  `tests/bench/models.ts`.
+- Every raw result is in `bench/results/<name>.json`.
+
+### Save and load (`save-load-*`)
+
+`encodePlanarFile` and `decodePlanarFile` on a model in memory, so disk I/O is not included. Decode with repair is
+the path `Editor.loadFile` takes.
+
+| Model | File size | Encode | Decode | Decode with `repair: true` | Decoded model heap |
+|---|---|---|---|---|---|
+| 385 boxes, 10,010 entities | 87 KB | 29.5 ms | 94 ms | 94 ms | 8.0 MB |
+| 3,847 boxes, 100,022 entities | 858 KB | 333 ms | 1.11 s | 1.14 s | 78.7 MB |
+
+- Both directions scale linearly with the model, at about 3.3 ms per 1k entities to save and 11 ms per 1k to load.
+  Loading costs about 3.3× saving because it restores the snapshot and validates it with the kernel checks.
+- On a valid model, the repair path costs the same as a plain decode (within ±3%).
+- A decoded model uses about 0.8 KB of heap per entity.
+
+### Large textures (`texture-8192`, `render-textured-*`)
+
+**Kernel and file.** The texture is an 8192 × 8192 PNG placeholder: a valid signature and IHDR followed by 24 MB of
+incompressible data (25.2 MB in total). The kernel and the file format only read the header, so it isn't decodable.
+The model is the 10k-entity grid with every face painted on both sides.
+
+| Step | Result |
+|---|---|
+| `addTextureAsset` (header check and copy) | 2.0 ms |
+| Build the 10k model and paint every face | 149 ms |
+| Encode with the texture (25.3 MB file) | 262 ms (29.5 ms without) |
+| Decode | 268 ms (94 ms without) |
+| Decode with `repair: true` | 266 ms |
+| Decoded model | 8.0 MB heap + 24 MB array buffers |
+
+- The texture adds about 230 ms to saving and 170 ms to loading. The image is stored without recompression, so this
+  is time spent on its bytes, which grows with the file size rather than the pixel count.
+
+**Rendering.** The 10k-entity grid is painted on both sides of every face with a real, decodable checkerboard PNG,
+generated in the test with fflate.
+- *Load* is the time until the model has rendered twice.
+- *Texture ready* runs from `loadFile` until `createImageBitmap` has resolved and two more frames have rendered, so
+  it includes the GPU upload.
+
+| Texture | PNG size | Load | Texture ready | Median frame | p95 frame | Median FPS | JS heap after load / orbit |
+|---|---|---|---|---|---|---|---|
+| 4096 × 4096 | 357 KB | 243 ms | 639 ms | 16.7 ms | 16.7 ms | 60 | 11.0 / 11.4 MB |
+| 8192 × 8192 | 1.4 MB | 151 ms | 831 ms | 16.7 ms | 16.8 ms | 60 | 10.9 / 11.4 MB |
+
+- Orbiting stays at the 60 FPS cap with either texture size. The decoded image adds 0.4–0.7 s after the geometry
+  appears.
+- The JS heap matches the untextured 10k model: decoded images and GPU textures are not counted in the JS heap, so
+  these numbers don't measure texture memory.
+- The checkerboard compresses well, so these files are much smaller than a photo of the same size. Decode time for a
+  photo PNG will be higher.
+
+### Import of large meshes (`import-*`)
+
+**Method.** The mesh is a height field on a 10 cm grid with smooth waves, so no two neighboring triangles are
+coplanar. It is generated in the test and imported without the worker, the way the app does:
+1. `parseImportFiles`, which runs in the io worker in the app.
+2. `insertImportedScene` into a new model, with Merge coplanar faces on, as the Import dialog defaults.
+
+Retained memory is measured with both the parsed scene and the model still alive.
+
+| File | Size | Triangles in | Faces out | Parse | Insert into the kernel | Retained heap / array buffers |
+|---|---|---|---|---|---|---|
+| Binary STL | 4.8 MB | 100,352 | 100,338 | 27 ms | 11.1 s | 284 MB / 8 MB |
+| Binary STL (at the limit) | 11.9 MB | 249,218 | 249,177 | 64 ms | 28.7 s | 697 MB / 21 MB |
+| GLB, one indexed mesh (at the limit) | 4.3 MB | 249,218 | 249,177 | 23 ms | 26.1 s | 676 MB / 7 MB |
+| Binary STL, 1 million triangles | 47.8 MB | 1,002,528 | — | refused in 12 ms | not run | — |
+
+- **The import limit.** `DEFAULT_IMPORT_LIMITS.maxTriangles` is 250,000. The 1M-triangle STL is refused from its
+  header in 12 ms, before parsing.
+  - With the limit raised to 2M, parsing alone takes 187 ms and holds 84 MB of typed arrays
+    (`import-stl-1000000.json`).
+  - Inserting it into the kernel was attempted once and aborted the Vitest worker when the V8 heap ran out, so it is
+    not measured. The benchmark now stops after parsing.
+- **Insertion dominates import time.** Parsing is under 0.3% of the total. Insertion costs about 110 µs and 2.8 KB
+  of heap per triangle, roughly linearly (2.5× the triangles took 2.6× the time), and about the same for STL and
+  GLB.
+  - A file at the limit takes about half a minute and 700 MB. That is the slowest workload measured so far, and the
+    first candidate for optimization in the performance phase.
+- The few faces fewer than triangles come from pairs that Merge coplanar faces joined where the waves are nearly
+  flat.
+
+### Export (`export-100000`)
+
+`exportModel` of the whole 100k-entity grid (23,082 faces, 46,164 triangles) with Z-up to Y-up on, in memory.
+
+| Format | Time | Output |
+|---|---|---|
+| STL (binary) | 122 ms | 2.2 MB |
+| OBJ + MTL | 320 ms | 3.7 MB |
+| GLB | 76 ms | 2.6 MB |
+| glTF (embedded buffer) | 142 ms | 3.5 MB |
+
+- All formats export a 100k-entity model in well under half a second. OBJ is the slowest because it formats every
+  number as text.
+
+### Memory while rendering (`render-orbit-*`)
+
+**Method.** JS heap is `JSHeapUsedSize` from the Chrome DevTools Protocol (`Performance.getMetrics`) after
+`HeapProfiler.collectGarbage`. This is **Chromium only**, and it excludes GPU buffers, textures and decoded images.
+The empty app uses 5.5 MB.
+
+| Model | Load (this run) | JS heap after load | After 120 orbit frames | Median FPS |
+|---|---|---|---|---|
+| 1,014 entities | 32 ms | 6.9 MB | 7.4 MB | 60 |
+| 10,010 entities | 110 ms | 10.8 MB | 11.3 MB | 60 |
+| 100,022 entities | 645 ms | 48.2 MB | 48.6 MB | 60 |
+
+- Orbiting doesn't grow the heap: +0.4–0.5 MB over 120 frames at every size.
+- The app uses about 0.43 KB of JS heap per entity. The Node benchmark measures 0.8 KB for the decoded model alone;
+  the difference is between V8 builds and measurement methods, so compare numbers only within one table.
+
+### Geometry update in the app (`render-update-*`)
+
+**Method.** Select All, then `editor.flipSelection('x')` (Flip Along X) on everything, three times in a row.
+- *Edit* is the synchronous kernel transaction.
+- *Until rendered* is measured in a `requestAnimationFrame` callback registered after the edit. That callback runs
+  after the viewport's render for the change.
+
+The medians include the first run, which is slower while the code warms up.
+
+| Model | Selected (faces + edges) | Edit (median) | Until rendered (median) | JS heap after 3 flips |
+|---|---|---|---|---|
+| 1,014 entities | 702 | 9.4 ms | 19.1 ms | 8.8 MB |
+| 10,010 entities | 6,930 | 64.6 ms | 81.4 ms | 17.1 MB |
+| 100,022 entities | 69,246 | 669 ms | 858 ms | 99.3 MB |
+
+- The edit scales linearly, at about 9.5 µs per selected entity. Rebuilding and drawing the changed geometry adds
+  10–190 ms.
+- At 10k entities, transforming the whole model takes 81 ms, about 5 frames. At 100k it takes 0.86 s, a visible
+  pause.
+- The heap after the flips includes the undo history of three transactions.
+
+### Kernel benchmarks in this run
+
+`npm run bench` also reran the Phase 2 kernel benchmarks, all within their ±10% single-sample noise:
+- `draw-rectangles-1000`: 6.9 ms
+- `draw-rectangles-10000`: 84 ms
+- `draw-rectangles-100000`: 1.05 s
+- `draw-line-grid`: 160 ms
+- `validate-10000`: 24.1 ms
+- `snapshot-restore-10000`: 62.5 ms
+
 ## Not measured yet
 
-Rendering frame rate, memory, texture and import/export workloads need the viewport and file pipeline. They are
-added to this file as those phases land, following the plan in TESTING.md.
+- Kernel insertion of imports above the 250,000-triangle limit. It ran out of V8 heap in the Node worker.
+- Import and export in the running app: the io worker round trip, file picker and download, and the import dialog.
+- Real photographic textures, whose PNG or JPEG decode is slower than the generated checkerboard's. Also GPU memory
+  and decoded-image memory, which the JS heap metric doesn't include.
+- Memory in browsers other than Chromium (the CDP heap metric is Chromium only), and total process or GPU memory.
+- Push/pull and move timings through the tools; only Flip through the editor API is measured.
+- Autosave and IndexedDB recovery writes, and saving through the File System Access API.
+- Heavier render styles (profiles, back edges, shadows, X-ray) and models larger than 100k entities.
+- Headroom above 60 FPS: `requestAnimationFrame` caps every frame-rate measurement.

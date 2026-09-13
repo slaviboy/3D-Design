@@ -1,0 +1,25 @@
+{
+  "benchmark": "render-update-10000",
+  "entities": 10010,
+  "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Max, Unspecified Version)",
+  "operation": "select all, then Flip Along X (editor.flipSelection), repeated",
+  "selectedEntities": 6930,
+  "repeats": 3,
+  "medianEditMs": 64.6,
+  "medianUntilRenderedMs": 81.4,
+  "runs": [
+    {
+      "editMs": 93.7,
+      "untilRenderedMs": 116.1
+    },
+    {
+      "editMs": 64.6,
+      "untilRenderedMs": 81.4
+    },
+    {
+      "editMs": 62.7,
+      "untilRenderedMs": 80.4
+    }
+  ],
+  "jsHeapUsedMbAfterEdits": 17.1
+}

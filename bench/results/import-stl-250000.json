@@ -1,0 +1,14 @@
+{
+  "benchmark": "import-stl-250000",
+  "format": "stl",
+  "fileBytes": 12460984,
+  "parseMs": 64.4,
+  "kernelMs": 28692.9,
+  "trianglesIn": 249218,
+  "facesOut": 249177,
+  "degenerateTriangles": 0,
+  "retained": {
+    "heapMb": 696.6,
+    "arrayBuffersMb": 20.9
+  }
+}

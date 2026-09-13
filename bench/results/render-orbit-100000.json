@@ -4,9 +4,14 @@
   "boxes": 3847,
   "fileBytes": 878809,
   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Max, Unspecified Version)",
-  "loadMs": 627,
+  "loadMs": 645,
   "frames": 120,
   "medianFrameMs": 16.7,
-  "p95FrameMs": 16.8,
-  "medianFps": 59.9
+  "p95FrameMs": 16.7,
+  "medianFps": 59.9,
+  "jsHeapUsedMb": {
+    "beforeLoad": 5.5,
+    "afterLoad": 48.2,
+    "afterOrbit": 48.6
+  }
 }

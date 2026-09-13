@@ -1,0 +1,33 @@
+{
+  "benchmark": "export-100000",
+  "entities": 100022,
+  "boxes": 3847,
+  "faces": 23082,
+  "triangles": 46164,
+  "formats": {
+    "stl": {
+      "medianMs": 122.2,
+      "minMs": 121.6,
+      "samples": 5,
+      "bytes": 2308284
+    },
+    "obj": {
+      "medianMs": 319.7,
+      "minMs": 303.7,
+      "samples": 5,
+      "bytes": 3878948
+    },
+    "glb": {
+      "medianMs": 76.2,
+      "minMs": 75.5,
+      "samples": 5,
+      "bytes": 2770760
+    },
+    "gltf": {
+      "medianMs": 142.4,
+      "minMs": 140.7,
+      "samples": 5,
+      "bytes": 3694055
+    }
+  }
+}
