@@ -10,6 +10,8 @@ import type {
   VertexId,
   AnnotationId,
   AssetId,
+  SceneId,
+  SectionPlaneId,
 } from '../ids';
 import type { Mat4 } from '../math/mat4';
 import type { Vec3 } from '../math/vec3';
@@ -346,4 +348,118 @@ export interface AnnotationState {
 /** A dimension or a text label. Annotations describe the model but never take part in topology. */
 export interface AnnotationData extends AnnotationState {
   readonly id: AnnotationId;
+}
+
+// -------------------------------------------------------------------------------------------------- section planes
+
+export interface SectionPlaneState {
+  readonly name: string;
+  /** A point on the plane, in the coordinates of the context that owns it. */
+  readonly point: Vec3;
+  /** Unit normal. Geometry on the side the normal points to is cut away while the plane is active. */
+  readonly normal: Vec3;
+  /** At most one section plane per context is active. */
+  readonly active: boolean;
+}
+
+/** A section plane. It cuts the view of its context (and everything nested inside it) while active. */
+export interface SectionPlaneData extends SectionPlaneState {
+  readonly id: SectionPlaneId;
+}
+
+// -------------------------------------------------------------------------------------------------- shadows
+
+/** Sun and shadow settings of a document. Location is entered by hand; nothing is looked up online. */
+export interface ShadowSettings {
+  /** Whether shadows are cast. */
+  readonly enabled: boolean;
+  /** Local date and time with its UTC offset, as `YYYY-MM-DDTHH:MM:SS±HH:MM`. */
+  readonly dateTime: string;
+  /** Degrees, −90 (south) to 90 (north). */
+  readonly latitude: number;
+  /** Degrees, −180 (west) to 180 (east). */
+  readonly longitude: number;
+  /** Degrees clockwise, seen from above, from the model's green (+Y) axis to true north. */
+  readonly northAngle: number;
+  /** Strength of direct sunlight, 0 to 1. */
+  readonly light: number;
+  /** Strength of ambient light, which is what shadowed areas receive, 0 to 1. */
+  readonly dark: number;
+  /** Light the model from the sun's position even while shadows are off. */
+  readonly useSunForShading: boolean;
+  /** Faces receive shadows. */
+  readonly onFaces: boolean;
+  /** Shadows fall on the ground plane (z = 0). */
+  readonly onGround: boolean;
+}
+
+/**
+ * The settings of a new document. `light` and `dark` reproduce the fixed lighting used before shadow settings
+ * existed, so documents without shadow settings look exactly as they did.
+ */
+export const DEFAULT_SHADOW_SETTINGS: ShadowSettings = Object.freeze({
+  enabled: false,
+  dateTime: '2026-09-21T13:30:00+00:00',
+  latitude: 45,
+  longitude: 0,
+  northAngle: 0,
+  light: 0.8,
+  dark: 0.45,
+  useSunForShading: false,
+  onFaces: true,
+  onGround: true,
+});
+
+// -------------------------------------------------------------------------------------------------- scenes
+
+/** A saved view, with the same fields as the application's camera state. */
+export interface SceneCamera {
+  readonly eye: Vec3;
+  readonly target: Vec3;
+  readonly up: Vec3;
+  readonly fovDegrees: number;
+  readonly projection: 'perspective' | 'parallel';
+  readonly orthoHalfHeight: number;
+}
+
+/** Which properties a scene stores and restores. */
+export interface SceneSaves {
+  readonly camera: boolean;
+  readonly visibleTags: boolean;
+  readonly activeSections: boolean;
+  readonly shadows: boolean;
+  readonly axes: boolean;
+}
+
+export const DEFAULT_SCENE_SAVES: SceneSaves = Object.freeze({
+  camera: true,
+  visibleTags: true,
+  activeSections: true,
+  shadows: true,
+  axes: false,
+});
+
+/** The active section plane of one context when the scene was saved; `plane` is null when none was active. */
+export interface SceneSectionState {
+  readonly context: DefinitionId;
+  readonly plane: SectionPlaneId | null;
+}
+
+export interface SceneState {
+  readonly name: string;
+  readonly description: string;
+  readonly includeInAnimation: boolean;
+  readonly saves: SceneSaves;
+  /** Saved values. Each is null when its save flag was off when the scene was last updated. */
+  readonly camera: SceneCamera | null;
+  /** Tags that were hidden. Tags created later, or deleted since, are left as they are. */
+  readonly hiddenTags: readonly TagId[] | null;
+  /** Every context that had section planes, with its active plane. */
+  readonly sections: readonly SceneSectionState[] | null;
+  readonly shadows: ShadowSettings | null;
+  readonly axes: ModelAxes | null;
+}
+
+export interface SceneData extends SceneState {
+  readonly id: SceneId;
 }

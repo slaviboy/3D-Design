@@ -4,12 +4,16 @@ import { changeContext, invertChange, type Change } from './changes';
 import { EntityStore, type InstanceView } from './EntityStore';
 import {
   DEFAULT_MODEL_AXES,
+  DEFAULT_SHADOW_SETTINGS,
+  type SceneData,
+  type ShadowSettings,
   type DefinitionAttributes,
   type MaterialData,
   type ModelAxes,
   type TagData,
   type TextureAssetData,
 } from './types';
+import type { SceneId } from '../ids';
 import { validateDocument } from './validate';
 
 export const DEFAULT_HISTORY_LIMIT = 500;
@@ -81,6 +85,9 @@ export class ModelDocument {
   #active: ActiveTransaction | null = null;
   #nextTransactionId = 1;
   #axes: ModelAxes = DEFAULT_MODEL_AXES;
+  #shadows: ShadowSettings = DEFAULT_SHADOW_SETTINGS;
+  /** Replaced, never mutated, on every change, so readers can compare references. */
+  #scenes: readonly SceneData[] = [];
 
   constructor(options: DocumentOptions = {}, init: DocumentInit = {}) {
     this.#validateOnCommit = options.validateOnCommit ?? false;
@@ -151,6 +158,20 @@ export class ModelDocument {
   /** The drawing axes that inference, drawing planes and typed coordinates use. */
   get axes(): ModelAxes {
     return this.#axes;
+  }
+
+  /** Sun and shadow settings. */
+  get shadows(): ShadowSettings {
+    return this.#shadows;
+  }
+
+  /** Scenes in display order. The array is replaced whenever a scene changes. */
+  get scenes(): readonly SceneData[] {
+    return this.#scenes;
+  }
+
+  scene(id: SceneId): SceneData | undefined {
+    return this.#scenes.find((scene) => scene.id === id);
   }
 
   /** Every instance of `definitionId`, together with the definition that contains it. */
@@ -489,6 +510,52 @@ export class ModelDocument {
           throw new KernelError('missing-entity', `Asset ${String(change.data.id)} does not exist`);
         }
         return;
+      case 'section.add':
+        this.store(change.context).applyAddSectionPlane(change.data);
+        return;
+      case 'section.remove':
+        this.store(change.context).applyRemoveSectionPlane(change.data.id);
+        return;
+      case 'section.update':
+        this.store(change.context).applyUpdateSectionPlane(change.id, change.to);
+        return;
+      case 'document.shadows':
+        this.#shadows = change.to;
+        return;
+      case 'scene.add': {
+        if (this.#scenes.some((scene) => scene.id === change.data.id)) {
+          throw new KernelError('duplicate-entity', `Scene ${String(change.data.id)} already exists`);
+        }
+        this.ids.reserveThrough(change.data.id);
+        const scenes = [...this.#scenes];
+        scenes.splice(Math.min(Math.max(change.index, 0), scenes.length), 0, change.data);
+        this.#scenes = scenes;
+        return;
+      }
+      case 'scene.remove': {
+        const index = this.#scenes.findIndex((scene) => scene.id === change.data.id);
+        if (index < 0)
+          throw new KernelError('missing-entity', `Scene ${String(change.data.id)} does not exist`);
+        this.#scenes = this.#scenes.filter((scene) => scene.id !== change.data.id);
+        return;
+      }
+      case 'scene.update': {
+        const index = this.#scenes.findIndex((scene) => scene.id === change.id);
+        if (index < 0) throw new KernelError('missing-entity', `Scene ${String(change.id)} does not exist`);
+        this.#scenes = this.#scenes.map((scene) =>
+          scene.id === change.id ? { ...change.to, id: change.id } : scene,
+        );
+        return;
+      }
+      case 'scene.reorder': {
+        const byId = new Map(this.#scenes.map((scene) => [scene.id, scene]));
+        const reordered = change.to.map((id) => byId.get(id));
+        if (reordered.length !== this.#scenes.length || reordered.some((scene) => scene === undefined)) {
+          throw new KernelError('invalid-operation', 'A scene order must list every scene exactly once');
+        }
+        this.#scenes = reordered as SceneData[];
+        return;
+      }
     }
   }
 

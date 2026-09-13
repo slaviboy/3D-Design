@@ -1,6 +1,6 @@
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import type { AnnotationId, DefinitionId } from '../../kernel/ids';
-import type { AnnotationKind } from '../../kernel/model/types';
+import type { AnnotationKind, SceneData, ShadowSettings } from '../../kernel/model/types';
 import type { UnitSettings } from '../../kernel/units/units';
 import type { Preferences } from '../preferences/preferences';
 import { collectAnnotationLabels, type AnnotationLabel } from '../annotations/annotationLabels';
@@ -81,6 +81,17 @@ export interface EditorViewState {
   readonly annotationLabels: readonly ScreenAnnotationLabel[];
   /** The material the Paint Bucket applies; null for the default material. */
   readonly activeMaterialId: number | null;
+  /** Selected section planes. */
+  readonly selectionSections: number;
+  /** Scenes in display order (replaced whenever a scene changes). */
+  readonly scenes: readonly SceneData[];
+  readonly activeSceneId: number | null;
+  readonly animationPlaying: boolean;
+  readonly sceneTransitionSeconds: number;
+  readonly sceneDelaySeconds: number;
+  readonly shadows: ShadowSettings;
+  readonly showSectionPlanes: boolean;
+  readonly showSectionCuts: boolean;
 }
 
 export interface EditorStore extends StoreApi<EditorViewState> {
@@ -175,6 +186,15 @@ export function createEditorStore(editor: Editor): EditorStore {
       inputRequest: editor.inputRequest,
       annotationLabels: screenLabels(),
       activeMaterialId: session.activeMaterialId,
+      selectionSections: selection.count('section'),
+      scenes: doc.scenes,
+      activeSceneId: editor.activeSceneId,
+      animationPlaying: editor.isAnimationPlaying,
+      sceneTransitionSeconds: editor.sceneTransitionSeconds,
+      sceneDelaySeconds: editor.sceneDelaySeconds,
+      shadows: doc.shadows,
+      showSectionPlanes: session.showSectionPlanes,
+      showSectionCuts: session.showSectionCuts,
     };
   };
   const store = createStore<EditorViewState>(snapshot);

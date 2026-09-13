@@ -1,4 +1,4 @@
-import type { EdgeId, FaceId, InstanceId } from '../../kernel/ids';
+import type { EdgeId, FaceId, InstanceId, SectionPlaneId } from '../../kernel/ids';
 import type { EntityStore } from '../../kernel/model/EntityStore';
 import type { Editor } from '../Editor';
 import { rectFromCorners } from '../selection/boxSelect';
@@ -34,7 +34,7 @@ export function selectionModeFor(
 
 /** Single click: the entity. Double: a face with its edges, or an edge with its faces. Triple: all connected. */
 export function refsForClick(store: EntityStore, ref: EntityRef, clickCount: number): EntityRef[] {
-  if (ref.kind === 'instance') return [ref];
+  if (ref.kind === 'instance' || ref.kind === 'section') return [ref];
   if (clickCount >= 3) return connectedGeometry(store, ref);
   if (clickCount === 2) {
     return ref.kind === 'face'
@@ -86,12 +86,16 @@ export class SelectTool implements Tool {
       session.setSelection(applySelection(session.selection, refs, press.mode));
       return;
     }
-    const hit = editor.pickAt(press);
+    const hit = editor.pickAt(press, { includeSectionPlanes: session.showSectionPlanes });
     if (!hit) {
       if (press.mode !== 'replace') return;
       // Clicking outside an open group closes it.
       if (session.editPath.length > 0) editor.closeGroup();
       else session.setSelection(Selection.EMPTY);
+      return;
+    }
+    if (hit.ref.kind === 'section' && press.detail === 2 && press.mode === 'replace') {
+      editor.toggleSectionPlaneActive(hit.ref.id as SectionPlaneId);
       return;
     }
     if (hit.ref.kind === 'instance' && press.detail === 2 && press.mode === 'replace') {

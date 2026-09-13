@@ -1,4 +1,4 @@
-import type { EdgeId, FaceId, InstanceId, TagId, VertexId } from '../../kernel/ids';
+import type { EdgeId, FaceId, InstanceId, SectionPlaneId, TagId, VertexId } from '../../kernel/ids';
 import type { EntityStore } from '../../kernel/model/EntityStore';
 import type { ModelDocument } from '../../kernel/model/ModelDocument';
 import { isTagVisible } from '../../kernel/model/visibility';
@@ -21,6 +21,8 @@ export function refExists(store: EntityStore, ref: EntityRef): boolean {
       return store.edge(ref.id as EdgeId) !== undefined;
     case 'instance':
       return store.instance(ref.id as InstanceId) !== undefined;
+    case 'section':
+      return store.sectionPlane(ref.id as SectionPlaneId) !== undefined;
   }
 }
 
@@ -51,6 +53,8 @@ export function isRefOnVisibleTag(doc: ModelDocument, store: EntityStore, ref: E
       return isTagVisible(doc, store.edge(ref.id as EdgeId)?.attributes.tagId ?? null);
     case 'instance':
       return isTagVisible(doc, store.instance(ref.id as InstanceId)?.attributes.tagId ?? null);
+    case 'section':
+      return true;
   }
 }
 
@@ -72,7 +76,7 @@ export function edgeWithAdjacentFaces(store: EntityStore, id: EdgeId): EntityRef
 
 /** All faces and edges connected to the start entity through shared vertices (triple-click). */
 export function connectedGeometry(store: EntityStore, start: EntityRef): EntityRef[] {
-  if (start.kind === 'instance') return [start];
+  if (start.kind === 'instance' || start.kind === 'section') return [start];
   const vertices: VertexId[] = [];
   if (start.kind === 'face') {
     for (const loop of store.faceLoops(start.id as FaceId)) vertices.push(...store.loopVertices(loop));

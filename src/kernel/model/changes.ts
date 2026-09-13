@@ -7,12 +7,19 @@ import type {
   GuideId,
   InstanceId,
   MaterialId,
+  SceneId,
+  SectionPlaneId,
   TagId,
   VertexId,
 } from '../ids';
 import type { Mat4 } from '../math/mat4';
 import type { Vec3 } from '../math/vec3';
 import type {
+  SceneData,
+  SceneState,
+  SectionPlaneData,
+  SectionPlaneState,
+  ShadowSettings,
   AnnotationData,
   AnnotationState,
   CurveData,
@@ -156,7 +163,33 @@ export type Change =
       readonly to: TagAttributes;
     }
   | { readonly kind: 'document.axes'; readonly from: ModelAxes; readonly to: ModelAxes }
-  | { readonly kind: 'asset.add' | 'asset.remove'; readonly data: TextureAssetData };
+  | { readonly kind: 'asset.add' | 'asset.remove'; readonly data: TextureAssetData }
+  | {
+      readonly kind: 'section.add' | 'section.remove';
+      readonly context: DefinitionId;
+      readonly data: SectionPlaneData;
+    }
+  | {
+      readonly kind: 'section.update';
+      readonly context: DefinitionId;
+      readonly id: SectionPlaneId;
+      readonly from: SectionPlaneState;
+      readonly to: SectionPlaneState;
+    }
+  | { readonly kind: 'document.shadows'; readonly from: ShadowSettings; readonly to: ShadowSettings }
+  | {
+      readonly kind: 'scene.add' | 'scene.remove';
+      readonly data: SceneData;
+      /** Position of the scene in the scene list. */
+      readonly index: number;
+    }
+  | {
+      readonly kind: 'scene.update';
+      readonly id: SceneId;
+      readonly from: SceneState;
+      readonly to: SceneState;
+    }
+  | { readonly kind: 'scene.reorder'; readonly from: readonly SceneId[]; readonly to: readonly SceneId[] };
 
 export type ChangeKind = Change['kind'];
 
@@ -207,6 +240,18 @@ export function invertChange(change: Change): Change {
       return { ...change, kind: 'asset.remove' };
     case 'asset.remove':
       return { ...change, kind: 'asset.add' };
+    case 'section.add':
+      return { ...change, kind: 'section.remove' };
+    case 'section.remove':
+      return { ...change, kind: 'section.add' };
+    case 'scene.add':
+      return { ...change, kind: 'scene.remove' };
+    case 'scene.remove':
+      return { ...change, kind: 'scene.add' };
+    case 'section.update':
+    case 'document.shadows':
+    case 'scene.update':
+    case 'scene.reorder':
     case 'vertex.move':
     case 'edge.attributes':
     case 'face.loops':

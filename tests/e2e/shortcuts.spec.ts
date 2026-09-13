@@ -22,6 +22,8 @@ test('changes shortcuts from the command palette, resolves conflicts, and keeps 
   page,
 }) => {
   await page.goto('/');
+  // Shortcuts are handled only once the app has mounted.
+  await expect(page.getByRole('menubar', { name: 'Main menu' })).toBeVisible();
   const viewport = page.getByRole('application', { name: '3D viewport' });
 
   const palette = await changeShortcut(page, 'Polygon', 'polygon', 'Shift+G');

@@ -5,6 +5,7 @@ import { AXES_TOOL_ID } from '../tools/AxesTool';
 import { OFFSET_TOOL_ID } from '../tools/OffsetTool';
 import { DIMENSION_TOOL_ID } from '../tools/DimensionTool';
 import { TEXT_TOOL_ID } from '../tools/TextTool';
+import { SECTION_PLANE_TOOL_ID } from '../tools/SectionPlaneTool';
 import { PAINT_TOOL_ID } from '../tools/PaintBucketTool';
 import type { StandardView } from '../camera/camera';
 import type { Editor } from '../Editor';
@@ -419,6 +420,152 @@ export function registerDefaultCommands(registry: CommandRegistry<Editor>): void
   );
   registerSolidCommands(registry);
   registerOrganizationCommands(registry);
+  registerPresentationCommands(registry);
+}
+
+/** Section planes, shadows, scenes and animation. */
+function registerPresentationCommands(registry: CommandRegistry<Editor>): void {
+  const hasSectionPlane = (editor: Editor): boolean => editor.selectedSectionPlane() !== null;
+  registry.register(
+    toolCommand(SECTION_PLANE_TOOL_ID, 'Section Plane', null, ['section', 'cut', 'slice', 'clipping plane']),
+    {
+      id: 'section.toggleActive',
+      label: 'Active Cut',
+      category: 'Tools',
+      description: 'Turn the selected section plane’s cut on or off',
+      aliases: ['activate section', 'deactivate section', 'section cut'],
+      isEnabled: hasSectionPlane,
+      isChecked: (editor) => editor.selectedSectionPlane()?.active === true,
+      run: (editor) => {
+        editor.toggleSectionPlaneActive();
+      },
+    },
+    {
+      id: 'section.reverse',
+      label: 'Reverse Section Plane',
+      category: 'Tools',
+      description: 'Cut away the other side of the selected section plane',
+      aliases: ['flip section', 'reverse cut'],
+      isEnabled: hasSectionPlane,
+      run: (editor) => {
+        editor.reverseSectionPlane();
+      },
+    },
+    {
+      id: 'section.createGroupFromSlice',
+      label: 'Create Group from Slice',
+      category: 'Tools',
+      description: 'Make a group of the edges where the selected section plane cuts the geometry',
+      aliases: ['slice', 'section outline', 'cut edges'],
+      isEnabled: hasSectionPlane,
+      run: (editor) => {
+        editor.createGroupFromSlice();
+      },
+    },
+    {
+      id: 'view.sectionPlanes',
+      label: 'Section Planes',
+      category: 'View',
+      description: 'Show or hide section plane rectangles',
+      aliases: ['show section planes', 'hide section planes'],
+      isChecked: (editor) => editor.session.showSectionPlanes,
+      run: (editor) => {
+        editor.setSectionDisplay({ planes: !editor.session.showSectionPlanes });
+      },
+    },
+    {
+      id: 'view.sectionCuts',
+      label: 'Section Cuts',
+      category: 'View',
+      description: 'Turn clipping at active section planes on or off',
+      aliases: ['show section cuts', 'hide section cuts', 'section fill'],
+      isChecked: (editor) => editor.session.showSectionCuts,
+      run: (editor) => {
+        editor.setSectionDisplay({ cuts: !editor.session.showSectionCuts });
+      },
+    },
+    {
+      id: 'view.shadows',
+      label: 'Shadows',
+      category: 'View',
+      description: 'Cast shadows from the sun',
+      aliases: ['sun', 'shade', 'toggle shadows'],
+      isChecked: (editor) => editor.shadowSettings.enabled,
+      run: (editor) => {
+        editor.updateShadowSettings({ enabled: !editor.shadowSettings.enabled });
+      },
+    },
+    {
+      id: 'scene.add',
+      label: 'Add Scene',
+      category: 'View',
+      description: 'Save the current view as a scene',
+      aliases: ['new scene', 'save view', 'page'],
+      run: (editor) => {
+        editor.addScene();
+      },
+    },
+    {
+      id: 'scene.update',
+      label: 'Update Scene',
+      category: 'View',
+      description: 'Save the current view into the active scene',
+      aliases: ['save scene', 'overwrite scene'],
+      isEnabled: (editor) => editor.activeSceneId !== null,
+      run: (editor) => {
+        editor.updateSceneFromView();
+      },
+    },
+    {
+      id: 'scene.remove',
+      label: 'Delete Scene',
+      category: 'View',
+      aliases: ['remove scene'],
+      isEnabled: (editor) => editor.activeSceneId !== null,
+      run: (editor) => {
+        editor.removeScene();
+      },
+    },
+    {
+      id: 'scene.previous',
+      label: 'Previous Scene',
+      category: 'View',
+      isEnabled: (editor) => editor.session.doc.scenes.length > 0,
+      run: (editor) => {
+        editor.applyAdjacentScene(-1);
+      },
+    },
+    {
+      id: 'scene.next',
+      label: 'Next Scene',
+      category: 'View',
+      isEnabled: (editor) => editor.session.doc.scenes.length > 0,
+      run: (editor) => {
+        editor.applyAdjacentScene(1);
+      },
+    },
+    {
+      id: 'view.animation.play',
+      label: 'Play Animation',
+      category: 'View',
+      description: 'Show the scenes one after another; press Escape to stop',
+      aliases: ['slideshow', 'presentation', 'animate scenes'],
+      isEnabled: (editor) => editor.session.doc.scenes.some((scene) => scene.includeInAnimation),
+      isChecked: (editor) => editor.isAnimationPlaying,
+      run: (editor) => {
+        editor.playAnimation();
+      },
+    },
+    {
+      id: 'view.animation.stop',
+      label: 'Stop Animation',
+      category: 'View',
+      isEnabled: (editor) => editor.isAnimationPlaying,
+      run: (editor) => {
+        editor.stopAnimation();
+      },
+    },
+  );
 }
 
 /** Tags, components, locking and dock panels. */

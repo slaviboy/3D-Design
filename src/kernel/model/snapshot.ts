@@ -1,5 +1,13 @@
-import type { AnnotationId } from '../ids';
+import type { AnnotationId, SceneId, SectionPlaneId } from '../ids';
 import type { AnnotationAnchor, AnnotationData, AnnotationGeometry } from './types';
+import {
+  DEFAULT_SHADOW_SETTINGS,
+  type SceneCamera,
+  type SceneData,
+  type SceneSectionState,
+  type SectionPlaneData,
+  type ShadowSettings,
+} from './types';
 import type {
   CurveId,
   DefinitionId,
@@ -87,6 +95,8 @@ export interface DefinitionSnapshot {
   readonly guides: readonly GuideData[];
   /** Present only when the definition has annotations. */
   readonly annotations?: readonly AnnotationData[];
+  /** Present only when the definition has section planes. */
+  readonly sectionPlanes?: readonly SectionPlaneData[];
 }
 
 /** Plain-JSON form of a document's contents. History is not included. */
@@ -102,6 +112,10 @@ export interface DocumentSnapshot {
   readonly axes?: ModelAxes;
   /** Present only when the document stores texture images. */
   readonly textures?: readonly TextureAssetSnapshot[];
+  /** Present only when the shadow settings differ from the default. */
+  readonly shadows?: ShadowSettings;
+  /** Present only when the document has scenes. In display order. */
+  readonly scenes?: readonly SceneData[];
 }
 
 /** The encoded image of every texture asset, keyed by SHA-256 digest, for storing next to a snapshot. */
@@ -113,6 +127,62 @@ export function snapshotTextureFiles(
     files.set(sha256Hex(asset.bytes), { mimeType: asset.mimeType, bytes: asset.bytes });
   }
   return files;
+}
+
+const shadowCopy = (s: ShadowSettings): ShadowSettings => ({
+  enabled: s.enabled,
+  dateTime: s.dateTime,
+  latitude: s.latitude,
+  longitude: s.longitude,
+  northAngle: s.northAngle,
+  light: s.light,
+  dark: s.dark,
+  useSunForShading: s.useSunForShading,
+  onFaces: s.onFaces,
+  onGround: s.onGround,
+});
+
+function isDefaultShadows(s: ShadowSettings): boolean {
+  const defaults = DEFAULT_SHADOW_SETTINGS;
+  return (Object.keys(defaults) as (keyof ShadowSettings)[]).every((key) => Object.is(s[key], defaults[key]));
+}
+
+function sceneCopy(scene: SceneData): SceneData {
+  const vector = (v: Vec3): Vec3 => ({ x: v.x, y: v.y, z: v.z });
+  const camera = scene.camera;
+  return {
+    id: scene.id,
+    name: scene.name,
+    description: scene.description,
+    includeInAnimation: scene.includeInAnimation,
+    saves: {
+      camera: scene.saves.camera,
+      visibleTags: scene.saves.visibleTags,
+      activeSections: scene.saves.activeSections,
+      shadows: scene.saves.shadows,
+      axes: scene.saves.axes,
+    },
+    camera: camera
+      ? {
+          eye: vector(camera.eye),
+          target: vector(camera.target),
+          up: vector(camera.up),
+          fovDegrees: camera.fovDegrees,
+          projection: camera.projection,
+          orthoHalfHeight: camera.orthoHalfHeight,
+        }
+      : null,
+    hiddenTags: scene.hiddenTags ? [...scene.hiddenTags] : null,
+    sections: scene.sections ? scene.sections.map((s) => ({ context: s.context, plane: s.plane })) : null,
+    shadows: scene.shadows ? shadowCopy(scene.shadows) : null,
+    axes: scene.axes
+      ? {
+          origin: vector(scene.axes.origin),
+          xAxis: vector(scene.axes.xAxis),
+          yAxis: vector(scene.axes.yAxis),
+        }
+      : null,
+  };
 }
 
 // -------------------------------------------------------------------------------------------------- writing
@@ -285,6 +355,17 @@ export function createSnapshot(doc: ModelDocument): DocumentSnapshot {
                 },
               })),
             }),
+        ...(store.sectionPlaneCount === 0
+          ? {}
+          : {
+              sectionPlanes: [...store.sectionPlanes()].sort(byId).map((s) => ({
+                id: s.id,
+                name: s.name,
+                point: vec(s.point),
+                normal: vec(s.normal),
+                active: s.active,
+              })),
+            }),
       };
     }),
     ...(isDefaultAxes(doc.axes)
@@ -303,6 +384,8 @@ export function createSnapshot(doc: ModelDocument): DocumentSnapshot {
             sha256: sha256Hex(asset.bytes),
           })),
         }),
+    ...(isDefaultShadows(doc.shadows) ? {} : { shadows: shadowCopy(doc.shadows) }),
+    ...(doc.scenes.length === 0 ? {} : { scenes: doc.scenes.map(sceneCopy) }),
   };
 }
 
@@ -680,6 +763,93 @@ function readDefinition(
         };
       },
     ),
+    sectionPlanes: (d.sectionPlanes === undefined
+      ? []
+      : r.list(d.sectionPlanes, `${path}.sectionPlanes`)
+    ).map((entry, i) => {
+      const p = at('sectionPlanes', i);
+      const s = r.record(entry, p);
+      return {
+        id: r.id<SectionPlaneId>(s.id, `${p}.id`),
+        name: r.string(s.name, `${p}.name`),
+        point: r.vec3(s.point, `${p}.point`),
+        normal: r.vec3(s.normal, `${p}.normal`),
+        active: r.boolean(s.active, `${p}.active`),
+      };
+    }),
+  };
+}
+
+function readShadows(r: Reader, value: unknown, path: string): ShadowSettings {
+  const s = r.record(value, path);
+  return {
+    enabled: r.boolean(s.enabled, `${path}.enabled`),
+    dateTime: r.string(s.dateTime, `${path}.dateTime`),
+    latitude: r.number(s.latitude, `${path}.latitude`),
+    longitude: r.number(s.longitude, `${path}.longitude`),
+    northAngle: r.number(s.northAngle, `${path}.northAngle`),
+    light: r.number(s.light, `${path}.light`),
+    dark: r.number(s.dark, `${path}.dark`),
+    useSunForShading: r.boolean(s.useSunForShading, `${path}.useSunForShading`),
+    onFaces: r.boolean(s.onFaces, `${path}.onFaces`),
+    onGround: r.boolean(s.onGround, `${path}.onGround`),
+  };
+}
+
+function readScene(r: Reader, value: unknown, path: string): SceneData {
+  const s = r.record(value, path);
+  const saves = r.record(s.saves, `${path}.saves`);
+  const nullable = <T>(field: unknown, read: () => T): T | null => (field === null ? null : read());
+  return {
+    id: r.id<SceneId>(s.id, `${path}.id`),
+    name: r.string(s.name, `${path}.name`),
+    description: r.string(s.description, `${path}.description`),
+    includeInAnimation: r.boolean(s.includeInAnimation, `${path}.includeInAnimation`),
+    saves: {
+      camera: r.boolean(saves.camera, `${path}.saves.camera`),
+      visibleTags: r.boolean(saves.visibleTags, `${path}.saves.visibleTags`),
+      activeSections: r.boolean(saves.activeSections, `${path}.saves.activeSections`),
+      shadows: r.boolean(saves.shadows, `${path}.saves.shadows`),
+      axes: r.boolean(saves.axes, `${path}.saves.axes`),
+    },
+    camera: nullable(s.camera, (): SceneCamera => {
+      const c = r.record(s.camera, `${path}.camera`);
+      if (c.projection !== 'perspective' && c.projection !== 'parallel') {
+        r.fail(`${path}.camera.projection`, 'expected "perspective" or "parallel"');
+      }
+      return {
+        eye: r.vec3(c.eye, `${path}.camera.eye`),
+        target: r.vec3(c.target, `${path}.camera.target`),
+        up: r.vec3(c.up, `${path}.camera.up`),
+        fovDegrees: r.number(c.fovDegrees, `${path}.camera.fovDegrees`),
+        projection: c.projection === 'parallel' ? 'parallel' : 'perspective',
+        orthoHalfHeight: r.number(c.orthoHalfHeight, `${path}.camera.orthoHalfHeight`),
+      };
+    }),
+    hiddenTags: nullable(s.hiddenTags, () =>
+      r
+        .list(s.hiddenTags, `${path}.hiddenTags`)
+        .map((id, i) => r.id<TagId>(id, `${path}.hiddenTags[${String(i)}]`)),
+    ),
+    sections: nullable(s.sections, () =>
+      r.list(s.sections, `${path}.sections`).map((entry, i): SceneSectionState => {
+        const p = `${path}.sections[${String(i)}]`;
+        const e = r.record(entry, p);
+        return {
+          context: r.id<DefinitionId>(e.context, `${p}.context`),
+          plane: r.nullableId<SectionPlaneId>(e.plane, `${p}.plane`),
+        };
+      }),
+    ),
+    shadows: nullable(s.shadows, () => readShadows(r, s.shadows, `${path}.shadows`)),
+    axes: nullable(s.axes, () => {
+      const a = r.record(s.axes, `${path}.axes`);
+      return {
+        origin: r.vec3(a.origin, `${path}.axes.origin`),
+        xAxis: r.vec3(a.xAxis, `${path}.axes.xAxis`),
+        yAxis: r.vec3(a.yAxis, `${path}.axes.yAxis`),
+      };
+    }),
   };
 }
 
@@ -733,6 +903,12 @@ export function restoreSnapshot(
         yAxis: r.vec3(axesRecord.yAxis, '$.axes.yAxis'),
       }
     : null;
+  // Documents saved before shadow settings and scenes existed have neither.
+  const shadows = root.shadows === undefined ? null : readShadows(r, root.shadows, '$.shadows');
+  const scenes =
+    root.scenes === undefined
+      ? []
+      : r.list(root.scenes, '$.scenes').map((entry, i) => readScene(r, entry, `$.scenes[${String(i)}]`));
   if (r.errors.length > 0) return err(`Invalid document structure: ${r.errors.join('; ')}`);
 
   const allIds = [
@@ -748,7 +924,9 @@ export function restoreSnapshot(
       ...d.instances.map((instance) => instance.id),
       ...d.guides.map((g) => g.id),
       ...(d.annotations ?? []).map((a) => a.id),
+      ...(d.sectionPlanes ?? []).map((s) => s.id),
     ]),
+    ...scenes.map((scene) => scene.id),
   ];
   const seen = new Set<number>();
   for (const id of allIds) {
@@ -773,6 +951,8 @@ export function restoreSnapshot(
       changes.push({ kind: 'definition.add', data: { id: d.id, name: d.name, isGroup: d.isGroup } });
   }
   if (axes) changes.push({ kind: 'document.axes', from: DEFAULT_MODEL_AXES, to: axes });
+  if (shadows) changes.push({ kind: 'document.shadows', from: DEFAULT_SHADOW_SETTINGS, to: shadows });
+  scenes.forEach((data, index) => changes.push({ kind: 'scene.add', data, index }));
   for (const data of textures) changes.push({ kind: 'asset.add', data });
   for (const data of materials) changes.push({ kind: 'material.add', data });
   for (const data of tags) changes.push({ kind: 'tag.add', data });
@@ -784,6 +964,7 @@ export function restoreSnapshot(
     for (const data of d.curves) changes.push({ kind: 'curve.add', context, data });
     for (const data of d.guides) changes.push({ kind: 'guide.add', context, data });
     for (const data of d.annotations ?? []) changes.push({ kind: 'annotation.add', context, data });
+    for (const data of d.sectionPlanes ?? []) changes.push({ kind: 'section.add', context, data });
   }
   for (const d of definitions) {
     for (const data of d.instances) changes.push({ kind: 'instance.add', context: d.id, data });

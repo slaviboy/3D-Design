@@ -17,6 +17,8 @@ import { isTextureMimeType, readImageHeader, textureBytesProblem } from './asset
 import type { EntityStore, FaceView } from './EntityStore';
 import { materialProblem, texturePlacementProblem } from './mutations';
 import type { ModelDocument } from './ModelDocument';
+import { parseLocalDateTime } from '../sun/solar';
+import type { ShadowSettings } from './types';
 
 export interface ValidationReport {
   readonly ok: boolean;
@@ -217,6 +219,24 @@ function validateStore(doc: ModelDocument, store: EntityStore, report: Reporter)
       report('missing-reference', 'Annotation references a missing tag', [annotation.id]);
   }
 
+  // Section planes: finite, unit normal, at most one active.
+  let activeSections = 0;
+  for (const plane of store.sectionPlanes()) {
+    if (!isFiniteVec3(plane.point) || !isFiniteVec3(plane.normal)) {
+      report('invalid-section-plane', 'Section plane has non-finite coordinates', [plane.id]);
+    } else if (Math.abs(length(plane.normal) - 1) > EPS_UNIT_LENGTH) {
+      report('invalid-section-plane', 'Section plane normal is not a unit vector', [plane.id]);
+    }
+    if (plane.active) activeSections++;
+  }
+  if (activeSections > 1) {
+    report(
+      'multiple-active-sections',
+      'More than one section plane is active in a context',
+      [...store.sectionPlanes()].filter((plane) => plane.active).map((plane) => plane.id),
+    );
+  }
+
   validateWelding(store, report);
   validateEdgeIntersections(store, report);
   validateCoplanarFaces(store, report);
@@ -415,6 +435,23 @@ function validateDocumentLevel(doc: ModelDocument, report: Reporter): void {
       report(code, problem, [material.id]);
     }
   }
+  if (!shadowSettingsValid(doc.shadows)) {
+    report('invalid-shadows', 'Shadow settings are out of range or have an invalid date and time', []);
+  }
+  // Scenes may refer to tags, contexts and section planes deleted since they were saved; those are skipped on apply.
+  for (const scene of doc.scenes) {
+    const camera = scene.camera;
+    const cameraValid =
+      !camera ||
+      ([camera.eye, camera.target, camera.up].every(isFiniteVec3) &&
+        Number.isFinite(camera.fovDegrees) &&
+        Number.isFinite(camera.orthoHalfHeight));
+    if (scene.name.trim() === '' || !cameraValid || (scene.shadows && !shadowSettingsValid(scene.shadows))) {
+      report('invalid-scene', 'Scene has an empty name, a non-finite camera or invalid shadow settings', [
+        scene.id,
+      ]);
+    }
+  }
   for (const asset of doc.assets()) {
     const header = readImageHeader(asset.bytes);
     const problem = !isTextureMimeType(asset.mimeType)
@@ -425,4 +462,15 @@ function validateDocumentLevel(doc: ModelDocument, report: Reporter): void {
           : null));
     if (problem !== null) report('invalid-asset', `Texture asset is invalid: ${problem}`, [asset.id]);
   }
+}
+
+function shadowSettingsValid(settings: ShadowSettings): boolean {
+  const { latitude, longitude, northAngle, light, dark } = settings;
+  return (
+    parseLocalDateTime(settings.dateTime) !== null &&
+    [latitude, longitude, northAngle, light, dark].every(Number.isFinite) &&
+    Math.abs(latitude) <= 90 &&
+    Math.abs(longitude) <= 180 &&
+    [light, dark].every((value) => value >= 0 && value <= 1)
+  );
 }

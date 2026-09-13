@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { ModelRenderer } from './ModelRenderer';
-import { AMBIENT_LIGHT_INTENSITY, SUN_DIRECTION, SUN_LIGHT_INTENSITY, VIEW_COLORS } from './palette';
+import { VIEW_COLORS } from './palette';
+import { SectionOverlay } from './sections/SectionOverlay';
+import { ShadowController } from './shadows/ShadowController';
 import type { ViewSource } from './ViewSource';
 
 /** Largest device pixel ratio rendered; higher ratios cost fill rate for little visible gain. */
@@ -56,12 +58,16 @@ export class Viewport {
   readonly #perspective = new THREE.PerspectiveCamera();
   readonly #orthographic = new THREE.OrthographicCamera();
   readonly #model: ModelRenderer;
+  readonly #shadows: ShadowController;
+  readonly #sections = new SectionOverlay();
   readonly #axes = buildAxes();
   readonly #resizeObserver: ResizeObserver;
   readonly #unsubscribe: () => void;
   #frame: number | null = null;
   #width = 1;
   #height = 1;
+  /** Lights, shadows and sections need refreshing; camera moves alone never set this. */
+  #lightingDirty = true;
 
   /** Throws when WebGL is unavailable; the caller reports that to the user. */
   constructor(container: HTMLElement, source: ViewSource, callbacks: ViewportCallbacks = {}) {
@@ -71,6 +77,7 @@ export class Viewport {
     this.#renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     this.#renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
     this.#renderer.setClearColor(VIEW_COLORS.background);
+    this.#renderer.localClippingEnabled = true;
     this.canvas = this.#renderer.domElement;
     this.canvas.style.display = 'block';
     this.canvas.style.width = '100%';
@@ -78,17 +85,18 @@ export class Viewport {
     container.append(this.canvas);
 
     for (const camera of [this.#perspective, this.#orthographic]) camera.up.set(0, 0, 1);
-    const sun = new THREE.DirectionalLight(0xffffff, SUN_LIGHT_INTENSITY);
-    sun.position.set(SUN_DIRECTION.x, SUN_DIRECTION.y, SUN_DIRECTION.z);
-    this.#scene.add(new THREE.AmbientLight(0xffffff, AMBIENT_LIGHT_INTENSITY), sun, this.#axes);
+    this.#shadows = new ShadowController(this.#renderer);
+    this.#scene.add(...this.#shadows.objects, this.#axes);
 
     this.#model = new ModelRenderer(source, () => {
       this.requestRender();
     });
-    this.#scene.add(this.#model.root, this.#model.overlay, this.#model.preview);
+    this.#scene.add(this.#model.root, this.#sections.group, this.#model.overlay, this.#model.preview);
 
     this.#unsubscribe = source.subscribe((change) => {
       this.#model.handleChange(change);
+      this.#sections.handleChange(change);
+      if (change.kind !== 'camera') this.#lightingDirty = true;
       this.requestRender();
     });
     this.#resizeObserver = new ResizeObserver(() => {
@@ -120,6 +128,8 @@ export class Viewport {
     this.#unsubscribe();
     this.#resizeObserver.disconnect();
     this.#model.dispose();
+    this.#sections.dispose();
+    this.#shadows.dispose();
     this.#axes.traverse((object) => {
       if (object instanceof THREE.Line) {
         (object.geometry as THREE.BufferGeometry).dispose();
@@ -142,7 +152,12 @@ export class Viewport {
   }
 
   #render(): void {
-    this.#model.update();
+    const changed = this.#model.update();
+    if (changed || this.#lightingDirty) {
+      this.#sections.update(this.#source, this.#model.root);
+      this.#shadows.update(this.#renderer, this.#source.doc.shadows, this.#model.root, this.#model.bounds());
+      this.#lightingDirty = false;
+    }
     const camera = this.#syncCamera();
     this.#renderer.render(this.#scene, camera);
   }
