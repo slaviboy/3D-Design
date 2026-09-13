@@ -27,6 +27,15 @@ const PATHS: Readonly<Record<string, string>> = {
   'edit.makeGroup': 'M3 3h14v14H3zM6 6h4v4H6zM11 10h3v4h-3z',
   'edit.makeComponent': 'M3 4h6v6H3zM11 10h6v6h-6zM9 7h5v3',
   'edit.explode': 'M8 8h4v4H8zM3 3l3 3M17 3l-3 3M3 17l3-3M17 17l-3-3',
+  'tool.rotate': 'M16 10a6 6 0 1 1-2-4.5M15 2v4h-4',
+  'tool.scale': 'M3 17V9h8v8zM11 9l6-6M12 3h5v5',
+  'tool.arc': 'M10 16H3M10 16l5-8M3 16a7 7 0 0 1 12-8',
+  'tool.twoPointArc': 'M3 15a7.5 7.5 0 0 1 14 0M2 14h2v2H2zM16 14h2v2h-2z',
+  'tool.threePointArc': 'M3 15a7.5 7.5 0 0 1 14 0M2 14h2v2H2zM9 6.5h2v2H9zM16 14h2v2h-2z',
+  'tool.pie': 'M10 10V3a7 7 0 1 1-7 7z',
+  'tool.freehand': 'M3 14c2-6 4 2 6-3s3-5 5-1 2 4 3 2',
+  'tool.rotatedRectangle': 'M10 2l8 8-8 8-8-8z',
+  'tool.protractor': 'M3 15a7 7 0 0 1 14 0zM10 15l4-6',
 };
 
 export function hasIcon(commandId: string): boolean {

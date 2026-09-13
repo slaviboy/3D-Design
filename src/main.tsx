@@ -2,7 +2,9 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AutosaveController } from './app/autosave/AutosaveController';
 import { Editor } from './app/Editor';
+import { projectToScreen } from './app/camera/camera';
 import type { Platform } from './app/shortcuts/shortcuts';
+import { vec3 } from './kernel/math/vec3';
 import { createEditorStore } from './app/stores/editorStore';
 import { createBrowserFileAccess } from './io/fs/browserFileAccess';
 import { IndexedDbRecoveryRepository, openPlanarDatabase } from './io/idb/recovery';
@@ -13,7 +15,11 @@ import './ui/shell/base.css';
 declare global {
   interface Window {
     /** End-to-end test access, present only in `--mode e2e` builds. */
-    __planar?: { readonly editor: Editor };
+    __planar?: {
+      readonly editor: Editor;
+      /** Viewport pixel position of a world point, or null when it is behind the camera. */
+      readonly screenOf: (point: { x: number; y: number; z: number }) => { x: number; y: number } | null;
+    };
   }
 }
 
@@ -39,7 +45,13 @@ async function start(): Promise<void> {
     confirmDiscardChanges: (name) => Promise.resolve(window.confirm(`Discard unsaved changes to "${name}"?`)),
   });
   const store = createEditorStore(editor);
-  if (__PLANAR_TEST_HOOKS__) window.__planar = { editor };
+  if (__PLANAR_TEST_HOOKS__) {
+    window.__planar = {
+      editor,
+      screenOf: (point) =>
+        projectToScreen(editor.session.camera, vec3(point.x, point.y, point.z), editor.viewportSize),
+    };
+  }
 
   let recovery: RecoveryOptions | undefined;
   try {

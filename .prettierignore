@@ -6,3 +6,4 @@ test-results/
 package-lock.json
 bench/results/
 *.md
+.claude/

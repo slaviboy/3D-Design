@@ -1,6 +1,18 @@
 import { invertAffine, transformDirection, transformNormal, transformPoint } from '../../kernel/math/mat4';
 import { planeFromPointNormal, type Plane } from '../../kernel/math/plane';
-import { AXIS_X, AXIS_Y, AXIS_Z, cross, dot, normalize, scale, sub, type Vec3 } from '../../kernel/math/vec3';
+import {
+  AXIS_X,
+  AXIS_Y,
+  AXIS_Z,
+  cross,
+  distance,
+  dot,
+  normalize,
+  scale,
+  sub,
+  type Vec3,
+} from '../../kernel/math/vec3';
+import { EPS_LEN } from '../../kernel/tolerance';
 import type { ModelDocument, TransactionRecord } from '../../kernel/model/ModelDocument';
 import { formatLength } from '../../kernel/units/units';
 import { cameraBasis, type ScreenPoint } from '../camera/camera';
@@ -17,16 +29,58 @@ export interface InferOptions {
   readonly fallbackPlane?: Plane;
 }
 
+/** How many recently hovered points and edges linear inferences refer to. */
+const REMEMBERED_POINTS = 2;
+const REMEMBERED_EDGES = 1;
+
+interface InferenceMemory {
+  doc: ModelDocument;
+  points: Vec3[];
+  edges: { readonly a: Vec3; readonly b: Vec3 }[];
+}
+
+const memories = new WeakMap<Editor, InferenceMemory>();
+
+function memoryFor(editor: Editor): InferenceMemory {
+  const doc = editor.session.doc;
+  let memory = memories.get(editor);
+  if (memory?.doc !== doc) {
+    memory = { doc, points: [], edges: [] };
+    memories.set(editor, memory);
+  }
+  return memory;
+}
+
+/** Remembers the points and edges the pointer snapped to, for later parallel, extension and from-point inferences. */
+function remember(memory: InferenceMemory, inference: Inference): void {
+  const { kind, point, edge } = inference;
+  if (kind === 'endpoint' || kind === 'midpoint' || kind === 'center') {
+    if (!memory.points.some((known) => distance(known, point) <= EPS_LEN)) {
+      memory.points = [point, ...memory.points].slice(0, REMEMBERED_POINTS);
+    }
+  }
+  if (edge && (kind === 'endpoint' || kind === 'midpoint' || kind === 'on-edge')) {
+    const known = memory.edges.some(
+      (other) => distance(other.a, edge.a) <= EPS_LEN && distance(other.b, edge.b) <= EPS_LEN,
+    );
+    if (!known) memory.edges = [edge, ...memory.edges].slice(0, REMEMBERED_EDGES);
+  }
+}
+
 export function inferAt(editor: Editor, screen: ScreenPoint, options: InferOptions = {}): Inference {
   const { session } = editor;
-  return infer(session.doc, session.activeContext, session.activeContextTransform, {
+  const memory = memoryFor(editor);
+  const inference = infer(session.doc, session.activeContext, session.activeContextTransform, {
     camera: session.camera,
     size: editor.viewportSize,
     screen,
+    references: memory,
     ...(options.anchor ? { anchor: options.anchor } : {}),
     ...(options.lockDirection ? { lockDirection: options.lockDirection } : {}),
     ...(options.fallbackPlane ? { fallbackPlane: options.fallbackPlane } : {}),
   });
+  remember(memory, inference);
+  return inference;
 }
 
 function worldToLocal(editor: Editor) {

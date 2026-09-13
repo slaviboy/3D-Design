@@ -36,7 +36,25 @@ import type { EntityRef } from '../selection/Selection';
 export type Axis = 'x' | 'y' | 'z';
 
 export type InferenceKind =
-  'endpoint' | 'midpoint' | 'center' | 'origin' | 'on-edge' | 'on-face' | 'on-axis' | 'locked' | 'free';
+  | 'endpoint'
+  | 'midpoint'
+  | 'center'
+  | 'origin'
+  | 'on-edge'
+  | 'on-face'
+  | 'on-axis'
+  | 'parallel'
+  | 'perpendicular'
+  | 'extension'
+  | 'from-point'
+  | 'locked'
+  | 'free';
+
+/** Recently hovered geometry that linear inferences refer to (parallel, perpendicular, extension, from point). */
+export interface InferenceReferences {
+  readonly points: readonly Vec3[];
+  readonly edges: readonly { readonly a: Vec3; readonly b: Vec3 }[];
+}
 
 /** The point a drawing or editing tool should use for the cursor, and why. */
 export interface Inference {
@@ -68,6 +86,8 @@ export interface InferenceRequest {
   /** Plane for points where nothing is under the cursor. Defaults to a plane through the anchor, or the ground. */
   readonly fallbackPlane?: Plane;
   readonly tolerancePx?: number;
+  /** Recently hovered points and edges for linear inferences. */
+  readonly references?: InferenceReferences;
 }
 
 export const DEFAULT_INFERENCE_TOLERANCE_PX = 10;
@@ -89,8 +109,22 @@ const PRIORITY: Readonly<Record<InferenceKind, number>> = {
   'on-edge': 3,
   'on-face': 4,
   'on-axis': 2,
+  parallel: 2,
+  perpendicular: 2,
+  extension: 3,
+  'from-point': 3,
   locked: 0,
   free: 5,
+};
+
+/** Among linear inferences within this many pixels of each other, the lower rank wins. */
+const LINEAR_TIE_PX = 0.5;
+const LINEAR_RANK: Partial<Record<InferenceKind, number>> = {
+  'on-axis': 0,
+  parallel: 1,
+  perpendicular: 1,
+  extension: 2,
+  'from-point': 2,
 };
 
 interface Candidate {
@@ -223,18 +257,17 @@ export function infer(
 
   if (geometric && PRIORITY[geometric.inference.kind] <= 1) return withAxis(geometric.inference);
 
-  if (anchor) {
-    let axisCandidate: Candidate | null = null;
-    for (const { axis, direction, label } of AXES) {
-      const point = closestPointOnLineToRay(anchor, direction, ray);
-      const pixels = pixelsTo(point);
-      if (pixels > tolerance || distance(point, anchor) === 0) continue;
-      if (!axisCandidate || pixels < axisCandidate.pixels) {
-        axisCandidate = { inference: { point, kind: 'on-axis', label, inGroup: false, axis }, pixels };
-      }
+  const linear = bestLinearInference(request, ray, tolerance, pixelsTo);
+  if (linear) {
+    // Lines through the anchor may win a tie with geometry; lines elsewhere only when strictly closer.
+    const throughAnchor = linear.inference.kind !== 'extension' && linear.inference.kind !== 'from-point';
+    if (
+      !geometric ||
+      linear.pixels < geometric.pixels ||
+      (throughAnchor && linear.pixels <= geometric.pixels)
+    ) {
+      return linear.inference.kind === 'on-axis' ? linear.inference : withAxis(linear.inference);
     }
-    if (axisCandidate && (!geometric || axisCandidate.pixels <= geometric.pixels))
-      return axisCandidate.inference;
   }
 
   if (geometric) return withAxis(geometric.inference);
@@ -259,6 +292,82 @@ export function infer(
   }
 
   return withAxis({ point: freePoint(request, ray), kind: 'free', label: '', inGroup: false });
+}
+
+/**
+ * The closest linear inference: an axis, or a line parallel or perpendicular to a recent edge, through the anchor;
+ * the extension of a recent edge; or an axis line through a recent point.
+ */
+function bestLinearInference(
+  request: InferenceRequest,
+  ray: Ray,
+  tolerance: number,
+  pixelsTo: (point: Vec3) => number,
+): Candidate | null {
+  const { anchor, references } = request;
+  let best: Candidate | null = null;
+  const offer = (inference: Inference): void => {
+    const pixels = pixelsTo(inference.point);
+    if (pixels > tolerance) return;
+    const rank = LINEAR_RANK[inference.kind] ?? 0;
+    const bestRank = best ? (LINEAR_RANK[best.inference.kind] ?? 0) : 0;
+    if (
+      !best ||
+      pixels < best.pixels - LINEAR_TIE_PX ||
+      (pixels <= best.pixels + LINEAR_TIE_PX && rank < bestRank) ||
+      (Math.abs(pixels - best.pixels) <= LINEAR_TIE_PX && rank === bestRank && pixels < best.pixels)
+    ) {
+      best = { inference, pixels };
+    }
+  };
+
+  if (anchor) {
+    for (const { axis, direction, label } of AXES) {
+      const point = closestPointOnLineToRay(anchor, direction, ray);
+      if (distance(point, anchor) > 0) offer({ point, kind: 'on-axis', label, inGroup: false, axis });
+    }
+    for (const edge of references?.edges ?? []) {
+      const along = normalize(sub(edge.b, edge.a));
+      // Axis-aligned edges add nothing the axis inferences don't already give.
+      if (!along || axisOf(along)) continue;
+      const parallel = closestPointOnLineToRay(anchor, along, ray);
+      if (distance(parallel, anchor) > 0) {
+        offer({ point: parallel, kind: 'parallel', label: 'Parallel to Edge', inGroup: false, edge });
+      }
+      const planeNormal = normalize(cross(along, sub(anchor, edge.a))) ?? AXIS_Z;
+      const across = normalize(cross(planeNormal, along));
+      if (!across) continue;
+      const perpendicular = closestPointOnLineToRay(anchor, across, ray);
+      if (distance(perpendicular, anchor) > 0) {
+        offer({
+          point: perpendicular,
+          kind: 'perpendicular',
+          label: 'Perpendicular to Edge',
+          inGroup: false,
+          edge,
+        });
+      }
+    }
+  }
+
+  for (const edge of references?.edges ?? []) {
+    const along = normalize(sub(edge.b, edge.a));
+    if (!along) continue;
+    const point = closestPointOnLineToRay(edge.a, along, ray);
+    const parameter = dot(sub(point, edge.a), along);
+    if (parameter < 0 || parameter > distance(edge.a, edge.b)) {
+      offer({ point, kind: 'extension', label: 'On Edge Extension', inGroup: false, edge });
+    }
+  }
+  for (const reference of references?.points ?? []) {
+    for (const { direction } of AXES) {
+      const point = closestPointOnLineToRay(reference, direction, ray);
+      if (distance(point, reference) > 0) {
+        offer({ point, kind: 'from-point', label: 'From Point', inGroup: false });
+      }
+    }
+  }
+  return best;
 }
 
 /** Where a ray meets the fallback plane: the given one, a plane through the anchor, or the ground. */

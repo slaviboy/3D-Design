@@ -2,6 +2,8 @@ import type { EdgeId, FaceId, InstanceId } from '../kernel/ids';
 import { ModelDocument } from '../kernel/model/ModelDocument';
 import { deleteFaces, eraseEdges } from '../kernel/ops/erase';
 import { deleteInstances, explodeInstance, makeComponent, makeGroup } from '../kernel/ops/hierarchy';
+import { transformEntities } from '../kernel/ops/transform';
+import { vec3 } from '../kernel/math/vec3';
 import { METRIC_UNIT_SETTINGS, type UnitSettings } from '../kernel/units/units';
 import { parseMeasurement } from '../kernel/vcb/parseMeasurement';
 import { decodePlanarFile, encodePlanarFile, PLANAR_FILE_EXTENSION } from '../io/format/planarFile';
@@ -30,20 +32,29 @@ import { allSelectableRefs } from './selection/queries';
 import { Selection, type EntityRef } from './selection/Selection';
 import { EditorSession, UNTITLED_DOCUMENT_NAME } from './session/EditorSession';
 import { chordFromKeyboard, ShortcutMap, type KeyChordInput, type Platform } from './shortcuts/shortcuts';
+import { ArcTool } from './tools/ArcTool';
 import { CircleTool } from './tools/CircleTool';
 import { EraserTool } from './tools/EraserTool';
+import { FreehandTool } from './tools/FreehandTool';
 import { LineTool } from './tools/LineTool';
 import { MoveTool } from './tools/MoveTool';
 import { createOrbitTool, createPanTool, createZoomTool } from './tools/NavigationTools';
+import { ProtractorTool } from './tools/ProtractorTool';
 import { PushPullTool } from './tools/PushPullTool';
 import { RectangleTool } from './tools/RectangleTool';
+import { RotatedRectangleTool } from './tools/RotatedRectangleTool';
+import { RotateTool } from './tools/RotateTool';
+import { ScaleTool } from './tools/ScaleTool';
 import { SelectTool } from './tools/SelectTool';
 import { TapeMeasureTool } from './tools/TapeMeasureTool';
 import { SELECT_TOOL_ID } from './tools/Tool';
 import { ToolManager } from './tools/ToolManager';
+import { refsOfResult, scalingAbout, selectionBounds, transformSelectionOf } from './tools/transformSupport';
 
 /** Characters that start typing into the measurements box. Once typing has started, any character continues it. */
 const MEASUREMENT_START = /^[0-9.,\-[</]$/;
+
+const FLIP_AXIS_NAMES = { x: 'Red', y: 'Green', z: 'Blue' } as const;
 
 /** Orbit speed for mouse drags. */
 export const ORBIT_RADIANS_PER_PIXEL = 0.008;
@@ -123,6 +134,15 @@ export class Editor {
         new TapeMeasureTool(),
         new PushPullTool(),
         new MoveTool(),
+        new RotateTool(),
+        new ScaleTool(),
+        new ArcTool('center'),
+        new ArcTool('two-point'),
+        new ArcTool('three-point'),
+        new ArcTool('pie'),
+        new FreehandTool(),
+        new RotatedRectangleTool(),
+        new ProtractorTool(),
       ],
       SELECT_TOOL_ID,
     );
@@ -360,6 +380,23 @@ export class Editor {
       eraseEdges(doc, context, selection.ids('edge') as EdgeId[]);
     });
     session.setSelection(Selection.EMPTY);
+  }
+
+  /** Mirrors the selection across the plane through its center, perpendicular to an axis of the open context. */
+  flipSelection(axis: 'x' | 'y' | 'z'): void {
+    const { session } = this;
+    if (session.selection.isEmpty) return;
+    this.tools.cancel();
+    const selection = transformSelectionOf(session.selection);
+    const box = selectionBounds(this, selection);
+    if (!box) return;
+    const center = vec3((box.minX + box.maxX) / 2, (box.minY + box.maxY) / 2, (box.minZ + box.maxZ) / 2);
+    const factors = vec3(axis === 'x' ? -1 : 1, axis === 'y' ? -1 : 1, axis === 'z' ? -1 : 1);
+    const doc = session.doc;
+    const result = doc.transact(`Flip Along ${FLIP_AXIS_NAMES[axis]}`, () =>
+      transformEntities(doc, session.activeContext, selection, scalingAbout(center, factors)),
+    );
+    session.setSelection(Selection.of(refsOfResult(result)));
   }
 
   // ---------------------------------------------------------------------------------------------- groups & components

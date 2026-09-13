@@ -47,7 +47,7 @@ function boundaryConfig({ layer, packages, layers }) {
 }
 
 export default defineConfig(
-  { ignores: ['dist/', 'dev-dist/', 'coverage/', 'playwright-report/', 'test-results/'] },
+  { ignores: ['dist/', 'dev-dist/', 'coverage/', 'playwright-report/', 'test-results/', '.claude/'] },
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,
   tseslint.configs.stylisticTypeChecked,

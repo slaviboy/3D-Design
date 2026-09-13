@@ -15,6 +15,12 @@ import {
   TAPE_MEASURE_TOOL_ID,
   ZOOM_TOOL_ID,
 } from '../tools/Tool';
+import { ARC_TOOL_ID, PIE_TOOL_ID, THREE_POINT_ARC_TOOL_ID, TWO_POINT_ARC_TOOL_ID } from '../tools/ArcTool';
+import { FREEHAND_TOOL_ID } from '../tools/FreehandTool';
+import { PROTRACTOR_TOOL_ID } from '../tools/ProtractorTool';
+import { ROTATED_RECTANGLE_TOOL_ID } from '../tools/RotatedRectangleTool';
+import { ROTATE_TOOL_ID } from '../tools/RotateTool';
+import { SCALE_TOOL_ID } from '../tools/ScaleTool';
 import type { CommandCategory, CommandDefinition, CommandRegistry } from './CommandRegistry';
 
 type EditorCommand = CommandDefinition<Editor>;
@@ -239,6 +245,31 @@ export function registerDefaultCommands(registry: CommandRegistry<Editor>): void
     toolCommand(PUSH_PULL_TOOL_ID, 'Push/Pull', 'P', ['extrude', 'raise', 'thicken']),
     toolCommand(MOVE_TOOL_ID, 'Move', 'M', ['translate', 'copy', 'array', 'stretch']),
     toolCommand(TAPE_MEASURE_TOOL_ID, 'Tape Measure', 'T', ['measure', 'distance', 'guide']),
+    toolCommand(ROTATE_TOOL_ID, 'Rotate', 'Q', ['turn', 'spin', 'radial array']),
+    toolCommand(SCALE_TOOL_ID, 'Scale', 'S', ['resize', 'stretch', 'mirror', 'enlarge']),
+    toolCommand(PROTRACTOR_TOOL_ID, 'Protractor', null, ['angle', 'angled guide']),
+    toolCommand(ARC_TOOL_ID, 'Arc', null, ['center arc', 'curve'], 'Draw'),
+    toolCommand(TWO_POINT_ARC_TOOL_ID, '2-Point Arc', 'A', ['arc', 'bulge', 'fillet', 'curve'], 'Draw'),
+    toolCommand(THREE_POINT_ARC_TOOL_ID, '3-Point Arc', null, ['arc through points', 'curve'], 'Draw'),
+    toolCommand(PIE_TOOL_ID, 'Pie', null, ['wedge', 'sector'], 'Draw'),
+    toolCommand(FREEHAND_TOOL_ID, 'Freehand', null, ['sketch', 'pen', 'polyline'], 'Draw'),
+    toolCommand(
+      ROTATED_RECTANGLE_TOOL_ID,
+      'Rotated Rectangle',
+      null,
+      ['angled rectangle', 'tilted box'],
+      'Draw',
+    ),
+    ...(['x', 'y', 'z'] as const).map((axis): EditorCommand => ({
+      id: `edit.flip${axis.toUpperCase()}`,
+      label: `Flip Along ${{ x: 'Red', y: 'Green', z: 'Blue' }[axis]} Direction`,
+      category: 'Edit',
+      aliases: ['mirror', 'flip'],
+      isEnabled: hasSelection,
+      run: (editor) => {
+        editor.flipSelection(axis);
+      },
+    })),
     toolCommand(ORBIT_TOOL_ID, 'Orbit', 'O', ['rotate view', 'turn']),
     toolCommand(PAN_TOOL_ID, 'Pan', 'H', ['hand', 'scroll view']),
     toolCommand(ZOOM_TOOL_ID, 'Zoom', 'Z', ['magnify']),

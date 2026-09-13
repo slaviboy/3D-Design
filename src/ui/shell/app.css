@@ -540,3 +540,22 @@
   border: 1px solid #b9a24c;
   border-radius: 3px;
 }
+
+.inference-marker--parallel,
+.inference-marker--perpendicular {
+  border-color: #b3309a;
+  border-radius: 2px;
+  background: rgb(179 48 154 / 25%);
+}
+
+.inference-marker--extension,
+.inference-marker--from-point {
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  border-width: 1px;
+  border-style: dashed;
+  border-color: #5d6673;
+  border-radius: 50%;
+  background: transparent;
+}
