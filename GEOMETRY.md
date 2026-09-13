@@ -196,16 +196,131 @@ Push/Pull applies to a planar face F. Let `n` be F's normal and `d` the signed d
 Rows marked ⚑ in the behavior matrix are cases where the reference behavior is unclear and must be confirmed before
 this tool is marked done.
 
+## Algorithm: Offset
+
+`offsetFace(doc, context, face, d, { keepOverlaps })` offsets every loop of a face within its plane.
+`offsetEdges(doc, context, edges, d, normal)` offsets one connected, coplanar chain of edges, open or closed. Both
+return `{ edges, faces }`: the edges that carry the offset, and the faces it created.
+
+**Sign conventions**
+
+- **Face:** a positive `d` moves toward the face's interior, so the outer loop shrinks and holes grow. A negative `d`
+  moves away from it.
+- **Edges:** the chain is walked from the first listed edge's `v0` to its `v1`. Looking against `normal` (from its
+  tip down onto the plane), a positive `d` moves to the left of that walking direction. For a chain that runs
+  counter-clockwise in that view, positive is inward.
+
+**Steps**
+
+1. **Project.** Face loops are projected into the face's own basis, where the outer loop is counter-clockwise and
+   holes are clockwise, so the face always lies to the left of every loop. A chain is projected into the basis of
+   `normal`. Refused: a distance that is not finite or not longer than `EPS_LEN`, a chain that branches or is
+   disconnected, and a chain with a vertex farther than `EPS_LEN` from the plane.
+2. **Offset lines.**
+   - A straight edge shifts by `d` along its left normal.
+   - An edge of an arc or circle curve moves radially instead, to the circle with the same center and radius
+     `r − d` (or `r + d` when the center is to the right of the edge). This only applies when the curve's
+     parameters still fit the edge: normal parallel to the plane, center on it, and both endpoints within `EPS_LEN`
+     of the radius. If the new radius would not be longer than `EPS_LEN`, the edge shifts straight instead.
+   - Polygon and polyline edges are straight edges.
+3. **Miter joins.** Consecutive offset lines are intersected. Parallel lines (from collinear edges) meet at the start
+   of the second one. The ends of an open chain are offset perpendicular to their edge, with no end caps.
+4. **Split.** The mitered segments are cut where they cross or collinearly overlap each other. They are also cut
+   where they enter or leave the *clearance capsule* of each source edge: the set of points closer to the edge than
+   that edge's own offset distance (minus `EPS_LEN`). Pieces not longer than `EPS_LEN` are dropped.
+5. **Keep.**
+   - **Clearance.** The midpoint of a kept piece is at least the offset distance (minus `EPS_LEN`) away from every
+     source edge. Pieces that came closer belong to an overlap, an inverted part or a collapsed part. This rule is
+     what catches a convex loop pushed past its center: that loop is point-reflected, so its winding does not change.
+   - **Winding (closed loops only).** Sample points `EPS_LEN / 2` to either side of the piece's midpoint are
+     classified by their total winding number over all offset loops, using exact orientation tests. A piece is kept
+     when exactly one side has winding ≥ 1. This drops swallowtails and merges overlaps. For a closed chain that runs
+     clockwise, the winding is negated first.
+   - **`keepOverlaps` (faces only).** Neither rule is applied, and every mitered segment is inserted as it is. The
+     only exception is a loop in which no segment clears its own source loop: that loop inverted or collapsed as a
+     whole and is dropped.
+   - If nothing is kept, the operation is refused with `KernelError` and the document is unchanged.
+6. **Insert** the pieces with insertSegments (`autoFace: true`). An inward offset splits the face into a ring and an
+   inner face; the largest region keeps the face's id. An outward offset closes a new ring face, which is oriented
+   from the edges it shares with the original face.
+7. **Rebuild curves.** Consecutive surviving pieces that came from one arc or circle become a curve entity. The curve
+   keeps the source parameters with the new radius (so also the same segment count) when all of these hold: every
+   chord survived whole as one edge, the run covers the whole source curve, and its ends were not mitered. Otherwise
+   it becomes a polyline. Straight edges get no curve.
+
+**Limitations**
+
+- Miter joins have no limit, so very sharp corners produce long spikes.
+- Open chains get no round end caps; the trimmed offset simply stops where it enters another edge's capsule.
+- A near-coincident pair of offset segments closer than `EPS_LEN / 2` (but not collinear within `EPS_LEN`) can be
+  misclassified by the winding probe.
+- Pairwise intersection is O(n²) in the number of loop edges.
+- No Clipper dependency is needed.
+
+## Algorithm: Divide, Weld and Explode Curve
+
+- **`divideEdge(doc, context, edge, n)`** returns the edges that replace the edge, in chain order. `n` must be a
+  whole number from 2 to `MAX_CURVE_SEGMENTS` (999), and each part must be longer than `EPS_LEN`.
+  - **Re-dividing an arc or circle.** Suppose the edge belongs to an arc or circle whose edge count equals its
+    `segments` parameter, whose vertices all lie on the circle (arc ends at the parameter angles), and whose inner
+    vertices join only curve edges. Then the whole curve is re-divided:
+    1. New points are generated from the parameters with `n` segments. They are oriented like the old chain: arcs by
+       their start point, circles by their turning direction around the curve normal.
+    2. Old vertices at new positions are reused (always the arc ends).
+    3. Every face loop that used the chain gets the new chain in the same direction of travel. Faces keep their ids.
+    4. The curve keeps its id and parameters, with `segments = n`.
+    5. Old edges and vertices are removed.
+
+    The operation is refused if a new chord would touch any other edge.
+  - **Any other edge** is split with `splitEdge` at `i/n` along its length. A circle, arc or polygon curve that the
+    edge belongs to becomes a polyline, because its parameters no longer describe its edges. This includes a
+    cylinder's rim, whose vertices also carry the side edges.
+- **`weldEdges(doc, context, edges)`** turns a connected, simple chain of at least two edges, open or closed, into one
+  polyline curve and returns its id.
+  - The chain is ordered by walking from the first listed edge's `v0`. Branches, gaps and single edges are refused.
+  - Edges may already belong to curves only if every edge of those curves is selected. Those curves are removed and
+    merged. A selection that is exactly one existing curve returns that curve unchanged.
+  - Welding needs no coplanarity, because polylines may be 3D.
+- **`explodeCurve(doc, context, curve)`** removes the curve entity. Its edges, and their flags, stay.
+
+## Algorithm: Soften by angle
+
+`softenEdgesByAngle(doc, context, edges, { maxAngleRadians, softenCoplanar, smooth })` returns the number of edges
+whose flags changed. A call that changes nothing creates no history entry. `maxAngleRadians` must lie in [0, π].
+
+1. **Measure.** Only an edge with exactly two faces has an angle.
+   - Consistently oriented faces traverse their shared edge in opposite directions. If both traverse it in the same
+     direction, the second normal is flipped first, so the angle measures the fold rather than an orientation
+     mismatch.
+   - The angle is `atan2(|n₁ × n₂|, n₁ · n₂)`: 0 for a flat pair, π/2 for a box edge.
+   - The pair is **coplanar** when the normals point the same way and every vertex of each face lies within `EPS_LEN`
+     of the other face's plane. Coplanarity is never decided by the angle.
+2. **Decide.**
+   - A coplanar pair is softened only with `softenCoplanar`.
+   - Any other pair is softened when its angle is at most `maxAngleRadians`.
+   - A softened edge becomes `soft = true`, `smooth = smooth`.
+   - Every other listed edge, including edges with zero, one or three or more faces, becomes
+     `soft = false, smooth = false`.
+
 ## Other operations
 
 This section is expanded as each operation is implemented.
 
-- **Move, stretch, autofold.** Selected vertices move together with their connected closure. After the move, any
-  non-planar face is creased into planar triangles, with the fold edge placed to avoid the moved vertices. At commit,
-  moved geometry is imprinted and healed against its surroundings.
-- **Offset.** Each loop is offset in the face's 2D basis using miter joins. Arcs are offset analytically. Overlaps are
-  removed by inserting the result into the same planar arrangement engine and keeping regions by winding number, so no
-  Clipper dependency is needed.
+- **Move, rotate, scale, flip, autofold.** All of these go through `transformEntities` with an affine `Mat4`.
+  - **Refusal.** A transform that is not finite or has a singular linear part (a scale factor of 0) is refused before
+    anything changes.
+  - **Detached geometry and copies** are captured as a fragment and inserted again. Face normals are carried by the
+    inverse transpose, so faces stay outward even under a mirror (determinant < 0). Circular curve parameters survive
+    similarity transforms, and non-uniform scaling turns them into polylines.
+  - **Connected geometry** is moved in place, and so is its connected closure.
+    - After the move, any non-planar four-sided face is creased into planar triangles, with the fold edge placed to
+      avoid the moved vertices. Any other bent face, or any bend when autofold is off, is refused.
+    - Under a mirror, every face loop whose vertices all moved is reversed. Otherwise those faces would turn inside
+      out, and a hole would wind like an outline.
+    - Rotating a box's top face about one of its own edges keeps every side face planar, so it needs no fold. A twist
+      about a perpendicular axis does fold the sides.
+  - **Instances** only get the composed transform. A flipped instance has a negative determinant.
+  - **At commit,** moved geometry is imprinted and healed against its surroundings.
 - **Follow Me.** The profile is propagated through miter planes along the path, with stitching for closed paths and
   lathe paths. Edges along a curve path are softened.
 - **Intersect Faces.** For each pair of non-parallel faces, intersect the two planes, clip the resulting line against

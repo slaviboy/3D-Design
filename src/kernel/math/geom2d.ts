@@ -61,6 +61,26 @@ export function classifyPointInRing(p: Point2, ring: readonly Point2[]): RingCla
   return winding === 0 ? 'outside' : 'inside';
 }
 
+/**
+ * Winding number of a closed ring around `p`, with exact orientation tests: +1 inside a counter-clockwise ring, −1
+ * inside a clockwise one, 0 outside. Points exactly on the ring get a deterministic value from one of its sides.
+ */
+export function windingNumber(p: Point2, ring: readonly Point2[]): number {
+  let winding = 0;
+  const count = ring.length;
+  for (let i = 0; i < count; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % count];
+    if (!a || !b) continue;
+    if (a.y <= p.y) {
+      if (b.y > p.y && orient(a, b, p) > 0) winding++;
+    } else if (b.y <= p.y && orient(a, b, p) < 0) {
+      winding--;
+    }
+  }
+  return winding;
+}
+
 /** Classifies a point against a polygon with holes: inside means inside the outer ring and outside every hole. */
 export function classifyPointInPolygon(
   p: Point2,

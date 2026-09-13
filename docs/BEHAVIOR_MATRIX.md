@@ -79,23 +79,40 @@ tool is marked Done.
 
 ## D. Rotate / scale / flip
 
-| # | Scenario | Expected | Extra assertions |
-|---|---|---|---|
-| D1 | B1, then rotate all 90° about the Z axis through the origin | 8/12/6 | Coordinates rotated within EPS; normals rotated |
-| D2 | Rotate with Ctrl copy, then `3x` at 90° | 4 boxes | Radial array |
-| D3 | Scale B1 uniformly by 2 about the corner | 8/12/6 | Volume 8 |
-| D4 | Scale B1 on the blue axis by −1 (mirror) | 8/12/6 | Normals remain outward (orientation corrected) |
-| D5 | Flip a group along red | Transform determinant −1 | Rendered in the mirrored bucket; bounds flipped |
-| D6 | Scale a circle curve non-uniformly | curve → polyline ⚑ | Arc parameters dropped |
-
-## E. Offset
+"Box" is B1 (a unit box made by push/pull, with outward faces). A pivot `p` means the transform is applied about `p`.
 
 | # | Scenario | Expected V/E/F | Extra assertions |
 |---|---|---|---|
-| E1 | `R(2,2)`, offset the face inward by 0.25 | 8/8/2 | Ring + inner face; inner area 2.25 |
-| E2 | `R(2,2)`, offset outward by 0.25 | 8/8/2 | Outer ring face created around the original |
-| E3 | L-shaped face, inward offset larger than the narrow arm half-width | overlaps removed | No self-intersecting loop; Alt keeps overlaps |
-| E4 | Circle face, offset inward by 0.1 | curve kept | Offset result is an arc curve with radius r − 0.1 |
+| D1 | Box, select all, rotate 90° about Z with pivot (1,0,0) | 8/12/6 | Bounds x ∈ [0,1], y ∈ [−1,0]; all normals outward; orientation consistent; undo restores the hash |
+| D2 | Box, rotate the top face 30° about its edge y = 0 (X axis, pivot (0,0,1)), autofold off | 8/12/6 ⚑ verify | Every side face stays planar, so no fold is needed and autofold off is not refused; top rises to z = 1.5 |
+| D3 | Box, twist the top face 30° about Z with pivot (0,0,1) | 8/16/10 | All four side quads fold into triangles; with autofold off the move is refused and the hash is unchanged |
+| D4 | Box at (2,−0.5), rotated copy repeated 5× at 60° steps about Z through the origin | 48/72/36 | Radial array of 6 boxes; 30 new faces. A 6th copy (at 360°) merges with the original: still 48/72/36 |
+| D5 | Box, select all, scale (2, 0.5, 3) about the origin | 8/12/6 | Bounds max (2, 0.5, 3); faces planar and outward |
+| D6 | 12-segment cylinder, select all, scale (2, 1, 1) | 24/36/14 | Both rim curves become polylines (circle parameters dropped); faces outward |
+| D7 | Box, select all, mirror with `scaling(−1,1,1)` about (2,0,0) | 8/12/6 | Box at x ∈ [3,4]; all normals outward. A mirrored copy about y = 2 is outward too (16/24/12) |
+| D8 | Box with a prism pulled 0.5 from a square on its top; mirror the prism's cap and walls across y = 0.5 | 16/24/11 | Moved in place (connected to the top ring). Carried loops are reversed, so the cap still faces +Z; orientation consistent; a symmetric prism stays outward |
+| D9 | Group of a box, flip it along red about x = 0.5 | root 0/0/0; group 8/12/6 | Instance transform determinant −1; the definition is untouched |
+| D10 | Scale by 0 on any axis: detached geometry, a connected face, an instance, inside an array | rejected | `KernelError`; hash unchanged |
+| D11 | Box, scale the top face (2, 0.5, 1) about its center | 8/12/6 | Every face stays planar; top x ∈ [−0.5, 1.5] |
+| D12 | Box, scale top corners (0,0,1) and (1,1,1) by (1, 1, 1.5) about the origin | 8/13/7 | Top face folds along its unmoved diagonal; with autofold off the move is refused and the hash is unchanged |
+
+## E. Offset
+
+Positive distances move toward a face's interior. For edges, they move to the left of the chain direction when looking
+against the given normal (GEOMETRY.md, "Algorithm: Offset").
+
+| # | Scenario | Expected V/E/F | Extra assertions |
+|---|---|---|---|
+| E1 | `R(2,2)`, offset the face inward by 0.25 | 8/8/2 | Ring 1.75 + inner face 2.25; both normals −Z; 1 created face; undo/redo hash identity |
+| E2 | `R(2,2)`, offset outward by 0.25 (distance −0.25) | 8/8/2 | New ring face (area 2.25) with one hole, normal −Z; original area 4 |
+| E3 | L shape (3×3 body + 3×1 arm), inward offset 0.75 (> the arm's half-width 0.5) | 10/10/2 | Arm part removed; inner square area 2.25, ring 9.75. With `keepOverlaps`: 13/14/3 (self-crossing loop kept, tail region becomes a face) |
+| E4 | 24-segment circle face r = 1, offset inward by 0.1 | 48/48/2 | New curve kind `circle`, radius 0.9, 24 segments; every vertex at radius 1 or 0.9 |
+| E5 | `R(2,2)` centered on the origin with a 12-segment circle hole r = 0.25, offset the ring face inward by 0.1 | 32/32/4 | Hole grows: circle curves with radii 0.25 and 0.35 |
+| E6 | Half-disc: 12-segment arc r = 1 closed by its diameter, offset inward by 0.1 | 26/26/2 | Arc ends are mitered against the diameter's offset, so the offset curve is a polyline; the original arc stays |
+| E7 | `R(2,2)` inward by 1.5, 1 or 0 (also 1.5 with `keepOverlaps`); circle r = 0.5 inward by 0.6; ring face whose hole grows past the shrinking outline | rejected | `KernelError`; hash and undo depth unchanged |
+| E8 | Open chain (0,0)→(2,0)→(2,2), offset 0.5 with normal +Z | 6/4/0 | Mitered corner at (1.5, 0.5); start at (0, 0.5). Listing the second edge first with normal −Z lands on the other side |
+| E9 | Hook (0,0)→(4,0)→(4,1)→(3,1), offset 0.6 with normal +Z | 6/4/0 | Trimmed where it enters the 0.6 band around (3,1): ends at x = 3 − √0.2. A U whose width is less than twice the distance is rejected |
+| E10 | `R(2,2)` edges as a closed chain, offset 0.25 with normal +Z / −Z | 8/8/2 | +Z: inward (areas 1.75, 2.25); −Z: outward (areas 2.25, 4) |
 
 ## F. Erase modifiers & flags
 
@@ -164,3 +181,29 @@ tool is marked Done.
 | J6 | Crossing drag right→left partially covering B1 | all touched entities |
 | J7 | Shift-click a selected face | toggled off |
 | J8 | Click inside a group from the root context | the group instance |
+
+## K. Divide / weld / explode curve
+
+| # | Scenario | Expected V/E/F | Extra assertions |
+|---|---|---|---|
+| K1 | Loose line (0,0)→(3,0), divide into 3 | 4/3/0 | Parts returned in order: [0,1], [1,2], [2,3] |
+| K2 | `R(2,1)`, divide the bottom edge into 4 | 7/7/1 | Face kept; outer loop has 7 uses; area 2; undo restores the hash |
+| K3 | Divide into 1, 0, −2, 2.5, NaN or 1000 parts; divide a 3e-6 m edge into 3 | rejected | `KernelError`; hash unchanged |
+| K4 | Loose 12-segment quarter arc r = 1, divide one of its edges into 6 | 7/6/0 | Whole arc re-divided: curve kind `arc`, 6 segments, curve edges = returned edges; end vertices keep their ids; every vertex at radius 1 |
+| K5 | `R(4,4)` centered on the origin with a 24-segment circle r = 1, divide a circle edge into 8 | 12/12/2 | Disc is an octagon (area 2√2); ring area 16 − 2√2; curve kind `circle`, 8 segments |
+| K6 | 12-segment cylinder, divide a bottom rim edge into 2 | 25/37/14 | Rim vertices carry side edges, so only that edge splits (equal halves); rim curve becomes a polyline of 13 edges ⚑ verify |
+| K7 | Three connected loose lines, one of them vertical, weld (listed out of order) | unchanged | One polyline curve; edges in walking order from the first listed edge's `v0` |
+| K8 | `R(1,1)` edges: weld two, weld the other two, then weld all four | unchanged | 2 curves, then 1 merged curve with 4 edges; welding the same four again returns the same curve |
+| K9 | Weld a branching set, two disconnected edges, a single edge, or 3 edges of an 8-segment circle | rejected | `KernelError`; hash unchanged |
+| K10 | 16-segment circle, Explode Curve | 16/16/1 | Curve count 0; edges no longer reference a curve; exploding again is refused |
+
+## L. Soften by angle
+
+| # | Scenario | Expected | Extra assertions |
+|---|---|---|---|
+| L1 | B1 box, all edges, max 30° / max 91° | 0 changed / 12 changed | 30°: no history entry. 91°: every edge soft and smooth; undo restores the hash |
+| L2 | B9-style 24-segment cylinder, all edges, max 20° smooth on → smooth off → max 10° | 0 → 24 → 24 changed | Side edges (15°) stay soft; rims (90°) stay hard; smooth off clears smooth; 10° unsoftens the sides |
+| L3 | A4 (split rectangle), the dividing edge | angle 0, coplanar | Softened only with `softenCoplanar`; softening again without it unsoftens the edge |
+| L4 | Rectangle face plus a loose line, all edges, max 180° with coplanar on | 0 changed | Edges without exactly two faces have no angle and are never softened |
+| L5 | B13 triangular prism, the ridge edge between its two sloped faces | angle π − 2·atan(½) ≈ 126.87° | The same angle after reversing one of the faces; not softened at 90°, softened at 130° |
+| L6 | Max angle −0.1, NaN or 4 rad | rejected | `KernelError` |
