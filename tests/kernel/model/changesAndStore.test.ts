@@ -5,6 +5,7 @@ import type {
   DefinitionId,
   EdgeId,
   FaceId,
+  GuideId,
   InstanceId,
   MaterialId,
   TagId,
@@ -18,12 +19,21 @@ import { ModelDocument } from '../../../src/kernel/model/ModelDocument';
 import {
   DEFAULT_EDGE_ATTRIBUTES,
   DEFAULT_FACE_ATTRIBUTES,
+  DEFAULT_GUIDE_ATTRIBUTES,
   DEFAULT_INSTANCE_ATTRIBUTES,
+  type GuideData,
 } from '../../../src/kernel/model/types';
 
 const ROOT = 1 as DefinitionId;
 const V = (id: number): VertexId => id as VertexId;
 const E = (id: number): EdgeId => id as EdgeId;
+const G = (id: number): GuideId => id as GuideId;
+
+const GUIDE_LINE: GuideData = {
+  id: G(11),
+  geometry: { kind: 'line', point: vec3(0, 0, 0), direction: vec3(1, 0, 0) },
+  attributes: DEFAULT_GUIDE_ATTRIBUTES,
+};
 
 /** One representative change of every kind. */
 const SAMPLE_CHANGES: Change[] = [
@@ -129,6 +139,15 @@ const SAMPLE_CHANGES: Change[] = [
     id: 7 as InstanceId,
     from: DEFAULT_INSTANCE_ATTRIBUTES,
     to: { ...DEFAULT_INSTANCE_ATTRIBUTES, locked: true },
+  },
+  { kind: 'guide.add', context: ROOT, data: GUIDE_LINE },
+  { kind: 'guide.remove', context: ROOT, data: GUIDE_LINE },
+  {
+    kind: 'guide.attributes',
+    context: ROOT,
+    id: G(11),
+    from: DEFAULT_GUIDE_ATTRIBUTES,
+    to: { ...DEFAULT_GUIDE_ATTRIBUTES, hidden: true },
   },
   { kind: 'definition.add', data: { id: 8 as DefinitionId, name: 'Part', isGroup: false } },
   { kind: 'definition.remove', data: { id: 8 as DefinitionId, name: 'Part', isGroup: false } },
@@ -403,6 +422,32 @@ describe('entity store and document preconditions', () => {
       'duplicate-entity',
     ],
     [
+      'a duplicate guide id',
+      [
+        { kind: 'guide.add', context: ROOT, data: GUIDE_LINE },
+        { kind: 'guide.add', context: ROOT, data: GUIDE_LINE },
+      ],
+      'duplicate-entity',
+    ],
+    [
+      'removing a missing guide',
+      [{ kind: 'guide.remove', context: ROOT, data: GUIDE_LINE }],
+      'missing-entity',
+    ],
+    [
+      'updating a missing guide',
+      [
+        {
+          kind: 'guide.attributes',
+          context: ROOT,
+          id: G(11),
+          from: DEFAULT_GUIDE_ATTRIBUTES,
+          to: { ...DEFAULT_GUIDE_ATTRIBUTES, hidden: true },
+        },
+      ],
+      'missing-entity',
+    ],
+    [
       'a duplicate definition',
       [{ kind: 'definition.add', data: { id: ROOT, name: 'Again', isGroup: false } }],
       'duplicate-entity',
@@ -522,6 +567,7 @@ describe('entity store and document preconditions', () => {
     expect(() => store.getFace(99 as FaceId)).toThrow(KernelError);
     expect(() => store.getCurve(99 as CurveId)).toThrow(KernelError);
     expect(() => store.getInstance(99 as InstanceId)).toThrow(KernelError);
+    expect(() => store.getGuide(G(99))).toThrow(expect.objectContaining({ code: 'missing-entity' }));
     expect(() => store.otherVertex(E(5), V(4))).toThrow(
       expect.objectContaining({ code: 'invalid-operation' }),
     );

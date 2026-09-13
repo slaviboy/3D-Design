@@ -1,4 +1,14 @@
-import type { CurveId, DefinitionId, EdgeId, FaceId, InstanceId, MaterialId, TagId, VertexId } from '../ids';
+import type {
+  CurveId,
+  DefinitionId,
+  EdgeId,
+  FaceId,
+  GuideId,
+  InstanceId,
+  MaterialId,
+  TagId,
+  VertexId,
+} from '../ids';
 import type { Mat4 } from '../math/mat4';
 import type { Vec3 } from '../math/vec3';
 import type {
@@ -11,6 +21,8 @@ import type {
   FaceAttributes,
   FaceData,
   FaceLoops,
+  GuideAttributes,
+  GuideData,
   InstanceAttributes,
   InstanceData,
   MaterialAttributes,
@@ -97,6 +109,14 @@ export type Change =
       readonly from: InstanceAttributes;
       readonly to: InstanceAttributes;
     }
+  | { readonly kind: 'guide.add' | 'guide.remove'; readonly context: DefinitionId; readonly data: GuideData }
+  | {
+      readonly kind: 'guide.attributes';
+      readonly context: DefinitionId;
+      readonly id: GuideId;
+      readonly from: GuideAttributes;
+      readonly to: GuideAttributes;
+    }
   | { readonly kind: 'definition.add' | 'definition.remove'; readonly data: DefinitionData }
   | {
       readonly kind: 'definition.attributes';
@@ -144,6 +164,10 @@ export function invertChange(change: Change): Change {
       return { ...change, kind: 'instance.remove' };
     case 'instance.remove':
       return { ...change, kind: 'instance.add' };
+    case 'guide.add':
+      return { ...change, kind: 'guide.remove' };
+    case 'guide.remove':
+      return { ...change, kind: 'guide.add' };
     case 'definition.add':
       return { ...change, kind: 'definition.remove' };
     case 'definition.remove':
@@ -164,6 +188,7 @@ export function invertChange(change: Change): Change {
     case 'curve.edges':
     case 'instance.transform':
     case 'instance.attributes':
+    case 'guide.attributes':
     case 'definition.attributes':
     case 'material.attributes':
     case 'tag.attributes':

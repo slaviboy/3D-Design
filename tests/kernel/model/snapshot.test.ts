@@ -3,6 +3,8 @@ import { translation } from '../../../src/kernel/math/mat4';
 import { vec3 } from '../../../src/kernel/math/vec3';
 import type { ModelDocument } from '../../../src/kernel/model/ModelDocument';
 import {
+  addGuideLine,
+  addGuidePoint,
   addInstance,
   addMaterial,
   addTag,
@@ -41,6 +43,8 @@ function richDocument(): ModelDocument {
     if (firstFace) setFaceAttributes(doc, doc.rootDefinitionId, firstFace.id, { frontMaterialId: material });
     setInstanceAttributes(doc, doc.rootDefinitionId, component.instance, { tagId: tag, name: 'Crate A' });
     addInstance(doc, doc.rootDefinitionId, component.definition, translation(vec3(0, 3, 0)));
+    addGuideLine(doc, doc.rootDefinitionId, vec3(0, 0, 0), vec3(1, 1, 0), { hidden: false, tagId: tag });
+    addGuidePoint(doc, component.definition, vec3(5, 0, 1));
   });
   return doc;
 }
@@ -67,6 +71,67 @@ describe('document snapshots', () => {
     expect(restored.ids.next).toBe(doc.ids.next);
     expect(restored.canUndo).toBe(false);
     expectValid(restored);
+  });
+
+  it('round-trips guides in their definitions', () => {
+    const doc = richDocument();
+    const restored = roundTrip(doc);
+    const guideCounts = (d: ModelDocument): number[] =>
+      [...d.definitions()].sort((a, b) => a.id - b.id).map((definition) => definition.store.guideCount);
+    expect(guideCounts(restored)).toEqual(guideCounts(doc));
+    expect(guideCounts(restored).reduce((sum, count) => sum + count, 0)).toBe(2);
+    expect(createSnapshot(restored)).toEqual(createSnapshot(doc));
+  });
+
+  it('restores snapshots saved before guides existed', () => {
+    const doc = newDocument();
+    draw(doc, rectangle(0, 0, 1, 1));
+    const snapshot = mutableSnapshot(doc);
+    for (const definition of snapshot.definitions) delete definition.guides;
+    const result = restoreSnapshot(snapshot);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(hashDocument(result.value)).toBe(hashDocument(doc));
+      expect(result.value.rootStore.guideCount).toBe(0);
+    }
+  });
+
+  it('rejects malformed guides and guide ids that collide', () => {
+    const doc = newDocument();
+    doc.transact('Guides', () => {
+      addGuideLine(doc, doc.rootDefinitionId, vec3(0, 0, 0), vec3(0, 0, 1));
+    });
+    const badKind = mutableSnapshot(doc) as unknown as { definitions: { guides: { geometry: object }[] }[] };
+    const guide = badKind.definitions[0]?.guides[0];
+    if (!guide) throw new Error('expected a guide');
+    guide.geometry = { kind: 'ray', point: { x: 0, y: 0, z: 0 } };
+    expect(restoreSnapshot(badKind)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('$.definitions[0].guides[0].geometry.kind'),
+    });
+
+    const notUnit = mutableSnapshot(doc) as unknown as {
+      definitions: { guides: { geometry: { direction: object } }[] }[];
+    };
+    const line = notUnit.definitions[0]?.guides[0];
+    if (!line) throw new Error('expected a guide');
+    line.geometry.direction = { x: 0, y: 0, z: 2 };
+    expect(restoreSnapshot(notUnit)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('invalid-guide'),
+    });
+
+    const collision = mutableSnapshot(doc) as unknown as {
+      tags: { id: number; name: string; visible: boolean }[];
+      definitions: { guides: { id: number }[] }[];
+    };
+    const collidingGuide = collision.definitions[0]?.guides[0];
+    if (!collidingGuide) throw new Error('expected a guide');
+    collision.tags.push({ id: collidingGuide.id, name: 'Clash', visible: true });
+    expect(restoreSnapshot(collision)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('more than once'),
+    });
   });
 
   it('keeps allocating ids above every restored id', () => {

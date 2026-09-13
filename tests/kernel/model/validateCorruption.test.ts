@@ -4,8 +4,10 @@ import type {
   DefinitionId,
   EdgeId,
   FaceId,
+  GuideId,
   InstanceId,
   MaterialId,
+  TagId,
   VertexId,
 } from '../../../src/kernel/ids';
 import { scaling } from '../../../src/kernel/math/mat4';
@@ -15,6 +17,7 @@ import { ModelDocument } from '../../../src/kernel/model/ModelDocument';
 import {
   DEFAULT_EDGE_ATTRIBUTES,
   DEFAULT_FACE_ATTRIBUTES,
+  DEFAULT_GUIDE_ATTRIBUTES,
   DEFAULT_INSTANCE_ATTRIBUTES,
   type Loop,
 } from '../../../src/kernel/model/types';
@@ -225,6 +228,48 @@ describe('validator detects corrupt geometry', () => {
         {
           kind: 'material.add',
           data: { id: 60 as MaterialId, name: 'Bad', color: { r: 2, g: 0, b: 0 }, opacity: 1 },
+        },
+      ],
+    ],
+    [
+      'invalid-guide',
+      [
+        {
+          kind: 'guide.add',
+          context: ROOT,
+          data: {
+            id: 80 as GuideId,
+            geometry: { kind: 'line', point: vec3(0, 0, 0), direction: vec3(1, 1, 0) },
+            attributes: DEFAULT_GUIDE_ATTRIBUTES,
+          },
+        },
+      ],
+    ],
+    [
+      'invalid-guide',
+      [
+        {
+          kind: 'guide.add',
+          context: ROOT,
+          data: {
+            id: 80 as GuideId,
+            geometry: { kind: 'point', point: vec3(Number.NaN, 0, 0) },
+            attributes: DEFAULT_GUIDE_ATTRIBUTES,
+          },
+        },
+      ],
+    ],
+    [
+      'missing-reference',
+      [
+        {
+          kind: 'guide.add',
+          context: ROOT,
+          data: {
+            id: 80 as GuideId,
+            geometry: { kind: 'point', point: vec3(0, 0, 0) },
+            attributes: { ...DEFAULT_GUIDE_ATTRIBUTES, tagId: 5 as TagId },
+          },
         },
       ],
     ],

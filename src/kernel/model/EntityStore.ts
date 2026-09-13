@@ -1,5 +1,5 @@
 import { KernelError } from '../errors';
-import type { CurveId, DefinitionId, EdgeId, FaceId, InstanceId, VertexId } from '../ids';
+import type { CurveId, DefinitionId, EdgeId, FaceId, GuideId, InstanceId, VertexId } from '../ids';
 import { aabbFromPoints, type Aabb } from '../math/aabb';
 import type { Mat4 } from '../math/mat4';
 import { planeFromPolygon, type Plane } from '../math/plane';
@@ -14,6 +14,9 @@ import type {
   FaceAttributes,
   FaceData,
   FaceLoops,
+  GuideAttributes,
+  GuideData,
+  GuideGeometry,
   InstanceAttributes,
   InstanceData,
   Loop,
@@ -61,6 +64,12 @@ export interface InstanceView {
   readonly attributes: InstanceAttributes;
 }
 
+export interface GuideView {
+  readonly id: GuideId;
+  readonly geometry: GuideGeometry;
+  readonly attributes: GuideAttributes;
+}
+
 interface VertexRecord extends VertexView {
   position: Vec3;
   readonly edges: EdgeId[];
@@ -89,6 +98,10 @@ interface InstanceRecord extends InstanceView {
   attributes: InstanceAttributes;
 }
 
+interface GuideRecord extends GuideView {
+  attributes: GuideAttributes;
+}
+
 function removeValue<T>(list: T[], value: T): void {
   for (let i = list.length - 1; i >= 0; i--) {
     if (list[i] === value) list.splice(i, 1);
@@ -96,7 +109,8 @@ function removeValue<T>(list: T[], value: T): void {
 }
 
 /**
- * The entities of one component definition (a "context"): vertices, edges, faces, curves and child instances.
+ * The entities of one component definition (a "context"): vertices, edges, faces, curves, guides and child
+ * instances.
  *
  * Reading is public. Mutation happens only through the `apply*` methods, which only {@link ModelDocument}
  * calls while applying a {@link Change}, so every modification is recorded for undo. The store keeps its
@@ -110,6 +124,7 @@ export class EntityStore {
   readonly #faces = new Map<FaceId, FaceRecord>();
   readonly #curves = new Map<CurveId, CurveRecord>();
   readonly #instances = new Map<InstanceId, InstanceRecord>();
+  readonly #guides = new Map<GuideId, GuideRecord>();
 
   readonly #vertexGrid = new VertexHashGrid();
   readonly #edgeTree = new AabbTree();
@@ -141,13 +156,18 @@ export class EntityStore {
     return this.#instances.size;
   }
 
+  get guideCount(): number {
+    return this.#guides.size;
+  }
+
   get isEmpty(): boolean {
     return (
       this.#vertices.size === 0 &&
       this.#edges.size === 0 &&
       this.#faces.size === 0 &&
       this.#curves.size === 0 &&
-      this.#instances.size === 0
+      this.#instances.size === 0 &&
+      this.#guides.size === 0
     );
   }
 
@@ -169,6 +189,10 @@ export class EntityStore {
 
   instance(id: InstanceId): InstanceView | undefined {
     return this.#instances.get(id);
+  }
+
+  guide(id: GuideId): GuideView | undefined {
+    return this.#guides.get(id);
   }
 
   getVertex(id: VertexId): VertexView {
@@ -195,6 +219,12 @@ export class EntityStore {
     return record;
   }
 
+  getGuide(id: GuideId): GuideView {
+    const record = this.#guides.get(id);
+    if (!record) throw this.#missing('Guide', id);
+    return record;
+  }
+
   vertices(): IterableIterator<VertexView> {
     return this.#vertices.values();
   }
@@ -213,6 +243,10 @@ export class EntityStore {
 
   instances(): IterableIterator<InstanceView> {
     return this.#instances.values();
+  }
+
+  guides(): IterableIterator<GuideView> {
+    return this.#guides.values();
   }
 
   position(id: VertexId): Vec3 {
@@ -463,6 +497,21 @@ export class EntityStore {
   applySetInstanceAttributes(id: InstanceId, attributes: InstanceAttributes): void {
     const record = this.#instances.get(id);
     if (!record) throw this.#missing('Instance', id);
+    record.attributes = attributes;
+  }
+
+  applyAddGuide(data: GuideData): void {
+    if (this.#guides.has(data.id)) throw this.#duplicate('Guide', data.id);
+    this.#guides.set(data.id, { ...data });
+  }
+
+  applyRemoveGuide(id: GuideId): void {
+    if (!this.#guides.delete(id)) throw this.#missing('Guide', id);
+  }
+
+  applySetGuideAttributes(id: GuideId, attributes: GuideAttributes): void {
+    const record = this.#guides.get(id);
+    if (!record) throw this.#missing('Guide', id);
     record.attributes = attributes;
   }
 

@@ -13,6 +13,7 @@ are a code-review defect.
 |---|---|---|
 | `EPS_LEN` | 1e-6 m | Points closer than this are the same point. Also used for point-on-edge and point-on-plane tests. |
 | `EPS_PARALLEL` | 1e-7 | Two unit directions are parallel when the sine of the angle between them is below this. |
+| `EPS_UNIT_LENGTH` | 1e-9 | A stored unit direction (such as a guide line's) may differ from length 1 by at most this. |
 | `SMALL_EDGE_WARNING_LEN` | 1e-5 m | Edges shorter than this are allowed, but the user is warned. |
 
 **Why these values**
@@ -93,7 +94,8 @@ and adds the ids it touched to the dirty set.
 
 `addVertex`, `removeVertex`, `setVertexPosition`, `addEdge`, `removeEdge`, `splitEdge`, `addFace`, `removeFace`,
 `setFaceLoops`, `setEdgeFlags`, `setFaceAttributes`, `addCurve`, `removeCurve`, `setCurveEdges`, `addInstance`,
-`removeInstance`, `setInstanceAttributes`, plus bulk variants that take typed-array payloads for imports.
+`removeInstance`, `setInstanceAttributes`, `addGuideLine`, `addGuidePoint`, `removeGuide`, `setGuideAttributes`, plus
+bulk variants that take typed-array payloads for imports.
 
 Higher-level operations (`src/kernel/ops/`) are built only from primitives.
 

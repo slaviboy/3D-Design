@@ -1,4 +1,14 @@
-import type { CurveId, DefinitionId, EdgeId, FaceId, InstanceId, MaterialId, TagId, VertexId } from '../ids';
+import type {
+  CurveId,
+  DefinitionId,
+  EdgeId,
+  FaceId,
+  GuideId,
+  InstanceId,
+  MaterialId,
+  TagId,
+  VertexId,
+} from '../ids';
 import type { Mat4 } from '../math/mat4';
 import type { Vec3 } from '../math/vec3';
 
@@ -68,6 +78,26 @@ export const DEFAULT_INSTANCE_ATTRIBUTES: InstanceAttributes = Object.freeze({
   receiveShadows: true,
 });
 
+export interface GuideAttributes {
+  readonly hidden: boolean;
+  readonly tagId: TagId | null;
+}
+
+export const DEFAULT_GUIDE_ATTRIBUTES: GuideAttributes = Object.freeze({
+  hidden: false,
+  tagId: null,
+});
+
+/** Where a construction guide is: an infinite line through `point`, or a single point. */
+export type GuideGeometry =
+  | {
+      readonly kind: 'line';
+      readonly point: Vec3;
+      /** Unit direction of the line. */
+      readonly direction: Vec3;
+    }
+  | { readonly kind: 'point'; readonly point: Vec3 };
+
 /** Local frame of a circular curve: the curve lies in the plane through `center` perpendicular to `normal`. */
 export interface CurveFrame {
   readonly center: Vec3;
@@ -120,6 +150,13 @@ export interface InstanceData {
   readonly definitionId: DefinitionId;
   readonly transform: Mat4;
   readonly attributes: InstanceAttributes;
+}
+
+/** A construction guide. Guides help place geometry but never take part in topology. */
+export interface GuideData {
+  readonly id: GuideId;
+  readonly geometry: GuideGeometry;
+  readonly attributes: GuideAttributes;
 }
 
 export interface DefinitionAttributes {

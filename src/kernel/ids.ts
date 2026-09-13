@@ -11,6 +11,7 @@ export type InstanceId = Brand<number, 'InstanceId'>;
 export type DefinitionId = Brand<number, 'DefinitionId'>;
 export type MaterialId = Brand<number, 'MaterialId'>;
 export type TagId = Brand<number, 'TagId'>;
+export type GuideId = Brand<number, 'GuideId'>;
 
 /**
  * Hands out document-wide entity ids: positive integers that increase monotonically and are never reused.

@@ -11,8 +11,8 @@ import {
 import { invertAffine, isMat4 } from '../math/mat4';
 import { isPointOnPlane, planeBasis, planesCoincide, projectTo2D, type PlaneBasis } from '../math/plane';
 import { closestPointsOnSegments, distancePointToSegment } from '../math/segment';
-import { distance, isFiniteVec3 } from '../math/vec3';
-import { EPS_AREA, EPS_LEN } from '../tolerance';
+import { distance, isFiniteVec3, length } from '../math/vec3';
+import { EPS_AREA, EPS_LEN, EPS_UNIT_LENGTH } from '../tolerance';
 import type { EntityStore, FaceView } from './EntityStore';
 import type { ModelDocument } from './ModelDocument';
 
@@ -174,6 +174,19 @@ function validateStore(doc: ModelDocument, store: EntityStore, report: Reporter)
     if (materialId !== null && !doc.material(materialId)) {
       report('missing-reference', 'Instance references a missing material', [instance.id]);
     }
+  }
+
+  // Guides.
+  for (const guide of store.guides()) {
+    const { geometry } = guide;
+    if (!isFiniteVec3(geometry.point) || (geometry.kind === 'line' && !isFiniteVec3(geometry.direction))) {
+      report('invalid-guide', 'Guide has non-finite coordinates', [guide.id]);
+    } else if (geometry.kind === 'line' && Math.abs(length(geometry.direction) - 1) > EPS_UNIT_LENGTH) {
+      report('invalid-guide', 'Guide line direction is not a unit vector', [guide.id]);
+    }
+    const { tagId } = guide.attributes;
+    if (tagId !== null && !doc.tag(tagId))
+      report('missing-reference', 'Guide references a missing tag', [guide.id]);
   }
 
   validateWelding(store, report);

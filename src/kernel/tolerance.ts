@@ -12,6 +12,9 @@ export const EPS_LEN = 1e-6;
 /** Two unit directions whose cross product has a magnitude below this value are parallel. */
 export const EPS_PARALLEL = 1e-7;
 
+/** A stored unit direction is valid when its length differs from 1 by no more than this value. */
+export const EPS_UNIT_LENGTH = 1e-9;
+
 /** Regions with an absolute area below this value are degenerate. */
 export const EPS_AREA = EPS_LEN * EPS_LEN;
 

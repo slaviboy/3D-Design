@@ -1,4 +1,14 @@
-import type { CurveId, DefinitionId, EdgeId, FaceId, InstanceId, MaterialId, TagId, VertexId } from '../ids';
+import type {
+  CurveId,
+  DefinitionId,
+  EdgeId,
+  FaceId,
+  GuideId,
+  InstanceId,
+  MaterialId,
+  TagId,
+  VertexId,
+} from '../ids';
 import { isMat4 } from '../math/mat4';
 import type { Vec3 } from '../math/vec3';
 import { err, ok, type Result } from '../result';
@@ -11,6 +21,9 @@ import type {
   EdgeData,
   FaceAttributes,
   FaceData,
+  GuideAttributes,
+  GuideData,
+  GuideGeometry,
   InstanceAttributes,
   InstanceData,
   Loop,
@@ -33,6 +46,7 @@ export interface DefinitionSnapshot {
   readonly faces: readonly FaceData[];
   readonly curves: readonly CurveData[];
   readonly instances: readonly InstanceData[];
+  readonly guides: readonly GuideData[];
 }
 
 /** Plain-JSON form of a document's contents. History is not included. */
@@ -72,6 +86,13 @@ const instanceAttributes = (a: InstanceAttributes): InstanceAttributes => ({
   castShadows: a.castShadows,
   receiveShadows: a.receiveShadows,
 });
+const guideAttributes = (a: GuideAttributes): GuideAttributes => ({ hidden: a.hidden, tagId: a.tagId });
+
+function guideGeometryCopy(geometry: GuideGeometry): GuideGeometry {
+  return geometry.kind === 'line'
+    ? { kind: 'line', point: vec(geometry.point), direction: vec(geometry.direction) }
+    : { kind: 'point', point: vec(geometry.point) };
+}
 
 function curveParamsCopy(params: CurveParams): CurveParams {
   if (params.kind === 'polyline') return { kind: 'polyline' };
@@ -137,6 +158,11 @@ export function createSnapshot(doc: ModelDocument): DocumentSnapshot {
           definitionId: i.definitionId,
           transform: [...i.transform],
           attributes: instanceAttributes(i.attributes),
+        })),
+        guides: [...store.guides()].sort(byId).map((g) => ({
+          id: g.id,
+          geometry: guideGeometryCopy(g.geometry),
+          attributes: guideAttributes(g.attributes),
         })),
       };
     }),
@@ -270,6 +296,20 @@ function readCurveParams(r: Reader, value: unknown, path: string): CurveParams {
   }
 }
 
+function readGuideGeometry(r: Reader, value: unknown, path: string): GuideGeometry {
+  const g = r.record(value, path);
+  const point = r.vec3(g.point, `${path}.point`);
+  switch (g.kind) {
+    case 'line':
+      return { kind: 'line', point, direction: r.vec3(g.direction, `${path}.direction`) };
+    case 'point':
+      return { kind: 'point', point };
+    default:
+      r.fail(`${path}.kind`, 'unknown guide kind');
+      return { kind: 'point', point };
+  }
+}
+
 function readDefinition(r: Reader, value: unknown, path: string): DefinitionSnapshot {
   const d = r.record(value, path);
   const at = (key: string, index: number): string => `${path}.${key}[${String(index)}]`;
@@ -346,6 +386,20 @@ function readDefinition(r: Reader, value: unknown, path: string): DefinitionSnap
         },
       };
     }),
+    // Documents saved before guides existed have no `guides` array.
+    guides: (d.guides === undefined ? [] : r.list(d.guides, `${path}.guides`)).map((entry, i) => {
+      const p = at('guides', i);
+      const g = r.record(entry, p);
+      const a = r.record(g.attributes, `${p}.attributes`);
+      return {
+        id: r.id<GuideId>(g.id, `${p}.id`),
+        geometry: readGuideGeometry(r, g.geometry, `${p}.geometry`),
+        attributes: {
+          hidden: r.boolean(a.hidden, `${p}.attributes.hidden`),
+          tagId: r.nullableId<TagId>(a.tagId, `${p}.attributes.tagId`),
+        },
+      };
+    }),
   };
 }
 
@@ -401,6 +455,7 @@ export function restoreSnapshot(input: unknown, options: DocumentOptions = {}): 
       ...d.faces.map((f) => f.id),
       ...d.curves.map((c) => c.id),
       ...d.instances.map((instance) => instance.id),
+      ...d.guides.map((g) => g.id),
     ]),
   ];
   const seen = new Set<number>();
@@ -433,6 +488,7 @@ export function restoreSnapshot(input: unknown, options: DocumentOptions = {}): 
     for (const data of d.edges) changes.push({ kind: 'edge.add', context, data });
     for (const data of d.faces) changes.push({ kind: 'face.add', context, data });
     for (const data of d.curves) changes.push({ kind: 'curve.add', context, data });
+    for (const data of d.guides) changes.push({ kind: 'guide.add', context, data });
   }
   for (const d of definitions) {
     for (const data of d.instances) changes.push({ kind: 'instance.add', context: d.id, data });

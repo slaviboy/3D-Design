@@ -1,20 +1,32 @@
 import { KernelError } from '../errors';
-import type { CurveId, DefinitionId, EdgeId, FaceId, InstanceId, MaterialId, TagId, VertexId } from '../ids';
+import type {
+  CurveId,
+  DefinitionId,
+  EdgeId,
+  FaceId,
+  GuideId,
+  InstanceId,
+  MaterialId,
+  TagId,
+  VertexId,
+} from '../ids';
 import { IDENTITY, invertAffine, isMat4, type Mat4 } from '../math/mat4';
 import { planeFromPolygon } from '../math/plane';
-import { distance, isFiniteVec3, type Vec3 } from '../math/vec3';
+import { distance, isFiniteVec3, normalize, type Vec3 } from '../math/vec3';
 import { EPS_LEN } from '../tolerance';
 import type { EntityStore } from './EntityStore';
 import type { ModelDocument } from './ModelDocument';
 import {
   DEFAULT_EDGE_ATTRIBUTES,
   DEFAULT_FACE_ATTRIBUTES,
+  DEFAULT_GUIDE_ATTRIBUTES,
   DEFAULT_INSTANCE_ATTRIBUTES,
   type CurveParams,
   type DefinitionAttributes,
   type EdgeAttributes,
   type FaceAttributes,
   type FaceLoops,
+  type GuideAttributes,
   type InstanceAttributes,
   type Loop,
   type LoopUse,
@@ -376,6 +388,65 @@ export function setInstanceAttributes(
   const to: InstanceAttributes = { ...from, ...patch };
   if (shallowEqual(from, to)) return;
   doc.apply({ kind: 'instance.attributes', context, id, from, to });
+}
+
+// -------------------------------------------------------------------------------------------------- guides
+
+function assertFiniteGuidePoint(point: Vec3): void {
+  if (!isFiniteVec3(point)) throw new KernelError('invalid-geometry', 'Guide coordinates must be finite');
+}
+
+/** Adds an infinite guide line through `point`. `direction` may have any non-zero length; it is stored normalized. */
+export function addGuideLine(
+  doc: ModelDocument,
+  context: DefinitionId,
+  point: Vec3,
+  direction: Vec3,
+  attributes: GuideAttributes = DEFAULT_GUIDE_ATTRIBUTES,
+): GuideId {
+  assertFiniteGuidePoint(point);
+  const unit = normalize(direction);
+  if (!unit) throw new KernelError('invalid-geometry', 'A guide line needs a finite, non-zero direction');
+  const id = doc.ids.allocate() as GuideId;
+  doc.apply({
+    kind: 'guide.add',
+    context,
+    data: { id, geometry: { kind: 'line', point, direction: unit }, attributes },
+  });
+  return id;
+}
+
+export function addGuidePoint(
+  doc: ModelDocument,
+  context: DefinitionId,
+  point: Vec3,
+  attributes: GuideAttributes = DEFAULT_GUIDE_ATTRIBUTES,
+): GuideId {
+  assertFiniteGuidePoint(point);
+  const id = doc.ids.allocate() as GuideId;
+  doc.apply({ kind: 'guide.add', context, data: { id, geometry: { kind: 'point', point }, attributes } });
+  return id;
+}
+
+export function removeGuide(doc: ModelDocument, context: DefinitionId, id: GuideId): void {
+  const guide = doc.store(context).getGuide(id);
+  doc.apply({
+    kind: 'guide.remove',
+    context,
+    data: { id, geometry: guide.geometry, attributes: guide.attributes },
+  });
+}
+
+export function setGuideAttributes(
+  doc: ModelDocument,
+  context: DefinitionId,
+  id: GuideId,
+  patch: Partial<GuideAttributes>,
+): void {
+  const from = doc.store(context).getGuide(id).attributes;
+  const to: GuideAttributes = { ...from, ...patch };
+  if (shallowEqual(from, to)) return;
+  doc.apply({ kind: 'guide.attributes', context, id, from, to });
 }
 
 // -------------------------------------------------------------------------------------------------- materials & tags
