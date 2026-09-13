@@ -1,4 +1,4 @@
-import type { DefinitionId, InstanceId, TagId } from '../../kernel/ids';
+import type { DefinitionId, InstanceId, MaterialId, TagId } from '../../kernel/ids';
 import { IDENTITY, multiply, type Mat4 } from '../../kernel/math/mat4';
 import { ModelDocument, type DocumentEvent } from '../../kernel/model/ModelDocument';
 import { DEFAULT_CAMERA, type CameraState } from '../camera/camera';
@@ -7,7 +7,15 @@ import { Selection } from '../selection/Selection';
 import type { ToolPreview } from '../tools/Tool';
 
 export type SessionEventKind =
-  'document' | 'model' | 'selection' | 'camera' | 'file' | 'context' | 'preview' | 'active-tag';
+  | 'document'
+  | 'model'
+  | 'selection'
+  | 'camera'
+  | 'file'
+  | 'context'
+  | 'preview'
+  | 'active-tag'
+  | 'active-material';
 
 export interface SessionEvent {
   readonly kind: SessionEventKind;
@@ -37,6 +45,7 @@ export class EditorSession {
   #selection: Selection = Selection.EMPTY;
   #preview: ToolPreview | null = null;
   #activeTagId: TagId | null = null;
+  #activeMaterialId: MaterialId | null = null;
   #camera: CameraState;
   #revision = 0;
   #savedRevision = 0;
@@ -161,6 +170,19 @@ export class EditorSession {
     this.#emit({ kind: 'active-tag' });
   }
 
+  /** The material the Paint Bucket applies; null is the default material. Session state, not undoable. */
+  get activeMaterialId(): MaterialId | null {
+    return this.#activeMaterialId;
+  }
+
+  setActiveMaterial(materialId: MaterialId | null): void {
+    if (materialId !== null && !this.#doc.material(materialId))
+      throw new Error('That material no longer exists');
+    if (materialId === this.#activeMaterialId) return;
+    this.#activeMaterialId = materialId;
+    this.#emit({ kind: 'active-material' });
+  }
+
   setCamera(camera: CameraState): void {
     if (camera === this.#camera) return;
     this.#camera = camera;
@@ -174,6 +196,7 @@ export class EditorSession {
     this.#editPath = [];
     this.#selection = Selection.EMPTY;
     this.#activeTagId = null;
+    this.#activeMaterialId = null;
     this.#documentName = options.name;
     this.#fileHandle = options.fileHandle ?? null;
     this.#revision++;
@@ -207,6 +230,10 @@ export class EditorSession {
     if (this.#activeTagId !== null && !this.#doc.tag(this.#activeTagId)) {
       this.#activeTagId = null;
       this.#emit({ kind: 'active-tag' });
+    }
+    if (this.#activeMaterialId !== null && !this.#doc.material(this.#activeMaterialId)) {
+      this.#activeMaterialId = null;
+      this.#emit({ kind: 'active-material' });
     }
     // Hiding a tag deselects what is on it, since hidden entities can't be picked again.
     const tagsChanged = modelEvent.changes.some((change) => change.kind.startsWith('tag.'));

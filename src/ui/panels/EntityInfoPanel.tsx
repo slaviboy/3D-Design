@@ -4,6 +4,7 @@ import { listTags, UNTAGGED_LABEL } from '../../app/tags/tags';
 import type { InstanceId, TagId } from '../../kernel/ids';
 import { useEditor, useEditorState } from '../EditorContext';
 import { CheckField, TextField } from './fields';
+import { MaterialField, TexturePlacementFields } from './materialFields';
 import { Panel } from './Panel';
 
 const UNTAGGED_VALUE = 'untagged';
@@ -117,6 +118,47 @@ export function EntityInfoPanel() {
             onChange={(smooth) => {
               editor.updateSelectionAttributes({ smooth });
             }}
+          />
+        )}
+        {fields.frontMaterial !== undefined && (
+          <MaterialField
+            label="Front material"
+            value={fields.frontMaterial}
+            onUseActive={() => {
+              editor.setSelectionMaterial('front', editor.activeMaterialId);
+            }}
+          />
+        )}
+        {fields.backMaterial !== undefined && (
+          <MaterialField
+            label="Back material"
+            value={fields.backMaterial}
+            onUseActive={() => {
+              editor.setSelectionMaterial('back', editor.activeMaterialId);
+            }}
+          />
+        )}
+        {fields.instanceMaterial !== undefined && (
+          <MaterialField
+            label="Material"
+            value={fields.instanceMaterial}
+            onUseActive={() => {
+              editor.setSelectionMaterial('instance', editor.activeMaterialId);
+            }}
+          />
+        )}
+        {fields.texturePlacement?.front !== undefined && (
+          <TexturePlacementFields
+            faceId={fields.texturePlacement.faceId}
+            side="front"
+            placement={fields.texturePlacement.front}
+          />
+        )}
+        {fields.texturePlacement?.back !== undefined && (
+          <TexturePlacementFields
+            faceId={fields.texturePlacement.faceId}
+            side="back"
+            placement={fields.texturePlacement.back}
           />
         )}
       </div>

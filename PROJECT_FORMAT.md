@@ -9,9 +9,9 @@ model with no network access.
 example.planar
 ├── manifest.json            format identification and versions
 ├── model.json               document, definitions, geometry
-├── assets/textures/<sha256>.<png|jpg|webp>
-├── assets/environments/<sha256>.<hdr|exr>
-└── thumbnail.png            preview image (optional)
+├── assets/textures/<sha256>.<png|jpg>   texture images, stored without recompression
+├── assets/environments/<sha256>.<hdr|exr>   (planned)
+└── thumbnail.png            preview image (optional, planned)
 ```
 
 ## manifest.json
@@ -38,8 +38,11 @@ example.planar
   "units": { "format": "decimal", "length": "m", "area": "m2", "volume": "m3", "precision": 3, ... },
   "modelInfo": { "title": "", "description": "", "author": "" },
   "nextId": 12345,
-  "materials": [{ "id": 1, "name": "Brick", "color": [0.7, 0.3, 0.2], "opacity": 1, "roughness": 0.9,
-                  "metalness": 0, "texture": { "asset": "<sha256>", "width": 0.5, "height": 0.25 }, ... }],
+  "materials": [{ "id": 1, "name": "Brick", "color": { "r": 0.7, "g": 0.3, "b": 0.2 }, "opacity": 1,
+                  "roughness": 0.9, "metalness": 0.1,                    // only when not 1 and 0
+                  "texture": { "assetId": 3, "width": 0.5, "height": 0.25 } }],  // only when textured
+  "textures": [{ "id": 3, "name": "bricks.png", "mimeType": "image/png", "width": 512, "height": 256,
+                 "byteLength": 48213, "sha256": "<64 hex digits>" }],   // only when the model has textures
   "tags": [{ "id": 2, "name": "Walls", "visible": true, "color": [..], "dash": "solid", "folderId": null }],
   "axes": { "origin": { "x": 0, "y": 0, "z": 0 }, "xAxis": {..}, "yAxis": {..} },  // only when moved from the default
   // per definition, only when present:
@@ -67,6 +70,38 @@ example.planar
 }
 ```
 
+## Materials and texture assets (implemented)
+
+The current `model.json` is the kernel snapshot (`src/kernel/model/snapshot.ts`), not yet the columnar layout above.
+Its material and texture parts are final:
+
+- **Materials** have `id`, `name`, `color` (linear RGB, each channel in [0, 1]) and `opacity` in [0, 1].
+  - `metalness` (default 0) and `roughness` (default 1), both in [0, 1], are written only when they differ from the
+    default. Files written before these attributes existed therefore load unchanged and hash identically.
+  - `texture` is written only when set: `assetId` names a texture asset, and `width` and `height` are the size of one
+    tile in meters (each longer than `EPS_LEN`). Aspect locking is a UI concern and is not stored.
+- **Faces** keep `frontMaterialId` and `backMaterialId` (null for the default material). Each side can also have
+  `frontTexturePlacement` / `backTexturePlacement` = `{ offsetX, offsetY, rotation, scaleX, scaleY }` (meters, radians,
+  non-zero scale factors), written only when set. Without one, the side uses the default planar projection.
+- **Instances** keep `materialId`, which faces with no material inside the instance show.
+- **Texture assets** (`textures`) describe images stored in the archive. `mimeType` is `image/png` or `image/jpeg`,
+  `width` and `height` are pixel sizes, and `sha256` names the archive entry
+  `assets/textures/<sha256>.<png|jpg>`. Assets are document-level entities with ids from the same counter as
+  everything else, added and removed through the `asset.add` and `asset.remove` changes, so importing or removing
+  a texture is undoable.
+
+**Validation and limits** (`src/kernel/model/assets.ts`, `validate.ts`, `io/format/planarFile.ts`):
+
+- A texture entry larger than `MAX_TEXTURE_BYTES` (32 MB) is refused from the archive directory before it is
+  decompressed, and again after decompression.
+- An image must be a PNG or JPEG whose header is readable, and at most `MAX_TEXTURE_DIMENSION` (8192) pixels on each
+  side. The stored `mimeType`, `width` and `height` must match the header.
+- A missing image, or bytes whose length or SHA-256 differ from the record, refuse the whole file.
+- A material's texture must reference an existing asset. Out-of-range color, opacity, metalness or roughness, a
+  non-positive tile size, and a non-finite or zero-scale placement are all refused.
+- Importing through the editor applies the same checks, and copies the bytes so the model can't be changed from
+  outside.
+
 Bulk geometry is stored as columnar typed arrays encoded in base64. Compared with arrays of small objects, this is
 smaller, parses faster, and transfers to workers without copying. The exact field list is fixed in
 `src/io/format/schemaV1.ts` when persistence is implemented. This outline is the design target.
@@ -85,8 +120,9 @@ smaller, parses faster, and transfers to workers without copying. The exact fiel
    - Recoverable problems (duplicate vertices, zero-length edges, orphan references) are repaired, and the user sees a
      report.
    - Unrecoverable corruption aborts loading with an explicit error. The current model is not touched.
-6. **Textures.** Texture assets are decoded lazily. A missing or undecodable asset falls back to the material's color,
-   with a warning.
+6. **Textures.** Image bytes are verified (size, header, SHA-256) while loading, so a missing or corrupt texture
+   refuses the file. The renderer decodes images lazily, on first use. An image that passes validation but can't be
+   decoded falls back to the material's color. There is no user-visible warning for that yet.
 
 ## Migrations
 

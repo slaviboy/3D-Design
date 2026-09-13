@@ -82,7 +82,9 @@ export class Viewport {
     sun.position.set(SUN_DIRECTION.x, SUN_DIRECTION.y, SUN_DIRECTION.z);
     this.#scene.add(new THREE.AmbientLight(0xffffff, AMBIENT_LIGHT_INTENSITY), sun, this.#axes);
 
-    this.#model = new ModelRenderer(source);
+    this.#model = new ModelRenderer(source, () => {
+      this.requestRender();
+    });
     this.#scene.add(this.#model.root, this.#model.overlay, this.#model.preview);
 
     this.#unsubscribe = source.subscribe((change) => {

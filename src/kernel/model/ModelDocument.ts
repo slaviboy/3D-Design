@@ -1,5 +1,5 @@
 import { KernelError, KernelInvariantError } from '../errors';
-import { IdAllocator, type DefinitionId, type MaterialId, type TagId } from '../ids';
+import { IdAllocator, type AssetId, type DefinitionId, type MaterialId, type TagId } from '../ids';
 import { changeContext, invertChange, type Change } from './changes';
 import { EntityStore, type InstanceView } from './EntityStore';
 import {
@@ -8,6 +8,7 @@ import {
   type MaterialData,
   type ModelAxes,
   type TagData,
+  type TextureAssetData,
 } from './types';
 import { validateDocument } from './validate';
 
@@ -73,6 +74,7 @@ export class ModelDocument {
   readonly #definitions = new Map<DefinitionId, DefinitionRecord>();
   readonly #materials = new Map<MaterialId, MaterialData>();
   readonly #tags = new Map<TagId, TagData>();
+  readonly #assets = new Map<AssetId, TextureAssetData>();
   readonly #undoStack: TransactionRecord[] = [];
   readonly #redoStack: TransactionRecord[] = [];
   readonly #listeners = new Set<DocumentListener>();
@@ -135,6 +137,15 @@ export class ModelDocument {
 
   tags(): IterableIterator<TagData> {
     return this.#tags.values();
+  }
+
+  /** A texture image stored in the document. */
+  asset(id: AssetId): TextureAssetData | undefined {
+    return this.#assets.get(id);
+  }
+
+  assets(): IterableIterator<TextureAssetData> {
+    return this.#assets.values();
   }
 
   /** The drawing axes that inference, drawing planes and typed coordinates use. */
@@ -465,6 +476,18 @@ export class ModelDocument {
       }
       case 'document.axes':
         this.#axes = change.to;
+        return;
+      case 'asset.add':
+        if (this.#assets.has(change.data.id)) {
+          throw new KernelError('duplicate-entity', `Asset ${String(change.data.id)} already exists`);
+        }
+        this.ids.reserveThrough(change.data.id);
+        this.#assets.set(change.data.id, change.data);
+        return;
+      case 'asset.remove':
+        if (!this.#assets.delete(change.data.id)) {
+          throw new KernelError('missing-entity', `Asset ${String(change.data.id)} does not exist`);
+        }
         return;
     }
   }

@@ -1,10 +1,19 @@
 import * as THREE from 'three';
-import type { DefinitionId, EdgeId, FaceId, InstanceId } from '../kernel/ids';
+import type { AssetId, DefinitionId, EdgeId, FaceId, InstanceId, MaterialId } from '../kernel/ids';
 import { changeContext } from '../kernel/model/changes';
 import type { EntityStore } from '../kernel/model/EntityStore';
 import type { ModelDocument } from '../kernel/model/ModelDocument';
+import type { TextureAssetData } from '../kernel/model/types';
 import { isTagVisible } from '../kernel/model/visibility';
 import { resolveAnnotation } from '../kernel/ops/annotations';
+import {
+  sideMaterial,
+  sidePlacement,
+  textureAxes,
+  textureCoordinates,
+  type FaceSide,
+} from '../kernel/ops/materials';
+import { smoothVertexNormals } from '../kernel/ops/shading';
 import { triangulateFace } from '../kernel/ops/triangulate';
 import {
   FADED_OPACITY,
@@ -16,17 +25,25 @@ import {
 } from './palette';
 import type { ViewChange, ViewEntityRef, ViewPreviewLineStyle, ViewSource } from './ViewSource';
 
+/** Triangles of one definition that share a side and a material. `materialId` null means the default material. */
+interface FaceBucket {
+  readonly side: FaceSide;
+  readonly materialId: MaterialId | null;
+  readonly geometry: THREE.BufferGeometry;
+}
+
 interface DefinitionGeometry {
-  readonly faces: THREE.BufferGeometry;
+  /** One merged geometry per (side, material). Replaced whenever the definition is rebuilt. */
+  faces: FaceBucket[];
   readonly edges: THREE.BufferGeometry;
   readonly guides: THREE.BufferGeometry;
   readonly annotations: THREE.BufferGeometry;
 }
 
-interface MaterialSet {
-  readonly front: THREE.Material;
-  readonly back: THREE.Material;
-  readonly edge: THREE.Material;
+/** A decoded texture image, shared by every material that uses the asset. */
+interface TextureEntry {
+  readonly bytes: Uint8Array;
+  texture: THREE.Texture | null;
 }
 
 /** Drawn on top of the model, after it. */
@@ -51,6 +68,53 @@ function appendFaceTriangles(
     positions.push(p.x, p.y, p.z);
     normals.push(normal.x, normal.y, normal.z);
   }
+}
+
+interface BucketArrays {
+  readonly side: FaceSide;
+  readonly materialId: MaterialId | null;
+  readonly positions: number[];
+  readonly normals: number[];
+  readonly uvs: number[];
+}
+
+/**
+ * Splits a definition's visible faces into buckets by side and material. Each vertex carries its position, its
+ * normal (averaged across smooth surfaces, flat otherwise) and texture coordinates in meters from the planar
+ * projection and the side's placement; materials divide those by their tile size.
+ */
+function buildFaceBuckets(doc: ModelDocument, store: EntityStore): BucketArrays[] {
+  const buckets = new Map<string, BucketArrays>();
+  const bucketFor = (side: FaceSide, materialId: MaterialId | null): BucketArrays => {
+    const key = `${side}:${materialId === null ? 'default' : String(materialId)}`;
+    let bucket = buckets.get(key);
+    if (!bucket) buckets.set(key, (bucket = { side, materialId, positions: [], normals: [], uvs: [] }));
+    return bucket;
+  };
+  const smooth = smoothVertexNormals(store);
+  for (const face of store.faces()) {
+    if (face.attributes.hidden || !face.plane || !isTagVisible(doc, face.attributes.tagId)) continue;
+    const { normal } = face.plane;
+    const axes = textureAxes(normal);
+    const vertexNormals = smooth.get(face.id);
+    const { vertices, indices } = triangulateFace(store, face.id);
+    for (const side of ['front', 'back'] as const) {
+      const materialId = sideMaterial(face.attributes, side);
+      const bucket = bucketFor(side, materialId !== null && doc.material(materialId) ? materialId : null);
+      const placement = sidePlacement(face.attributes, side);
+      for (const index of indices) {
+        const vertex = vertices[index];
+        if (vertex === undefined) continue;
+        const p = store.position(vertex);
+        const n = vertexNormals?.get(vertex) ?? normal;
+        const uv = textureCoordinates(p, axes, placement);
+        bucket.positions.push(p.x, p.y, p.z);
+        bucket.normals.push(n.x, n.y, n.z);
+        bucket.uvs.push(uv.x, uv.y);
+      }
+    }
+  }
+  return [...buckets.values()].filter((bucket) => bucket.positions.length > 0);
 }
 
 function appendEdge(
@@ -140,6 +204,9 @@ const PREVIEW_COLORS: Readonly<Record<ViewPreviewLineStyle, number>> = {
   guide: VIEW_COLORS.guide,
 };
 
+/** Keeps faces behind their own edges. */
+const FACE_POLYGON_OFFSET = { polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 } as const;
+
 /**
  * Builds and maintains three.js objects for a model. Each definition's geometry is built once and shared by all of
  * its instances. Document changes mark only the touched definitions for rebuilding, and selection and tool previews
@@ -153,44 +220,14 @@ export class ModelRenderer {
   readonly preview = new THREE.Group();
 
   readonly #source: ViewSource;
-  readonly #normal: MaterialSet = {
-    front: new THREE.MeshLambertMaterial({
-      color: VIEW_COLORS.faceFront,
-      side: THREE.FrontSide,
-      polygonOffset: true,
-      polygonOffsetFactor: 1,
-      polygonOffsetUnits: 1,
-    }),
-    back: new THREE.MeshLambertMaterial({
-      color: VIEW_COLORS.faceBack,
-      side: THREE.BackSide,
-      polygonOffset: true,
-      polygonOffsetFactor: 1,
-      polygonOffsetUnits: 1,
-    }),
-    edge: new THREE.LineBasicMaterial({ color: VIEW_COLORS.edge }),
-  };
-  readonly #faded: MaterialSet = {
-    front: new THREE.MeshLambertMaterial({
-      color: VIEW_COLORS.faceFront,
-      side: THREE.FrontSide,
-      transparent: true,
-      opacity: FADED_OPACITY,
-      polygonOffset: true,
-      polygonOffsetFactor: 1,
-      polygonOffsetUnits: 1,
-    }),
-    back: new THREE.MeshLambertMaterial({
-      color: VIEW_COLORS.faceBack,
-      side: THREE.BackSide,
-      transparent: true,
-      opacity: FADED_OPACITY,
-      polygonOffset: true,
-      polygonOffsetFactor: 1,
-      polygonOffsetUnits: 1,
-    }),
-    edge: new THREE.LineBasicMaterial({ color: VIEW_COLORS.edge, transparent: true, opacity: FADED_OPACITY }),
-  };
+  /** Called when something finished loading in the background (a decoded texture) and a new frame is needed. */
+  readonly #onAsyncChange: () => void;
+  readonly #edgeMaterial = new THREE.LineBasicMaterial({ color: VIEW_COLORS.edge });
+  readonly #fadedEdgeMaterial = new THREE.LineBasicMaterial({
+    color: VIEW_COLORS.edge,
+    transparent: true,
+    opacity: FADED_OPACITY,
+  });
   readonly #guideMaterial = new THREE.LineBasicMaterial({ color: VIEW_COLORS.guide });
   readonly #annotationMaterial = new THREE.LineBasicMaterial({ color: VIEW_COLORS.annotation });
   readonly #selectionFaceMaterial = new THREE.MeshBasicMaterial({
@@ -212,14 +249,22 @@ export class ModelRenderer {
   readonly #hoverEdgeMaterial = new THREE.LineBasicMaterial({ color: VIEW_COLORS.hover });
   readonly #previewMaterials = new Map<ViewPreviewLineStyle, THREE.LineBasicMaterial>();
 
+  /** three.js materials for faces, keyed by material (or `default`), side and fading. */
+  readonly #faceMaterials = new Map<string, THREE.Material>();
+  readonly #textures = new Map<AssetId, TextureEntry>();
+  readonly #dirtyMaterials = new Set<MaterialId>();
+  readonly #dirtyAssets = new Set<AssetId>();
+  #disposed = false;
+
   readonly #geometries = new Map<DefinitionId, DefinitionGeometry>();
   readonly #dirtyDefinitions = new Set<DefinitionId>();
   #structureDirty = true;
   #selectionDirty = true;
   #previewDirty = true;
 
-  constructor(source: ViewSource) {
+  constructor(source: ViewSource, onAsyncChange: () => void = () => undefined) {
     this.#source = source;
+    this.#onAsyncChange = onAsyncChange;
     for (const group of [this.root, this.overlay, this.preview]) group.matrixAutoUpdate = false;
   }
 
@@ -228,6 +273,8 @@ export class ModelRenderer {
     if (change.kind === 'document') {
       for (const geometry of this.#geometries.values()) this.#disposeGeometry(geometry);
       this.#geometries.clear();
+      this.#disposeFaceMaterials(() => true);
+      for (const id of [...this.#textures.keys()]) this.#disposeTexture(id);
       this.#structureDirty = true;
       this.#selectionDirty = true;
       this.#previewDirty = true;
@@ -241,6 +288,16 @@ export class ModelRenderer {
         if (modelChange.kind.startsWith('tag.')) {
           // Tag visibility can affect any definition's geometry and which instances are drawn.
           for (const definitionId of this.#geometries.keys()) this.#dirtyDefinitions.add(definitionId);
+          this.#structureDirty = true;
+        }
+        if (modelChange.kind === 'material.attributes') {
+          this.#dirtyMaterials.add(modelChange.id);
+          this.#structureDirty = true;
+        } else if (modelChange.kind === 'material.add' || modelChange.kind === 'material.remove') {
+          this.#dirtyMaterials.add(modelChange.data.id);
+          this.#structureDirty = true;
+        } else if (modelChange.kind === 'asset.add' || modelChange.kind === 'asset.remove') {
+          this.#dirtyAssets.add(modelChange.data.id);
           this.#structureDirty = true;
         }
       }
@@ -260,11 +317,23 @@ export class ModelRenderer {
   update(): boolean {
     const doc = this.#source.doc;
     let changed = false;
+    for (const assetId of this.#dirtyAssets) {
+      const entry = this.#textures.get(assetId);
+      if (entry && doc.asset(assetId)?.bytes !== entry.bytes) this.#disposeTexture(assetId);
+    }
+    this.#dirtyAssets.clear();
+    if (this.#dirtyMaterials.size > 0) {
+      const dirty = new Set<string>([...this.#dirtyMaterials].map(String));
+      this.#disposeFaceMaterials((key) => dirty.has(key.split(':')[0] ?? ''));
+      this.#dirtyMaterials.clear();
+    }
     for (const definitionId of this.#dirtyDefinitions) {
       const geometry = this.#geometries.get(definitionId);
       if (!geometry) continue;
       if (doc.definition(definitionId)) {
         this.#fillGeometry(doc, doc.store(definitionId), geometry);
+        // Face buckets are new geometries, so the meshes that show them must be rebuilt.
+        this.#structureDirty = true;
       } else {
         this.#disposeGeometry(geometry);
         this.#geometries.delete(definitionId);
@@ -309,17 +378,16 @@ export class ModelRenderer {
   }
 
   dispose(): void {
+    this.#disposed = true;
     for (const geometry of this.#geometries.values()) this.#disposeGeometry(geometry);
     this.#geometries.clear();
     disposeMeshes(this.overlay);
     disposeMeshes(this.preview);
+    this.#disposeFaceMaterials(() => true);
+    for (const id of [...this.#textures.keys()]) this.#disposeTexture(id);
     const materials: THREE.Material[] = [
-      this.#normal.front,
-      this.#normal.back,
-      this.#normal.edge,
-      this.#faded.front,
-      this.#faded.back,
-      this.#faded.edge,
+      this.#edgeMaterial,
+      this.#fadedEdgeMaterial,
       this.#guideMaterial,
       this.#annotationMaterial,
       this.#selectionFaceMaterial,
@@ -332,11 +400,124 @@ export class ModelRenderer {
     for (const material of materials) material.dispose();
   }
 
+  // ---------------------------------------------------------------------------------------------- face materials
+
+  /**
+   * The three.js material for one side of faces painted with `materialId` (null: the default material, drawn in
+   * the style's front or back color). Model materials use `MeshStandardMaterial` for metalness and roughness;
+   * transparent ones don't write depth, so three.js draws them after opaque geometry, sorted back to front.
+   */
+  #faceMaterial(
+    doc: ModelDocument,
+    materialId: MaterialId | null,
+    side: FaceSide,
+    faded: boolean,
+  ): THREE.Material {
+    const data = materialId === null ? undefined : doc.material(materialId);
+    const key = `${data ? String(data.id) : 'default'}:${side}:${faded ? 'faded' : 'normal'}`;
+    const cached = this.#faceMaterials.get(key);
+    if (cached) return cached;
+    const threeSide = side === 'front' ? THREE.FrontSide : THREE.BackSide;
+    let material: THREE.Material;
+    if (!data) {
+      material = new THREE.MeshLambertMaterial({
+        color: side === 'front' ? VIEW_COLORS.faceFront : VIEW_COLORS.faceBack,
+        side: threeSide,
+        ...(faded ? { transparent: true, opacity: FADED_OPACITY } : {}),
+        ...FACE_POLYGON_OFFSET,
+      });
+    } else {
+      const opacity = data.opacity * (faded ? FADED_OPACITY : 1);
+      const transparent = opacity < 1;
+      const standard = new THREE.MeshStandardMaterial({
+        color: new THREE.Color().setRGB(data.color.r, data.color.g, data.color.b),
+        metalness: data.metalness,
+        roughness: data.roughness,
+        side: threeSide,
+        transparent,
+        opacity,
+        depthWrite: !transparent || faded,
+        ...FACE_POLYGON_OFFSET,
+      });
+      const asset = data.texture ? doc.asset(data.texture.assetId) : undefined;
+      const base = asset ? this.#textureFor(asset) : null;
+      if (base && data.texture) {
+        const map = base.clone();
+        map.repeat.set(1 / data.texture.width, 1 / data.texture.height);
+        map.needsUpdate = true;
+        standard.map = map;
+        standard.color.setRGB(1, 1, 1);
+      }
+      material = standard;
+    }
+    this.#faceMaterials.set(key, material);
+    return material;
+  }
+
+  #disposeFaceMaterials(matches: (key: string) => boolean): void {
+    for (const [key, material] of [...this.#faceMaterials]) {
+      if (!matches(key)) continue;
+      if (material instanceof THREE.MeshStandardMaterial) material.map?.dispose();
+      material.dispose();
+      this.#faceMaterials.delete(key);
+    }
+  }
+
+  /** The decoded texture of an asset, or null while it is still decoding or when it can't be decoded. */
+  #textureFor(asset: TextureAssetData): THREE.Texture | null {
+    const existing = this.#textures.get(asset.id);
+    if (existing?.bytes === asset.bytes) return existing.texture;
+    if (existing) this.#disposeTexture(asset.id);
+    const entry: TextureEntry = { bytes: asset.bytes, texture: null };
+    this.#textures.set(asset.id, entry);
+    // Without image decoding (outside a browser) textured materials show their color.
+    if (typeof createImageBitmap !== 'function') return null;
+    // Bytes go straight from memory to the decoder; no object URL or network request is involved.
+    createImageBitmap(new Blob([asset.bytes.slice()], { type: asset.mimeType }), {
+      imageOrientation: 'flipY',
+    })
+      .then((bitmap) => {
+        if (this.#disposed || this.#textures.get(asset.id) !== entry) {
+          bitmap.close();
+          return;
+        }
+        const texture = new THREE.Texture(bitmap);
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.flipY = false;
+        texture.needsUpdate = true;
+        entry.texture = texture;
+        for (const material of this.#source.doc.materials()) {
+          if (material.texture?.assetId === asset.id) this.#dirtyMaterials.add(material.id);
+        }
+        this.#structureDirty = true;
+        this.#onAsyncChange();
+      })
+      .catch(() => {
+        // An undecodable image falls back to the material's color; the entry stays so decoding isn't retried.
+      });
+    return null;
+  }
+
+  #disposeTexture(assetId: AssetId): void {
+    const entry = this.#textures.get(assetId);
+    if (!entry) return;
+    this.#textures.delete(assetId);
+    if (entry.texture) {
+      const image = entry.texture.image as { close?: () => void } | null;
+      entry.texture.dispose();
+      image?.close?.();
+    }
+  }
+
+  // ---------------------------------------------------------------------------------------------- geometry
+
   #geometryFor(doc: ModelDocument, definitionId: DefinitionId): DefinitionGeometry {
     let geometry = this.#geometries.get(definitionId);
     if (!geometry) {
       geometry = {
-        faces: new THREE.BufferGeometry(),
+        faces: [],
         edges: new THREE.BufferGeometry(),
         guides: new THREE.BufferGeometry(),
         annotations: new THREE.BufferGeometry(),
@@ -348,14 +529,17 @@ export class ModelRenderer {
   }
 
   #fillGeometry(doc: ModelDocument, store: EntityStore, geometry: DefinitionGeometry): void {
-    const facePositions: number[] = [];
-    const faceNormals: number[] = [];
-    for (const face of store.faces()) appendFaceTriangles(doc, store, face.id, facePositions, faceNormals);
+    for (const bucket of geometry.faces) bucket.geometry.dispose();
+    geometry.faces = buildFaceBuckets(doc, store).map((arrays) => {
+      const faces = new THREE.BufferGeometry();
+      setPositions(faces, arrays.positions, arrays.normals);
+      faces.setAttribute('uv', new THREE.Float32BufferAttribute(arrays.uvs, 2));
+      return { side: arrays.side, materialId: arrays.materialId, geometry: faces };
+    });
     const edgePositions: number[] = [];
     for (const edge of store.edges()) appendEdge(doc, store, edge.id, edgePositions);
     const guidePositions: number[] = [];
     appendGuides(doc, store, guidePositions);
-    setPositions(geometry.faces, facePositions, faceNormals);
     setPositions(geometry.edges, edgePositions);
     setPositions(geometry.guides, guidePositions);
     const annotationPositions: number[] = [];
@@ -364,7 +548,7 @@ export class ModelRenderer {
   }
 
   #disposeGeometry(geometry: DefinitionGeometry): void {
-    geometry.faces.dispose();
+    for (const bucket of geometry.faces) bucket.geometry.dispose();
     geometry.edges.dispose();
     geometry.guides.dispose();
     geometry.annotations.dispose();
@@ -405,7 +589,8 @@ export class ModelRenderer {
   /**
    * One definition's geometry and, recursively, its instances. `pathDepth` is non-null for the open groups that
    * contain the active context: their own geometry fades, and of their instances only the next one on the edit path
-   * stays unfaded. Everything inside the active context is drawn normally.
+   * stays unfaded. Everything inside the active context is drawn normally. `inherited` is the material of the
+   * innermost painted instance around this node, which faces with the default material show.
    */
   #buildNode(
     doc: ModelDocument,
@@ -414,21 +599,24 @@ export class ModelRenderer {
     faded: boolean,
     pathDepth: number | null,
     editPath: readonly number[],
+    inherited: MaterialId | null = null,
   ): THREE.Group {
     const group = new THREE.Group();
     group.matrixAutoUpdate = false;
     group.userData = { definitionId };
     if (ancestors.has(definitionId)) return group;
     const geometry = this.#geometryFor(doc, definitionId);
-    const materials = faded || pathDepth !== null ? this.#faded : this.#normal;
+    const fadedNode = faded || pathDepth !== null;
     const guides = new THREE.LineSegments(geometry.guides, this.#guideMaterial);
     guides.userData = { excludeFromBounds: true };
     const annotations = new THREE.LineSegments(geometry.annotations, this.#annotationMaterial);
     annotations.userData = { excludeFromBounds: true };
+    for (const bucket of geometry.faces) {
+      const material = this.#faceMaterial(doc, bucket.materialId ?? inherited, bucket.side, fadedNode);
+      group.add(new THREE.Mesh(bucket.geometry, material));
+    }
     group.add(
-      new THREE.Mesh(geometry.faces, materials.front),
-      new THREE.Mesh(geometry.faces, materials.back),
-      new THREE.LineSegments(geometry.edges, materials.edge),
+      new THREE.LineSegments(geometry.edges, fadedNode ? this.#fadedEdgeMaterial : this.#edgeMaterial),
       guides,
       annotations,
     );
@@ -444,7 +632,15 @@ export class ModelRenderer {
         childFaded = !onPath;
         childPath = onPath && pathDepth + 1 < editPath.length ? pathDepth + 1 : null;
       }
-      const child = this.#buildNode(doc, instance.definitionId, nested, childFaded, childPath, editPath);
+      const child = this.#buildNode(
+        doc,
+        instance.definitionId,
+        nested,
+        childFaded,
+        childPath,
+        editPath,
+        instance.attributes.materialId ?? inherited,
+      );
       child.matrix.fromArray(instance.transform);
       child.matrixWorldNeedsUpdate = true;
       group.add(child);

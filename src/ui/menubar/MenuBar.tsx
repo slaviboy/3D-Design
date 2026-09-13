@@ -98,6 +98,10 @@ export const MENUS: readonly MenuDefinition[] = [
       'tool.dimension',
       'tool.text',
       null,
+      'tool.paint',
+      'materials.paintSelection',
+      'materials.purgeUnused',
+      null,
       'tool.orbit',
       'tool.pan',
       'tool.zoom',
@@ -105,7 +109,14 @@ export const MENUS: readonly MenuDefinition[] = [
   },
   {
     label: 'Window',
-    items: ['window.entityInfo', 'window.outliner', 'window.components', 'window.tags', 'window.soften'],
+    items: [
+      'window.entityInfo',
+      'window.outliner',
+      'window.components',
+      'window.tags',
+      'window.soften',
+      'window.materials',
+    ],
   },
   { label: 'Help', items: ['help.commandPalette'] },
 ];

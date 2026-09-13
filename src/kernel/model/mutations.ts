@@ -38,9 +38,14 @@ import {
   type Loop,
   type LoopUse,
   type MaterialAttributes,
+  type MaterialInput,
   type ModelAxes,
   type TagAttributes,
+  type TexturePlacement,
+  materialAttributesFrom,
 } from './types';
+import type { AssetId } from '../ids';
+import { readImageHeader, textureBytesProblem } from './assets';
 
 /*
  * Primitive mutations. Each builds one Change, with fresh ids and full inverse data, and applies it through
@@ -269,6 +274,10 @@ export function setFaceAttributes(
   const from = doc.store(context).getFace(id).attributes;
   const to: FaceAttributes = { ...from, ...patch };
   if (shallowEqual(from, to)) return;
+  for (const placement of [to.frontTexturePlacement, to.backTexturePlacement]) {
+    const problem = placement ? texturePlacementProblem(placement) : null;
+    if (problem !== null) throw new KernelError('invalid-operation', problem);
+  }
   doc.apply({ kind: 'face.attributes', context, id, from, to });
 }
 
@@ -459,10 +468,87 @@ export function setGuideAttributes(
 
 // -------------------------------------------------------------------------------------------------- materials & tags
 
-export function addMaterial(doc: ModelDocument, attributes: MaterialAttributes): MaterialId {
+/** Why material attributes are invalid in `doc`, or null when they are usable. */
+export function materialProblem(doc: ModelDocument, attributes: MaterialAttributes): string | null {
+  const unit = (value: number): boolean => Number.isFinite(value) && value >= 0 && value <= 1;
+  const { r, g, b } = attributes.color;
+  if (![r, g, b].every(unit)) return 'Material color channels must be between 0 and 1';
+  if (!unit(attributes.opacity)) return 'Material opacity must be between 0 and 1';
+  if (!unit(attributes.metalness)) return 'Material metalness must be between 0 and 1';
+  if (!unit(attributes.roughness)) return 'Material roughness must be between 0 and 1';
+  const { texture } = attributes;
+  if (texture) {
+    if (!doc.asset(texture.assetId)) return `Texture asset ${String(texture.assetId)} does not exist`;
+    const size = (value: number): boolean => Number.isFinite(value) && value > EPS_LEN;
+    if (!size(texture.width) || !size(texture.height)) {
+      return 'Texture width and height must be positive lengths';
+    }
+  }
+  return null;
+}
+
+/** Why a texture placement is invalid, or null when it is usable. */
+export function texturePlacementProblem(placement: TexturePlacement): string | null {
+  const values = [
+    placement.offsetX,
+    placement.offsetY,
+    placement.rotation,
+    placement.scaleX,
+    placement.scaleY,
+  ];
+  if (!values.every(Number.isFinite)) return 'Texture placement values must be finite';
+  if (placement.scaleX === 0 || placement.scaleY === 0) return 'Texture scale must not be zero';
+  return null;
+}
+
+function assertValidMaterial(doc: ModelDocument, attributes: MaterialAttributes): void {
+  const problem = materialProblem(doc, attributes);
+  if (problem !== null) throw new KernelError('invalid-operation', problem);
+}
+
+export function addMaterial(doc: ModelDocument, input: MaterialInput): MaterialId {
+  const attributes = materialAttributesFrom(input);
+  assertValidMaterial(doc, attributes);
   const id = doc.ids.allocate() as MaterialId;
   doc.apply({ kind: 'material.add', data: { id, ...attributes } });
   return id;
+}
+
+/**
+ * Stores an encoded PNG or JPEG image in the document. The MIME type and pixel size come from the image header,
+ * and the bytes are copied so later changes to the caller's array can't alter the model.
+ */
+export function addTextureAsset(doc: ModelDocument, name: string, bytes: Uint8Array): AssetId {
+  const problem = textureBytesProblem(bytes);
+  const header = readImageHeader(bytes);
+  if (problem !== null || !header) {
+    throw new KernelError('invalid-operation', `The texture can't be used: ${problem ?? 'unreadable image'}`);
+  }
+  const id = doc.ids.allocate() as AssetId;
+  doc.apply({
+    kind: 'asset.add',
+    data: {
+      id,
+      name,
+      mimeType: header.mimeType,
+      width: header.width,
+      height: header.height,
+      bytes: bytes.slice(),
+    },
+  });
+  return id;
+}
+
+/** Removes a texture asset. Refused while a material still uses it. */
+export function removeTextureAsset(doc: ModelDocument, id: AssetId): void {
+  const asset = doc.asset(id);
+  if (!asset) throw new KernelError('missing-entity', `Asset ${String(id)} does not exist`);
+  for (const material of doc.materials()) {
+    if (material.texture?.assetId === id) {
+      throw new KernelError('invalid-operation', `Material "${material.name}" still uses this texture`);
+    }
+  }
+  doc.apply({ kind: 'asset.remove', data: asset });
 }
 
 export function removeMaterial(doc: ModelDocument, id: MaterialId): void {
@@ -478,9 +564,17 @@ export function setMaterialAttributes(
 ): void {
   const material = doc.material(id);
   if (!material) throw new KernelError('missing-entity', `Material ${String(id)} does not exist`);
-  const from: MaterialAttributes = { name: material.name, color: material.color, opacity: material.opacity };
+  const from: MaterialAttributes = {
+    name: material.name,
+    color: material.color,
+    opacity: material.opacity,
+    metalness: material.metalness,
+    roughness: material.roughness,
+    texture: material.texture,
+  };
   const to: MaterialAttributes = { ...from, ...patch };
   if (shallowEqual(from, to)) return;
+  assertValidMaterial(doc, to);
   doc.apply({ kind: 'material.attributes', id, from, to });
 }
 

@@ -33,6 +33,7 @@ import type {
   ModelAxes,
   TagAttributes,
   TagData,
+  TextureAssetData,
   VertexData,
 } from './types';
 
@@ -154,7 +155,8 @@ export type Change =
       readonly from: TagAttributes;
       readonly to: TagAttributes;
     }
-  | { readonly kind: 'document.axes'; readonly from: ModelAxes; readonly to: ModelAxes };
+  | { readonly kind: 'document.axes'; readonly from: ModelAxes; readonly to: ModelAxes }
+  | { readonly kind: 'asset.add' | 'asset.remove'; readonly data: TextureAssetData };
 
 export type ChangeKind = Change['kind'];
 
@@ -201,6 +203,10 @@ export function invertChange(change: Change): Change {
       return { ...change, kind: 'tag.remove' };
     case 'tag.remove':
       return { ...change, kind: 'tag.add' };
+    case 'asset.add':
+      return { ...change, kind: 'asset.remove' };
+    case 'asset.remove':
+      return { ...change, kind: 'asset.add' };
     case 'vertex.move':
     case 'edge.attributes':
     case 'face.loops':

@@ -409,7 +409,13 @@ describe('Entity Info editing', () => {
     const { editor, doc, instance } = editorWithGroup();
     const info = () =>
       describeSelection(doc, editor.session.activeContext, editor.session.selection, METRIC_UNIT_SETTINGS);
-    expect(info().fields).toEqual({ tag: null, hidden: false, locked: false, name: '' });
+    expect(info().fields).toEqual({
+      tag: null,
+      hidden: false,
+      locked: false,
+      name: '',
+      instanceMaterial: null,
+    });
 
     editor.updateSelectionAttributes({ hidden: true });
     expect(info().fields.hidden).toBe(true);
@@ -496,13 +502,25 @@ describe('dock panels', () => {
   it('toggles panels through Window commands and exposes them in the store', async () => {
     const editor = createTestEditor();
     const store = createEditorStore(editor);
-    expect(store.getState().openPanels).toEqual(['entityInfo', 'outliner', 'components', 'tags']);
+    expect(store.getState().openPanels).toEqual([
+      'entityInfo',
+      'outliner',
+      'components',
+      'tags',
+      'materials',
+    ]);
     expect(editor.commands.isChecked('window.outliner', editor)).toBe(true);
     await editor.runCommand('window.outliner');
     expect(editor.isPanelOpen('outliner')).toBe(false);
-    expect(store.getState().openPanels).toEqual(['entityInfo', 'components', 'tags']);
+    expect(store.getState().openPanels).toEqual(['entityInfo', 'components', 'tags', 'materials']);
     await editor.runCommand('window.outliner');
-    expect(store.getState().openPanels).toEqual(['entityInfo', 'outliner', 'components', 'tags']);
+    expect(store.getState().openPanels).toEqual([
+      'entityInfo',
+      'outliner',
+      'components',
+      'tags',
+      'materials',
+    ]);
     store.dispose();
   });
 });

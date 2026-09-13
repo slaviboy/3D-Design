@@ -12,6 +12,7 @@ import { ComponentsPanel } from '../panels/ComponentsPanel';
 import { EntityInfoPanel } from '../panels/EntityInfoPanel';
 import { OutlinerPanel } from '../panels/OutlinerPanel';
 import { SoftenPanel } from '../panels/SoftenPanel';
+import { MaterialsPanel } from '../panels/MaterialsPanel';
 import { TagsPanel } from '../panels/TagsPanel';
 import { StatusBar } from '../statusbar/StatusBar';
 import { Toolbar, ToolPalette } from '../toolbar/Toolbar';
@@ -111,6 +112,11 @@ export function App({ recovery }: { readonly recovery?: RecoveryOptions }) {
           {openPanels.includes('soften') && (
             <ErrorBoundary area="the Soften Edges panel">
               <SoftenPanel />
+            </ErrorBoundary>
+          )}
+          {openPanels.includes('materials') && (
+            <ErrorBoundary area="the Materials panel">
+              <MaterialsPanel />
             </ErrorBoundary>
           )}
         </aside>

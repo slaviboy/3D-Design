@@ -9,6 +9,7 @@ import type {
   TagId,
   VertexId,
   AnnotationId,
+  AssetId,
 } from '../ids';
 import type { Mat4 } from '../math/mat4';
 import type { Vec3 } from '../math/vec3';
@@ -44,11 +45,36 @@ export const DEFAULT_EDGE_ATTRIBUTES: EdgeAttributes = Object.freeze({
   tagId: null,
 });
 
+/**
+ * How a texture is placed on one side of a face, on top of the default planar projection. Offsets are in meters
+ * along the face's texture axes, the rotation is in radians (counter-clockwise), and the scales multiply the
+ * material's tile size (negative values mirror).
+ */
+export interface TexturePlacement {
+  readonly offsetX: number;
+  readonly offsetY: number;
+  readonly rotation: number;
+  readonly scaleX: number;
+  readonly scaleY: number;
+}
+
+export const DEFAULT_TEXTURE_PLACEMENT: TexturePlacement = Object.freeze({
+  offsetX: 0,
+  offsetY: 0,
+  rotation: 0,
+  scaleX: 1,
+  scaleY: 1,
+});
+
 export interface FaceAttributes {
   readonly frontMaterialId: MaterialId | null;
   readonly backMaterialId: MaterialId | null;
   readonly tagId: TagId | null;
   readonly hidden: boolean;
+  /** Texture placement on the front; null uses the default projection. */
+  readonly frontTexturePlacement: TexturePlacement | null;
+  /** Texture placement on the back; null uses the default projection. */
+  readonly backTexturePlacement: TexturePlacement | null;
 }
 
 export const DEFAULT_FACE_ATTRIBUTES: FaceAttributes = Object.freeze({
@@ -56,6 +82,8 @@ export const DEFAULT_FACE_ATTRIBUTES: FaceAttributes = Object.freeze({
   backMaterialId: null,
   tagId: null,
   hidden: false,
+  frontTexturePlacement: null,
+  backTexturePlacement: null,
 });
 
 export interface InstanceAttributes {
@@ -177,15 +205,59 @@ export interface Rgb {
   readonly b: number;
 }
 
+/** An image tiled over faces. `width` and `height` are the size of one tile in meters. */
+export interface MaterialTexture {
+  readonly assetId: AssetId;
+  readonly width: number;
+  readonly height: number;
+}
+
 export interface MaterialAttributes {
   readonly name: string;
   readonly color: Rgb;
   /** 0 = fully transparent, 1 = opaque. */
   readonly opacity: number;
+  /** 0 = dielectric, 1 = metal. */
+  readonly metalness: number;
+  /** 0 = polished, 1 = matte. */
+  readonly roughness: number;
+  readonly texture: MaterialTexture | null;
+}
+
+export const DEFAULT_MATERIAL_METALNESS = 0;
+export const DEFAULT_MATERIAL_ROUGHNESS = 1;
+
+/** What a new material needs; the physical attributes default to a matte, opaque, untextured surface. */
+export type MaterialInput = Pick<MaterialAttributes, 'name' | 'color'> &
+  Partial<Omit<MaterialAttributes, 'name' | 'color'>>;
+
+export function materialAttributesFrom(input: MaterialInput): MaterialAttributes {
+  return {
+    name: input.name,
+    color: input.color,
+    opacity: input.opacity ?? 1,
+    metalness: input.metalness ?? DEFAULT_MATERIAL_METALNESS,
+    roughness: input.roughness ?? DEFAULT_MATERIAL_ROUGHNESS,
+    texture: input.texture ?? null,
+  };
 }
 
 export interface MaterialData extends MaterialAttributes {
   readonly id: MaterialId;
+}
+
+/** Image formats a texture asset may use. */
+export type TextureMimeType = 'image/png' | 'image/jpeg';
+
+/** An image stored in the document. `bytes` are the encoded file and must never be modified after creation. */
+export interface TextureAssetData {
+  readonly id: AssetId;
+  readonly name: string;
+  readonly mimeType: TextureMimeType;
+  /** Pixel size, read from the image header. */
+  readonly width: number;
+  readonly height: number;
+  readonly bytes: Uint8Array;
 }
 
 export interface TagAttributes {

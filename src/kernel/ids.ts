@@ -13,6 +13,7 @@ export type MaterialId = Brand<number, 'MaterialId'>;
 export type TagId = Brand<number, 'TagId'>;
 export type GuideId = Brand<number, 'GuideId'>;
 export type AnnotationId = Brand<number, 'AnnotationId'>;
+export type AssetId = Brand<number, 'AssetId'>;
 
 /**
  * Hands out document-wide entity ids: positive integers that increase monotonically and are never reused.
