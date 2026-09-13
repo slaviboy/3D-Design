@@ -10,6 +10,7 @@ import type { ExchangeRequest } from '../io/ModelExchange';
 import type { InferenceKind } from '../inference/inference';
 import type { PanelId } from '../panels/panels';
 import type { ToolOverlay } from '../tools/Tool';
+import type { DockLayout, PanelFocusRequest } from '../dock/dockLayout';
 
 /** A dimension or text label in viewport pixels. */
 export interface ScreenAnnotationLabel {
@@ -95,6 +96,10 @@ export interface EditorViewState {
   readonly shadows: ShadowSettings;
   readonly showSectionPlanes: boolean;
   readonly showSectionCuts: boolean;
+  /** Width of the dock, the order of its panels and which are collapsed. */
+  readonly dockLayout: DockLayout;
+  /** The latest request to bring a panel into view. */
+  readonly panelFocusRequest: PanelFocusRequest | null;
 }
 
 export interface EditorStore extends StoreApi<EditorViewState> {
@@ -199,6 +204,8 @@ export function createEditorStore(editor: Editor): EditorStore {
       shadows: doc.shadows,
       showSectionPlanes: session.showSectionPlanes,
       showSectionCuts: session.showSectionCuts,
+      dockLayout: editor.dockLayout,
+      panelFocusRequest: editor.panelFocusRequest,
     };
   };
   const store = createStore<EditorViewState>(snapshot);

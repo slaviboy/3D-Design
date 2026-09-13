@@ -34,6 +34,7 @@ import { SCALE_TOOL_ID } from '../tools/ScaleTool';
 import { registerSolidCommands } from '../solids/solidCommands';
 import { registerExchangeCommands } from '../io/exchangeCommands';
 import type { CommandCategory, CommandDefinition, CommandRegistry } from './CommandRegistry';
+import { registerWorkspaceCommands } from './workspaceCommands';
 
 type EditorCommand = CommandDefinition<Editor>;
 
@@ -423,6 +424,7 @@ export function registerDefaultCommands(registry: CommandRegistry<Editor>): void
   registerOrganizationCommands(registry);
   registerExchangeCommands(registry);
   registerPresentationCommands(registry);
+  registerWorkspaceCommands(registry);
 }
 
 /** Section planes, shadows, scenes and animation. */

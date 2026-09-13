@@ -170,6 +170,17 @@ Folders are created when they get their first real module. Placeholder files are
 - **Panels.** Panel view-models are pure app-layer functions (`buildOutlinerTree`, `listComponentDefinitions`,
   `listTags`, `describeSelection`). Panels read them from the model revision and change the model only through
   `Editor` methods, each one undoable transaction. Which panels are shown is editor state exposed in the store.
+- **Dock layout.** `app/dock/dockLayout.ts` holds the pure layout model (`DockLayout`: width before UI scale, panel
+  order, collapsed panels) and its defensive parser. `Editor.dockLayout` owns the state and saves it through a
+  `DockLayoutStorage` (localStorage `planar.dock` in the browser). The UI sets `--dock-width` from it, clamped between
+  200px and half the window, and lays panels out with CSS `order`, so panels added later keep working without
+  changes to the dock markup.
+- **Context menus.** `app/contextMenu/contextMenu.ts` decides which commands apply to a selection
+  (`contextMenuGroups`) and turns them into entries with only registered, enabled commands (`buildContextMenu`).
+  `ui/contextmenu` renders one WAI-ARIA menu at a time for the viewport, Outliner rows and Shift+F10, and runs
+  entries through `editor.runCommand`.
+- **Instructor.** `app/instructor/instructor.ts` is a typed table of original help keyed by tool id, with modifier
+  key names for the platform; a unit test requires an entry for every registered tool.
 
 ## State management
 

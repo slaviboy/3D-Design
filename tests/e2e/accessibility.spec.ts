@@ -58,6 +58,39 @@ test.describe('with the start screen', () => {
   });
 });
 
+for (const colorScheme of ['light', 'dark'] as const) {
+  test(`an open context menu has no serious accessibility violations (${colorScheme})`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme });
+    await page.goto('/');
+    await expect(page.getByRole('menubar', { name: 'Main menu' })).toBeVisible();
+    await page.evaluate(() => window.__planar?.editor.runCommand('file.openSample'));
+    await expect
+      .poll(() => page.evaluate(() => window.__planar?.editor.session.doc.rootStore.instanceCount))
+      .toBe(1);
+    await page.keyboard.press('ControlOrMeta+A');
+    await expect(page.getByTestId('selection-count')).toHaveText('1 selected');
+
+    await page.keyboard.press('Shift+F10');
+    const menu = page.getByRole('menu', { name: 'Context menu' });
+    await expect(menu).toBeVisible();
+    await page.keyboard.press('s');
+    await page.keyboard.press('ArrowRight');
+    await expect(page.getByRole('menu', { name: 'Select' })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+  });
+
+  test(`the Instructor panel has no serious accessibility violations (${colorScheme})`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme });
+    await page.goto('/');
+    await expect(page.getByRole('menubar', { name: 'Main menu' })).toBeVisible();
+    await page.evaluate(() => window.__planar?.editor.runCommand('window.instructor'));
+    const instructor = page.getByRole('region', { name: 'Instructor' });
+    await expect(instructor.getByRole('heading', { name: 'Select', exact: true })).toBeVisible();
+    await page.getByRole('separator', { name: 'Resize panels' }).focus();
+    expect(await seriousViolations(page)).toEqual([]);
+  });
+}
+
 test('the dark theme has no serious contrast violations', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.goto('/');
