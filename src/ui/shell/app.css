@@ -286,10 +286,12 @@
   opacity: 0.6;
 }
 
+/* Pressed toggles keep full text contrast on the pressed background; the accent border and weight mark them. */
 .button[aria-pressed='true'] {
   border-color: var(--accent);
   background: var(--pressed-bg);
-  color: var(--accent);
+  color: var(--fg);
+  font-weight: 600;
 }
 
 .icon-button {
@@ -1614,12 +1616,6 @@
   flex: 1;
   width: auto;
   min-width: 0;
-}
-
-/* The current style keeps full text contrast on the pressed background; the accent border and weight mark it. */
-.styles__choice[aria-pressed='true'] {
-  color: var(--fg);
-  font-weight: 600;
 }
 
 .styles__save {

@@ -112,6 +112,32 @@ for (const colorScheme of ['light', 'dark'] as const) {
   });
 }
 
+for (const colorScheme of ['light', 'dark'] as const) {
+  test(`pressed toggles in the Shadows, Scenes and Components panels meet contrast in the ${colorScheme} theme`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme });
+    await page.goto('/');
+    await expect(page.getByRole('menubar', { name: 'Main menu' })).toBeVisible();
+    await page.evaluate(() => {
+      const editor = window.__planar?.editor;
+      if (!editor) throw new Error('test hook missing: build with --mode e2e');
+      for (const panel of ['entityInfo', 'outliner', 'tags', 'materials'] as const) {
+        if (editor.isPanelOpen(panel)) editor.togglePanel(panel);
+      }
+      for (const panel of ['shadows', 'scenes', 'components'] as const) {
+        if (!editor.isPanelOpen(panel)) editor.togglePanel(panel);
+      }
+    });
+    const shadows = page.getByRole('region', { name: 'Shadows', exact: true });
+    const toggle = shadows.locator('button[aria-pressed]').first();
+    await expect(toggle).toBeVisible();
+    if ((await toggle.getAttribute('aria-pressed')) !== 'true') await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    expect(await seriousViolations(page, '.dock')).toEqual([]);
+  });
+}
+
 test('the dark theme has no serious contrast violations', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.goto('/');
