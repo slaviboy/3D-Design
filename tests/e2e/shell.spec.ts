@@ -36,3 +36,25 @@ test('the production build sets a restrictive Content-Security-Policy', async ({
   expect(policy).toContain("style-src 'self'");
   expect(policy).toContain("object-src 'none'");
 });
+
+test.describe('on a large tablet', () => {
+  test.use({ viewport: { width: 1024, height: 768 } });
+
+  test('the workspace still fits: menus, a usable 3D view, and no sideways scrolling', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByRole('menubar', { name: 'Main menu' })).toBeVisible();
+    const size = await page.evaluate(() => ({
+      width: window.innerWidth,
+      height: window.innerHeight,
+      scrollWidth: document.documentElement.scrollWidth,
+    }));
+    expect(size.scrollWidth).toBeLessThanOrEqual(size.width);
+    const viewport = await page.getByRole('application', { name: '3D viewport' }).boundingBox();
+    const statusBar = await page.getByRole('contentinfo').boundingBox();
+    if (!viewport || !statusBar) throw new Error('workspace not laid out');
+    expect(viewport.width).toBeGreaterThanOrEqual(480);
+    expect(viewport.height).toBeGreaterThanOrEqual(400);
+    expect(statusBar.y + statusBar.height).toBeLessThanOrEqual(size.height + 1);
+    await expect(page.getByRole('complementary', { name: 'Panels' })).toBeVisible();
+  });
+});
