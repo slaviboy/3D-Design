@@ -102,7 +102,7 @@ Doc titles are shown in *italics* and map to entries in `help.sketchup.com/index
 | 2-Point Arc (A) | same | Chord then bulge; half-circle inference; `24r` radius, `20s` segments; double-click fillet repeat; tangent arc with Alt lock | Core | M | curves | Partly done (P5): start, end, bulge; typed length, bulge, radius and segments; fillet by double-click P9 | Params, tangent |
 | 3-Point Arc | same | Start, point on arc, end | Core | S | curves | Done (P5) | Circumcircle math |
 | Freehand | *Drawing Freehand Shapes* | Press-drag-release polyline curve; arrow keys pick plane; closes on start point | Core | S | curves | Done (P5) | Simplification |
-| 3D Text | *Adding Text, Labels, and Dimensions* | Text, bundled original font, height, filled / extruded, placed via move | Adv | L | font outlines | Planned (P6) | Geometry validity |
+| 3D Text | *Adding Text, Labels, and Dimensions* | Text, bundled original font, height, filled / extruded, placed via move | Adv | L | font outlines | Not done: needs an original outline font; deferred to P9, nothing in the app pretends to offer it | Geometry validity |
 
 ## 6. Editing tools
 
@@ -129,11 +129,11 @@ Doc titles are shown in *italics* and map to entries in `help.sketchup.com/index
 
 | Feature | Reference | Required behavior | Pri | Cx | Dependencies | Status | Tests required |
 |---|---|---|---|---|---|---|---|
-| Linear dimensions | *Adding Text, Labels, and Dimensions* | Start/end on inference points or click an edge; offset within a plane; associative updates; custom text breaks association | Core | L | inference, overlays | Planned (P6) | Association |
-| Radius / diameter dimensions | same | On arcs and circles, stays in their plane | Core | M | curves | Planned (P6) | Params |
+| Linear dimensions | *Adding Text, Labels, and Dimensions* | Start/end on inference points or click an edge; offset within a plane; associative updates; custom text breaks association | Core | L | inference, overlays | Partly done (P6): start/end on inference points or click an edge, pulled in a plane facing the viewer, associative with vertices, custom text (clearing it restores the measurement); alignment to red/green/blue planes and dimension styles P9 | Association |
+| Radius / diameter dimensions | same | On arcs and circles, stays in their plane | Core | M | curves | Done (P6): click an arc (radius) or circle (diameter); follows the curve | Params |
 | Screen text | same | Fixed to screen; edit by double-click | Core | S | overlays | Planned (P6) | Render |
-| Leader text / labels | same | Default text = component name or face area; pushpin / view-based / hidden leaders; arrow styles | Core | M | overlays | Planned (P6) | Render |
-| Text & dimension settings | *Model Info* | Font size, leader, arrow, alignment, update selected | Core | S | model info | Planned (P6) | Panel |
+| Leader text / labels | same | Default text = component name or face area; pushpin / view-based / hidden leaders; arrow styles | Core | M | overlays | Partly done (P6): leader text with default area, length or name, screen text, click a label to edit or clear to delete; leader and arrow styles P9 | Render |
+| Text & dimension settings | *Model Info* | Font size, leader, arrow, alignment, update selected | Core | S | model info | Planned (P9) | Panel |
 | Angle measurement / annotation | *Measuring Angles* | Protractor readout; angled guides | Core | S | protractor | Planned (P5) | Math |
 
 ## 8. Organization

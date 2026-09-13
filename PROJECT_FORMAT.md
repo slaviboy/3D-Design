@@ -42,6 +42,8 @@ example.planar
                   "metalness": 0, "texture": { "asset": "<sha256>", "width": 0.5, "height": 0.25 }, ... }],
   "tags": [{ "id": 2, "name": "Walls", "visible": true, "color": [..], "dash": "solid", "folderId": null }],
   "axes": { "origin": { "x": 0, "y": 0, "z": 0 }, "xAxis": {..}, "yAxis": {..} },  // only when moved from the default
+  // per definition, only when present:
+  "annotations": [{ "id": 40, "geometry": { "kind": "linear-dimension", "start": { "point": {..}, "vertex": 7 }, "end": {..}, "offset": {..} }, "attributes": { "text": null, "hidden": false, "tagId": null } }],
   "tagFolders": [],
   "styles": [ /* StyleSpec */ ],
   "activeStyleId": 3,

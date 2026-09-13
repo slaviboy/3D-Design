@@ -44,6 +44,8 @@ Edge   { id, v0, v1, faces: FaceId[], curveId?, soft, smooth, hidden, materialId
 Face   { id, outer: Loop, inners: Loop[], plane, frontMaterialId?, backMaterialId?, frontUv, backUv, tagId }
 Loop   = Array<{ edge: EdgeId, reversed: boolean }>
 Curve  { id, kind: 'arc' | 'circle' | 'polygon' | 'polyline', params, edgeIds: EdgeId[] }
+Annotation { id, geometry: linear-dimension(start, end, offset) | radial-dimension(curve, diameter, labelPoint)
+             | leader-text(target, offset) | screen-text(x, y), text, hidden, tagId }
 ```
 
 - **Loose and non-manifold edges.** An edge knows its faces as a small array. It can have zero faces (a loose edge),
@@ -52,6 +54,9 @@ Curve  { id, kind: 'arc' | 'circle' | 'polygon' | 'polyline', params, edgeIds: E
 - **Faces.** A face is a planar polygon with one outer loop and zero or more inner loops (holes).
 - **Adjacency.** Each vertex's list of edges is maintained incrementally.
 - **Surfaces** are not stored. A surface is a connected set of faces joined by soft edges, derived on demand.
+- **Annotations** (dimensions and text) never take part in topology. A dimension anchor stores a point and,
+  optionally, a vertex id: while that vertex exists the anchor follows it, and afterwards the stored point is used.
+  Radial dimensions follow their curve and show "?" once it is gone.
 - **Dangling edges** that lie on a face's plane but don't close a region are ordinary loose edges. They are found by
   spatial query when needed.
 - **Curves** keep their parameters (center, radius, start and end angle, segment count) so they can be edited later.
