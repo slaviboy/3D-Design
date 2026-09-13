@@ -13,6 +13,7 @@ import { ROTATE_TOOL_ID } from '../tools/RotateTool';
 import { SCALE_TOOL_ID } from '../tools/ScaleTool';
 import { SECTION_PLANE_TOOL_ID } from '../tools/SectionPlaneTool';
 import { TEXT_TOOL_ID } from '../tools/TextTool';
+import { TEXT_3D_TOOL_ID } from '../tools/Text3DTool';
 import {
   CIRCLE_TOOL_ID,
   ERASER_TOOL_ID,
@@ -346,6 +347,17 @@ export const INSTRUCTOR_HINTS: Readonly<Record<string, HintSource>> = {
       'Click to place the label, then enter its text.',
     ],
     keys: [ESC_CANCELS],
+    measurements: null,
+  }),
+  [TEXT_3D_TOOL_ID]: () => ({
+    title: '3D Text',
+    purpose: 'Put lettering into the model as real geometry, flat or extruded, for signs and labels.',
+    steps: [
+      'Choose 3D Text… in the Tools menu, type the text and pick its height, alignment and style.',
+      'Select Place; an outline of the text follows the cursor.',
+      'Click a face to set the text on it, or empty space to lay it on the ground.',
+    ],
+    keys: [{ keys: 'Esc', effect: 'Cancels placing the text.' }],
     measurements: null,
   }),
   [PAINT_TOOL_ID]: ({ toggle, sample }) => ({

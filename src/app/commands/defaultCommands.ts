@@ -288,6 +288,16 @@ export function registerDefaultCommands(registry: CommandRegistry<Editor>): void
     toolCommand(OFFSET_TOOL_ID, 'Offset', 'F', ['inset', 'outline', 'parallel copy', 'wall thickness']),
     toolCommand(DIMENSION_TOOL_ID, 'Dimension', null, ['measure', 'dimension', 'length label']),
     toolCommand(TEXT_TOOL_ID, 'Text', null, ['label', 'leader', 'note', 'annotation']),
+    {
+      id: 'tools.text3d',
+      label: '3D Text…',
+      category: 'Tools',
+      description: 'Type text and place it in the model as letters, flat or extruded',
+      aliases: ['text', 'letters', 'extruded text', 'sign', 'lettering', '3d letters'],
+      run: (editor) => {
+        editor.requestUi('text3d');
+      },
+    },
     toolCommand(PAINT_TOOL_ID, 'Paint Bucket', 'B', ['paint', 'material', 'color', 'texture', 'sample']),
     {
       id: 'materials.purgeUnused',

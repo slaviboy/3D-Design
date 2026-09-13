@@ -12,6 +12,7 @@ import { RecoveryDialog } from '../dialogs/RecoveryDialog';
 import { KeyboardShortcutsDialog } from '../dialogs/KeyboardShortcutsDialog';
 import { PreferencesDialog } from '../dialogs/PreferencesDialog';
 import { StartScreen, startScreenEnabled } from '../dialogs/StartScreen';
+import { Text3DDialog } from '../dialogs/Text3DDialog';
 import { useEditor, useEditorState } from '../EditorContext';
 import { MenuBar } from '../menubar/MenuBar';
 import { CommandPalette } from '../palette/CommandPalette';
@@ -72,6 +73,7 @@ export function App({
   const startScreenRequests = useEditorState((state) => state.startScreenRequests);
   const shortcutsDialogRequests = useEditorState((state) => state.shortcutsDialogRequests);
   const preferencesDialogRequests = useEditorState((state) => state.preferencesDialogRequests);
+  const text3dDialogRequests = useEditorState((state) => state.text3dDialogRequests);
   const preferences = useEditorState((state) => state.preferences);
   const openPanels = useEditorState((state) => state.openPanels);
   const dockLayout = useEditorState((state) => state.dockLayout);
@@ -83,6 +85,7 @@ export function App({
   const [startOpen, setStartOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const [text3dOpen, setText3dOpen] = useState(false);
   const startupChecked = useRef(false);
 
   useEffect(() => {
@@ -104,6 +107,10 @@ export function App({
   useEffect(() => {
     if (preferencesDialogRequests > 0) setPreferencesOpen(true);
   }, [preferencesDialogRequests]);
+
+  useEffect(() => {
+    if (text3dDialogRequests > 0) setText3dOpen(true);
+  }, [text3dDialogRequests]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -210,6 +217,13 @@ export function App({
         <PreferencesDialog
           onClose={() => {
             setPreferencesOpen(false);
+          }}
+        />
+      )}
+      {text3dOpen && (
+        <Text3DDialog
+          onClose={() => {
+            setText3dOpen(false);
           }}
         />
       )}
