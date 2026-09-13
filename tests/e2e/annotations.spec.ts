@@ -41,7 +41,7 @@ test('dimensions an edge and edits the dimension text', async ({ page }) => {
     };
   });
 
-  await page.getByRole('button', { name: 'Tools', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Tools', exact: true }).click();
   await page.getByRole('menuitemradio', { name: 'Dimension' }).click();
   await clickWorld(page, { x: bounds.minX, y: bounds.minY, z: 0 });
   await clickWorld(page, { x: bounds.maxX, y: bounds.minY, z: 0 });

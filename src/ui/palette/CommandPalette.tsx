@@ -45,6 +45,11 @@ export function CommandPalette({ onClose }: { readonly onClose: () => void }) {
           } else if (event.key === 'ArrowUp') {
             event.preventDefault();
             setActive((index) => Math.max(index - 1, 0));
+          } else if (event.key === 'F2') {
+            // Keyboard path to change the highlighted command's shortcut.
+            event.preventDefault();
+            const command = results[activeIndex];
+            if (command) setCapturing(command.id);
           } else if (event.key === 'Enter') {
             event.preventDefault();
             const command = results[activeIndex];
@@ -84,22 +89,39 @@ export function CommandPalette({ onClose }: { readonly onClose: () => void }) {
               <span className="palette__category">{command.category}</span>
               <span className="palette__label">{command.label}</span>
               <span className="palette__shortcut">{chord ? formatChord(chord, editor.platform) : ''}</span>
-              <button
-                type="button"
+              {/* Pointer shortcut only: a listbox option can't contain controls, so keyboard and screen reader
+                  users change shortcuts with F2 or the button below the list. */}
+              <span
                 className="palette__edit-shortcut"
-                aria-label={`Change shortcut for ${command.label}`}
-                title="Change shortcut"
+                aria-hidden="true"
+                title="Change shortcut (F2)"
                 onClick={(event) => {
                   event.stopPropagation();
                   setCapturing(command.id);
                 }}
               >
                 ⌨
-              </button>
+              </span>
             </li>
           );
         })}
       </ul>
+      {results[activeIndex] && (
+        <div className="palette__footer">
+          <button
+            type="button"
+            className="button"
+            aria-label={`Change shortcut for ${results[activeIndex].label}`}
+            onClick={() => {
+              const command = results[activeIndex];
+              if (command) setCapturing(command.id);
+            }}
+          >
+            Change Shortcut…
+          </button>
+          <span className="palette__hint">F2</span>
+        </div>
+      )}
     </Dialog>
   );
 }

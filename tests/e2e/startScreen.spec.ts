@@ -13,7 +13,7 @@ test('offers templates at startup, reopens from the File menu, and can be turned
     .poll(() => page.evaluate(() => window.__planar?.editor.session.doc.rootStore.instanceCount))
     .toBe(1);
 
-  await page.getByRole('button', { name: 'File', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'File', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Start Screen…' }).click();
   await expect(start).toBeVisible();
   await start.getByRole('checkbox', { name: 'Show at startup' }).uncheck();

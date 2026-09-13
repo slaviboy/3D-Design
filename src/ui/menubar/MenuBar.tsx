@@ -251,10 +251,11 @@ export function MenuBar() {
   return (
     <div className="menubar" role="menubar" aria-label="Main menu" ref={barRef}>
       {MENUS.map((menu, menuIndex) => (
-        <div className="menubar__menu" key={menu.label}>
+        <div className="menubar__menu" role="none" key={menu.label}>
           <button
             type="button"
             className="menubar__trigger"
+            role="menuitem"
             aria-haspopup="menu"
             aria-expanded={openIndex === menuIndex}
             ref={(element) => {

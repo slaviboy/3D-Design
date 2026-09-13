@@ -47,7 +47,7 @@ test('changes shortcuts from the command palette, resolves conflicts, and keeps 
   await page.keyboard.press('l');
   await expect(viewport).toHaveAttribute('data-active-tool', 'tool.rectangle');
 
-  await page.getByRole('button', { name: 'Help', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Help', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Keyboard Shortcuts…' }).click();
   const dialog = page.getByRole('dialog', { name: 'Keyboard Shortcuts' });
   await dialog.getByRole('button', { name: 'Reset All' }).click();

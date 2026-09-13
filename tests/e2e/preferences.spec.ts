@@ -2,7 +2,7 @@ import { expect, test } from './fixtures';
 
 test('changes the theme and units in Preferences and keeps them after reloading', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Window', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Window', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Preferences…' }).click();
   const dialog = page.getByRole('dialog', { name: 'Preferences' });
   await expect(dialog).toBeVisible();

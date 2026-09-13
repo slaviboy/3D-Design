@@ -141,7 +141,7 @@ test('subtracts one solid group from another through the Tools menu', async ({ p
 
   await page.keyboard.press('ControlOrMeta+A');
   await expect(page.getByTestId('selection-count')).toHaveText('2 selected');
-  await page.getByRole('button', { name: 'Tools', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Tools', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Subtract' }).click();
 
   await expect.poll(() => groupsAndVolume(page), { timeout: 20_000 }).toEqual({ groups: 1, volume: 7 });

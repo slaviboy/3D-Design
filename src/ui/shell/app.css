@@ -680,7 +680,7 @@
 
 .palette__category,
 .palette__shortcut {
-  opacity: 0.7;
+  color: var(--muted-fg);
   font-size: 12px;
 }
 
@@ -1370,4 +1370,28 @@
   justify-content: space-between;
   gap: 8px;
   color: var(--muted-fg);
+}
+
+/* The highlighted palette row keeps full contrast against the accent color. */
+.palette__option--active .palette__category,
+.palette__option--active .palette__shortcut,
+.palette__option--active .palette__edit-shortcut {
+  color: inherit;
+}
+
+.palette__edit-shortcut {
+  cursor: pointer;
+}
+
+.palette__footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--chrome-border);
+}
+
+.palette__hint {
+  color: var(--muted-fg);
+  font-size: 12px;
 }

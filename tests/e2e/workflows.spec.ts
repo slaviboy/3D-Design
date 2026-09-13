@@ -23,7 +23,7 @@ async function openSample(page: Page): Promise<void> {
 
 test('opens the sample model from the File menu using only the keyboard', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'File', exact: true }).focus();
+  await page.getByRole('menuitem', { name: 'File', exact: true }).focus();
   await page.keyboard.press('ArrowDown');
   await expect(page.getByRole('menu', { name: 'File' })).toBeVisible();
   await page.keyboard.press('End');

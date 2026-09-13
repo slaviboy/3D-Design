@@ -79,7 +79,7 @@ test('a scene restores the camera, a section plane cuts a box, and shadows turn 
   await page.keyboard.press('Space');
 
   // Add a scene from the Scenes panel.
-  await page.getByRole('button', { name: 'Window', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Window', exact: true }).click();
   await page.getByRole('menuitemradio', { name: 'Scenes' }).click();
   const scenesPanel = page.getByRole('region', { name: 'Scenes' });
   await scenesPanel.getByRole('button', { name: 'Add', exact: true }).click();
@@ -97,7 +97,7 @@ test('a scene restores the camera, a section plane cuts a box, and shadows turn 
   // Place a section plane on the top face of the box.
   await nextFrames(page);
   const box = await geometry(page);
-  await page.getByRole('button', { name: 'Tools', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Tools', exact: true }).click();
   await page.getByRole('menuitemradio', { name: 'Section Plane' }).click();
   const top = { x: (box.minX + box.maxX) / 2 + 0.3, y: (box.minY + box.maxY) / 2 + 0.2, z: box.maxZ };
   const area = await viewport.boundingBox();
@@ -113,7 +113,7 @@ test('a scene restores the camera, a section plane cuts a box, and shadows turn 
   ).toHaveText('Section Plane');
 
   // Turn shadows on from the Shadows panel; the fixtures fail the test on any console error.
-  await page.getByRole('button', { name: 'Window', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Window', exact: true }).click();
   await page.getByRole('menuitemradio', { name: 'Shadows' }).click();
   const shadowsPanel = page.getByRole('region', { name: 'Shadows' });
   await shadowsPanel.getByRole('button', { name: 'Shadows Off' }).click();
