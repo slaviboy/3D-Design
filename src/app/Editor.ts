@@ -45,7 +45,12 @@ import { transformEntities } from '../kernel/ops/transform';
 import { vec3 } from '../kernel/math/vec3';
 import { type UnitSettings } from '../kernel/units/units';
 import { parseMeasurement } from '../kernel/vcb/parseMeasurement';
-import { decodePlanarFile, encodePlanarFile, PLANAR_FILE_EXTENSION } from '../io/format/planarFile';
+import {
+  decodePlanarFile,
+  encodePlanarFile,
+  PLANAR_FILE_EXTENSION,
+  readPlanarThumbnail,
+} from '../io/format/planarFile';
 import type { FileAccess } from '../io/fs/types';
 import { DEFAULT_RETENTION, recoverySnapshotId, type RecoveryRepository } from '../io/idb/recovery';
 import {
@@ -212,7 +217,8 @@ export interface InputRequest {
 
 /** Keeps the list of recently opened and saved files. */
 export interface RecentFilesRecorder {
-  record(name: string, handle: unknown): void;
+  /** `thumbnail` is the PNG preview stored in the file, or null when it has none. */
+  record(name: string, handle: unknown, thumbnail: Uint8Array | null): void;
 }
 
 export type UiRequest = 'command-palette' | 'backups' | 'start' | 'shortcuts' | 'preferences';
@@ -2075,7 +2081,7 @@ export class Editor {
       return false;
     }
     const loaded = this.loadFile(file.bytes, file.name, file.handle);
-    if (loaded) this.#recentFiles?.record(file.name, file.handle);
+    if (loaded) this.#recentFiles?.record(file.name, file.handle, readPlanarThumbnail(file.bytes));
     return loaded;
   }
 
@@ -2100,7 +2106,7 @@ export class Editor {
     if (!access || !(await this.#confirmDiscard())) return;
     const file = await access.open();
     if (file && this.loadFile(file.bytes, file.name, file.handle))
-      this.#recentFiles?.record(file.name, file.handle);
+      this.#recentFiles?.record(file.name, file.handle, readPlanarThumbnail(file.bytes));
   }
 
   /**
@@ -2187,7 +2193,7 @@ export class Editor {
     if (!result) return false;
     this.#lastSavedBytes = bytes;
     session.markSaved(withoutExtension(result.name), result.handle);
-    this.#recentFiles?.record(result.name, result.handle);
+    this.#recentFiles?.record(result.name, result.handle, readPlanarThumbnail(bytes));
     this.notify('info', `Saved ${result.name}`);
     return true;
   }

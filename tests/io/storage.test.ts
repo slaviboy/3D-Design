@@ -7,6 +7,7 @@ import {
   isSafeArchivePath,
   PLANAR_FILE_FORMAT,
   PLANAR_SCHEMA_VERSION,
+  MAX_THUMBNAIL_BYTES,
 } from '../../src/io/format/planarFile';
 import { IndexedDbRecentFilesRepository, MAX_RECENT_FILES } from '../../src/io/idb/recent';
 import { IndexedDbRecoveryRepository, openPlanarDatabase } from '../../src/io/idb/recovery';
@@ -223,5 +224,22 @@ describe('IndexedDB recent files', () => {
 
     await recent.remove('file-3.planar');
     expect((await recent.list()).map((file) => file.name)).not.toContain('file-3.planar');
+  });
+
+  it('keeps a file preview, and drops one that is not bytes or is too large', async () => {
+    const recent = new IndexedDbRecentFilesRepository(await openPlanarDatabase(new IDBFactory()));
+    const preview = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+    await recent.add({ name: 'house.planar', openedAt: 1, handle: null, thumbnail: preview });
+    await recent.add({ name: 'plain.planar', openedAt: 2, handle: null });
+    await recent.add({
+      name: 'huge.planar',
+      openedAt: 3,
+      handle: null,
+      thumbnail: new Uint8Array(MAX_THUMBNAIL_BYTES + 1),
+    });
+    const byName = new Map((await recent.list()).map((file) => [file.name, file.thumbnail]));
+    expect(byName.get('house.planar')).toEqual(preview);
+    expect(byName.get('plain.planar')).toBeNull();
+    expect(byName.get('huge.planar')).toBeNull();
   });
 });

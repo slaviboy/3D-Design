@@ -1641,3 +1641,28 @@
   padding: 0 4px;
   color: var(--muted-fg);
 }
+
+/* Start screen thumbnails ------------------------------------------------------------------------------ */
+
+.start-screen__recent-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.start-screen__thumbnail {
+  flex: none;
+  width: 96px;
+  height: 72px;
+  object-fit: cover;
+  border: 1px solid var(--chrome-border);
+  border-radius: 3px;
+  background: var(--surface-bg);
+}
+
+.start-screen__recent-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

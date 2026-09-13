@@ -1,3 +1,4 @@
+import { MAX_THUMBNAIL_BYTES } from '../format/planarFile';
 import { completion, promisify, RECENT_STORE } from './recovery';
 
 /** A file the user opened or saved recently. */
@@ -7,6 +8,8 @@ export interface RecentFile {
   readonly openedAt: number;
   /** A File System Access handle to reopen it with, where the browser supports that; otherwise null. */
   readonly handle: unknown;
+  /** The PNG preview stored in the file when it was last opened or saved, if it had one. */
+  readonly thumbnail?: Uint8Array | null;
 }
 
 export const MAX_RECENT_FILES = 10;
@@ -23,7 +26,11 @@ function readRecentFile(value: unknown): RecentFile | null {
   if (typeof value !== 'object' || value === null) return null;
   const record = value as Record<string, unknown>;
   if (typeof record.name !== 'string' || typeof record.openedAt !== 'number') return null;
-  return { name: record.name, openedAt: record.openedAt, handle: record.handle ?? null };
+  const thumbnail =
+    record.thumbnail instanceof Uint8Array && record.thumbnail.byteLength <= MAX_THUMBNAIL_BYTES
+      ? record.thumbnail
+      : null;
+  return { name: record.name, openedAt: record.openedAt, handle: record.handle ?? null, thumbnail };
 }
 
 export class IndexedDbRecentFilesRepository implements RecentFilesRepository {
@@ -65,9 +72,12 @@ export class IndexedDbRecentFilesRepository implements RecentFilesRepository {
 
   async #put(file: RecentFile): Promise<void> {
     const transaction = this.#db.transaction(RECENT_STORE, 'readwrite');
-    transaction
-      .objectStore(RECENT_STORE)
-      .put({ name: file.name, openedAt: file.openedAt, handle: file.handle });
+    transaction.objectStore(RECENT_STORE).put({
+      name: file.name,
+      openedAt: file.openedAt,
+      handle: file.handle,
+      thumbnail: file.thumbnail ?? null,
+    });
     await completion(transaction);
   }
 }

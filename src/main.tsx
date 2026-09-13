@@ -131,8 +131,8 @@ async function start(): Promise<void> {
     recovery = { repository, sessionId: autosave.sessionId };
     const recentFiles = new IndexedDbRecentFilesRepository(db);
     editor.setRecentFiles({
-      record: (name, handle) => {
-        recentFiles.add({ name, openedAt: Date.now(), handle }).catch((error: unknown) => {
+      record: (name, handle, thumbnail) => {
+        recentFiles.add({ name, openedAt: Date.now(), handle, thumbnail }).catch((error: unknown) => {
           editor.notify(
             'error',
             `Could not update recent files: ${error instanceof Error ? error.message : String(error)}`,

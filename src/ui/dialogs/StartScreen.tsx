@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { TEMPLATES } from '../../app/templates/templates';
 import type { RecentFile, RecentFilesRepository } from '../../io/idb/recent';
 import { Dialog } from '../common/Dialog';
@@ -22,6 +22,21 @@ export function setStartScreenEnabled(enabled: boolean): void {
   } catch {
     // Without storage the choice lasts only for this session.
   }
+}
+
+/** A recent file's stored preview. Decorative: the file name next to it is the button's label. */
+function RecentThumbnail({ bytes }: { readonly bytes: Uint8Array }) {
+  const url = useMemo(
+    () => URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: 'image/png' })),
+    [bytes],
+  );
+  useEffect(
+    () => () => {
+      URL.revokeObjectURL(url);
+    },
+    [url],
+  );
+  return <img className="start-screen__thumbnail" src={url} alt="" width={96} height={72} />;
 }
 
 /** Templates, Open and recent files, shown when Planar starts and from File > Start Screen. */
@@ -82,7 +97,15 @@ export function StartScreen({
                   run(() => editor.openRecent(file.name, file.handle));
                 }}
               >
-                {file.name}
+                {file.thumbnail ? (
+                  <RecentThumbnail bytes={file.thumbnail} />
+                ) : (
+                  <span
+                    className="start-screen__thumbnail start-screen__thumbnail--empty"
+                    aria-hidden="true"
+                  />
+                )}
+                <span className="start-screen__recent-name">{file.name}</span>
               </button>
             </li>
           ))}
