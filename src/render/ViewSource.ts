@@ -52,5 +52,13 @@ export interface ViewSource {
   readonly showSectionPlanes: boolean;
   /** Clip at active section planes and fill the cuts. */
   readonly showSectionCuts: boolean;
+  /** An environment image loaded from a local file in this session, used by the `custom` environment. */
+  readonly environmentImage?: ViewEnvironmentImage | null;
   subscribe(listener: (change: ViewChange) => void): () => void;
+}
+
+/** Radiance HDR bytes and the name of the file they came from. */
+export interface ViewEnvironmentImage {
+  readonly name: string;
+  readonly bytes: Uint8Array;
 }

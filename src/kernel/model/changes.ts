@@ -20,6 +20,10 @@ import type {
   SectionPlaneData,
   SectionPlaneState,
   ShadowSettings,
+  StyleSettings,
+  NamedStyle,
+  FogSettings,
+  EnvironmentSettings,
   AnnotationData,
   AnnotationState,
   CurveData,
@@ -189,7 +193,19 @@ export type Change =
       readonly from: SceneState;
       readonly to: SceneState;
     }
-  | { readonly kind: 'scene.reorder'; readonly from: readonly SceneId[]; readonly to: readonly SceneId[] };
+  | { readonly kind: 'scene.reorder'; readonly from: readonly SceneId[]; readonly to: readonly SceneId[] }
+  | { readonly kind: 'document.style'; readonly from: StyleSettings; readonly to: StyleSettings }
+  | {
+      readonly kind: 'document.styles';
+      readonly from: readonly NamedStyle[];
+      readonly to: readonly NamedStyle[];
+    }
+  | { readonly kind: 'document.fog'; readonly from: FogSettings; readonly to: FogSettings }
+  | {
+      readonly kind: 'document.environment';
+      readonly from: EnvironmentSettings;
+      readonly to: EnvironmentSettings;
+    };
 
 export type ChangeKind = Change['kind'];
 
@@ -266,6 +282,10 @@ export function invertChange(change: Change): Change {
     case 'material.attributes':
     case 'tag.attributes':
     case 'document.axes':
+    case 'document.style':
+    case 'document.styles':
+    case 'document.fog':
+    case 'document.environment':
       return { ...change, from: change.to, to: change.from } as Change;
   }
 }

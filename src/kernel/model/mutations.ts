@@ -2,6 +2,18 @@ import { KernelError } from '../errors';
 import type { AnnotationId, SceneId, SectionPlaneId } from '../ids';
 import { formatLocalDateTime, parseLocalDateTime } from '../sun/solar';
 import type { SceneState, SectionPlaneState, ShadowSettings } from './types';
+import type { EnvironmentSettings, FogSettings, NamedStyle, StyleSettings } from './types';
+import {
+  namedStylesCopy,
+  namedStylesProblem,
+  normalizeEnvironmentSettings,
+  normalizeFogSettings,
+  normalizeStyleSettings,
+  sameEnvironment,
+  sameFog,
+  sameNamedStyles,
+  sameStyle,
+} from './presentation';
 import {
   DEFAULT_ANNOTATION_ATTRIBUTES,
   type AnnotationAttributes,
@@ -841,6 +853,8 @@ function assertValidSceneState(state: SceneState): void {
     throw new KernelError('invalid-geometry', 'A scene camera must be finite');
   }
   if (state.shadows) normalizeShadowSettings(state.shadows);
+  if (state.style) normalizeStyleSettings(state.style);
+  if (state.fog) normalizeFogSettings(state.fog);
 }
 
 export function addScene(doc: ModelDocument, state: SceneState, index = doc.scenes.length): SceneId {
@@ -870,6 +884,8 @@ export function updateScene(doc: ModelDocument, id: SceneId, patch: Partial<Scen
     sections: scene.sections,
     shadows: scene.shadows,
     axes: scene.axes,
+    style: scene.style,
+    fog: scene.fog,
   };
   const to: SceneState = { ...from, ...patch };
   assertValidSceneState(to);
@@ -889,4 +905,38 @@ export function reorderScenes(doc: ModelDocument, order: readonly SceneId[]): vo
   }
   if (order.every((id, index) => id === from[index])) return;
   doc.apply({ kind: 'scene.reorder', from, to: [...order] });
+}
+
+// -------------------------------------------------------------------------------------------------- styles, fog, environment
+
+/** Changes the document's style. Throws a KernelError for invalid values; does nothing when nothing changes. */
+export function setStyleSettings(doc: ModelDocument, patch: Partial<StyleSettings>): void {
+  const from = doc.style;
+  const to = normalizeStyleSettings({ ...from, ...patch });
+  if (sameStyle(from, to)) return;
+  doc.apply({ kind: 'document.style', from, to });
+}
+
+/** Replaces the list of styles saved in the model. Names must be unique and not empty. */
+export function setInModelStyles(doc: ModelDocument, styles: readonly NamedStyle[]): void {
+  const problem = namedStylesProblem(styles);
+  if (problem !== null) throw new KernelError('invalid-operation', `Invalid in-model styles: ${problem}`);
+  const from = doc.inModelStyles;
+  const to = namedStylesCopy(styles);
+  if (sameNamedStyles(from, to)) return;
+  doc.apply({ kind: 'document.styles', from, to });
+}
+
+export function setFogSettings(doc: ModelDocument, patch: Partial<FogSettings>): void {
+  const from = doc.fog;
+  const to = normalizeFogSettings({ ...from, ...patch });
+  if (sameFog(from, to)) return;
+  doc.apply({ kind: 'document.fog', from, to });
+}
+
+export function setEnvironmentSettings(doc: ModelDocument, patch: Partial<EnvironmentSettings>): void {
+  const from = doc.environment;
+  const to = normalizeEnvironmentSettings({ ...from, ...patch });
+  if (sameEnvironment(from, to)) return;
+  doc.apply({ kind: 'document.environment', from, to });
 }

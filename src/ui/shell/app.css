@@ -1576,3 +1576,72 @@
 .outliner__row--selected:hover {
   color: var(--fg);
 }
+
+/* Styles, Fog and Environment panels */
+
+.styles {
+  display: grid;
+  gap: 6px;
+}
+
+.styles__heading {
+  margin: 4px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted-fg);
+}
+
+.styles__list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.styles__row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.styles__choice {
+  width: 100%;
+  text-align: left;
+}
+
+.styles__row .styles__choice {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+
+/* The current style keeps full text contrast on the pressed background; the accent border and weight mark it. */
+.styles__choice[aria-pressed='true'] {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.styles__save {
+  justify-self: start;
+}
+
+.styles__note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted-fg);
+}
+
+.styles__group {
+  display: grid;
+  gap: 6px;
+  margin: 4px 0 0;
+  padding: 6px 8px 8px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+}
+
+.styles__group legend {
+  padding: 0 4px;
+  color: var(--muted-fg);
+}

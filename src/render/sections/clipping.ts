@@ -35,7 +35,7 @@ export class ClippingMaterials {
   /**
    * Gives a mesh or line object the clipping planes (world space). An empty list restores the base material.
    */
-  apply(object: THREE.Mesh | THREE.LineSegments, planes: readonly THREE.Plane[]): void {
+  apply(object: THREE.Mesh | THREE.LineSegments | THREE.Points, planes: readonly THREE.Plane[]): void {
     const data = object.userData as ClippedMaterialData;
     const current = object.material;
     if (Array.isArray(current)) return;

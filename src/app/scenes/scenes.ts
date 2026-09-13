@@ -7,6 +7,7 @@ import {
   setShadowSettings,
   setTagAttributes,
 } from '../../kernel/model/mutations';
+import { setFogSettings, setStyleSettings } from '../../kernel/model/mutations';
 import type { SceneData, SceneSaves, SceneState } from '../../kernel/model/types';
 import type { CameraState } from '../camera/camera';
 
@@ -78,6 +79,8 @@ export function captureSceneState(
       : null,
     shadows: saves.shadows ? doc.shadows : null,
     axes: saves.axes ? doc.axes : null,
+    style: saves.style ? doc.style : null,
+    fog: saves.fog ? doc.fog : null,
   };
 }
 
@@ -101,6 +104,8 @@ export function applySceneModelState(doc: ModelDocument, scene: SceneData): void
   }
   if (saves.shadows && scene.shadows) setShadowSettings(doc, scene.shadows);
   if (saves.axes && scene.axes) setModelAxes(doc, scene.axes);
+  if (saves.style && scene.style) setStyleSettings(doc, scene.style);
+  if (saves.fog && scene.fog) setFogSettings(doc, scene.fog);
 }
 
 /** The camera a scene restores, or null when it does not save one. */

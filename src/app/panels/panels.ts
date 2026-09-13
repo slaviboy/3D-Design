@@ -8,7 +8,10 @@ export type PanelId =
   | 'materials'
   | 'scenes'
   | 'shadows'
-  | 'instructor';
+  | 'instructor'
+  | 'styles'
+  | 'fog'
+  | 'environment';
 
 export interface PanelDescriptor {
   readonly id: PanelId;
@@ -26,6 +29,17 @@ export const PANELS: readonly PanelDescriptor[] = [
   { id: 'materials', label: 'Materials', aliases: ['colors', 'textures', 'paint', 'swatches'] },
   { id: 'scenes', label: 'Scenes', aliases: ['views', 'pages', 'saved views', 'animation'] },
   { id: 'shadows', label: 'Shadows', aliases: ['sun', 'daylight', 'location', 'geolocation', 'time of day'] },
+  {
+    id: 'styles',
+    label: 'Styles',
+    aliases: ['display', 'face style', 'edge style', 'background', 'sky', 'ground'],
+  },
+  { id: 'fog', label: 'Fog', aliases: ['haze', 'atmosphere', 'depth fade'] },
+  {
+    id: 'environment',
+    label: 'Environment',
+    aliases: ['hdr', 'image based lighting', 'reflections', 'skydome'],
+  },
   { id: 'instructor', label: 'Instructor', aliases: ['help', 'hints', 'tool help', 'how to use a tool'] },
 ];
 

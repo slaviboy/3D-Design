@@ -21,6 +21,9 @@ import { MaterialsPanel } from '../panels/MaterialsPanel';
 import { TagsPanel } from '../panels/TagsPanel';
 import { ScenesPanel } from '../panels/ScenesPanel';
 import { ShadowsPanel } from '../panels/ShadowsPanel';
+import { EnvironmentPanel } from '../panels/EnvironmentPanel';
+import { FogPanel } from '../panels/FogPanel';
+import { StylesPanel } from '../panels/StylesPanel';
 import { SceneTabs } from '../scenes/SceneTabs';
 import { StatusBar } from '../statusbar/StatusBar';
 import { Toolbar, ToolPalette } from '../toolbar/Toolbar';
@@ -210,6 +213,21 @@ export function App({
           {openPanels.includes('instructor') && (
             <ErrorBoundary area="the Instructor panel">
               <InstructorPanel />
+            </ErrorBoundary>
+          )}
+          {openPanels.includes('styles') && (
+            <ErrorBoundary area="the Styles panel">
+              <StylesPanel />
+            </ErrorBoundary>
+          )}
+          {openPanels.includes('fog') && (
+            <ErrorBoundary area="the Fog panel">
+              <FogPanel />
+            </ErrorBoundary>
+          )}
+          {openPanels.includes('environment') && (
+            <ErrorBoundary area="the Environment panel">
+              <EnvironmentPanel />
             </ErrorBoundary>
           )}
         </aside>

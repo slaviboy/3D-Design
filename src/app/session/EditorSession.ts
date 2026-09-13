@@ -26,6 +26,12 @@ export interface SessionEvent {
 
 export type SessionListener = (event: SessionEvent) => void;
 
+/** Radiance HDR bytes loaded from a local file, and the file's name. */
+export interface EnvironmentImage {
+  readonly name: string;
+  readonly bytes: Uint8Array;
+}
+
 export const UNTITLED_DOCUMENT_NAME = 'Untitled';
 
 export interface ReplaceDocumentOptions {
@@ -50,6 +56,7 @@ export class EditorSession {
   #camera: CameraState;
   #showSectionPlanes = true;
   #showSectionCuts = true;
+  #environmentImage: EnvironmentImage | null = null;
   #revision = 0;
   #savedRevision = 0;
   #documentName = UNTITLED_DOCUMENT_NAME;
@@ -194,6 +201,17 @@ export class EditorSession {
   /** Whether active section planes clip the view and show filled cuts. View state, not part of the model. */
   get showSectionCuts(): boolean {
     return this.#showSectionCuts;
+  }
+
+  /** An environment image loaded from a local file for this session. It is never saved in the model. */
+  get environmentImage(): EnvironmentImage | null {
+    return this.#environmentImage;
+  }
+
+  setEnvironmentImage(image: EnvironmentImage | null): void {
+    if (image === this.#environmentImage) return;
+    this.#environmentImage = image;
+    this.#emit({ kind: 'view' });
   }
 
   setSectionDisplay(options: { readonly planes?: boolean; readonly cuts?: boolean }): void {

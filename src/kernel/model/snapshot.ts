@@ -53,6 +53,27 @@ import {
 } from './types';
 import { validateDocument } from './validate';
 import type { ValidationProblem } from '../errors';
+import {
+  DEFAULT_ENVIRONMENT_SETTINGS,
+  DEFAULT_FOG_SETTINGS,
+  DEFAULT_STYLE_SETTINGS,
+  type EdgeColorMode,
+  type EnvironmentSettings,
+  type FaceStyle,
+  type FogSettings,
+  type NamedStyle,
+  type Rgb,
+  type StyleSettings,
+} from './types';
+import {
+  environmentCopy,
+  fogCopy,
+  isDefaultEnvironment,
+  isDefaultFog,
+  isDefaultStyle,
+  namedStylesCopy,
+  styleCopy,
+} from './presentation';
 
 export const SNAPSHOT_FORMAT = 'planar-document';
 export const SNAPSHOT_VERSION = 1;
@@ -116,7 +137,15 @@ export interface DocumentSnapshot {
   /** Present only when the shadow settings differ from the default. */
   readonly shadows?: ShadowSettings;
   /** Present only when the document has scenes. In display order. */
-  readonly scenes?: readonly SceneData[];
+  readonly scenes?: readonly SceneSnapshot[];
+  /** Present only when the style differs from the default. */
+  readonly style?: StyleSettings;
+  /** Present only when the model has saved styles. In display order. */
+  readonly styles?: readonly NamedStyle[];
+  /** Present only when the fog settings differ from the default. */
+  readonly fog?: FogSettings;
+  /** Present only when the environment settings differ from the default. */
+  readonly environment?: EnvironmentSettings;
 }
 
 /** The encoded image of every texture asset, keyed by SHA-256 digest, for storing next to a snapshot. */
@@ -148,7 +177,20 @@ function isDefaultShadows(s: ShadowSettings): boolean {
   return (Object.keys(defaults) as (keyof ShadowSettings)[]).every((key) => Object.is(s[key], defaults[key]));
 }
 
-function sceneCopy(scene: SceneData): SceneData {
+/**
+ * A scene as written to a snapshot. The style and fog save flags are written only when set, and the saved style and
+ * fog only when present, so scenes from before styles existed keep their exact form.
+ */
+export type SceneSnapshot = Omit<SceneData, 'saves' | 'style' | 'fog'> & {
+  readonly saves: Omit<SceneData['saves'], 'style' | 'fog'> & {
+    readonly style?: boolean;
+    readonly fog?: boolean;
+  };
+  readonly style?: StyleSettings;
+  readonly fog?: FogSettings;
+};
+
+function sceneCopy(scene: SceneData): SceneSnapshot {
   const vector = (v: Vec3): Vec3 => ({ x: v.x, y: v.y, z: v.z });
   const camera = scene.camera;
   return {
@@ -162,7 +204,11 @@ function sceneCopy(scene: SceneData): SceneData {
       activeSections: scene.saves.activeSections,
       shadows: scene.saves.shadows,
       axes: scene.saves.axes,
+      ...(scene.saves.style ? { style: true } : {}),
+      ...(scene.saves.fog ? { fog: true } : {}),
     },
+    ...(scene.style ? { style: styleCopy(scene.style) } : {}),
+    ...(scene.fog ? { fog: fogCopy(scene.fog) } : {}),
     camera: camera
       ? {
           eye: vector(camera.eye),
@@ -387,6 +433,10 @@ export function createSnapshot(doc: ModelDocument): DocumentSnapshot {
         }),
     ...(isDefaultShadows(doc.shadows) ? {} : { shadows: shadowCopy(doc.shadows) }),
     ...(doc.scenes.length === 0 ? {} : { scenes: doc.scenes.map(sceneCopy) }),
+    ...(isDefaultStyle(doc.style) ? {} : { style: styleCopy(doc.style) }),
+    ...(doc.inModelStyles.length === 0 ? {} : { styles: namedStylesCopy(doc.inModelStyles) }),
+    ...(isDefaultFog(doc.fog) ? {} : { fog: fogCopy(doc.fog) }),
+    ...(isDefaultEnvironment(doc.environment) ? {} : { environment: environmentCopy(doc.environment) }),
   };
 }
 
@@ -797,6 +847,70 @@ function readShadows(r: Reader, value: unknown, path: string): ShadowSettings {
   };
 }
 
+function readRgb(r: Reader, value: unknown, path: string): Rgb {
+  const c = r.record(value, path);
+  return { r: r.number(c.r, `${path}.r`), g: r.number(c.g, `${path}.g`), b: r.number(c.b, `${path}.b`) };
+}
+
+/** Enum values are read as text; the validator reports unknown ones. */
+function readStyle(r: Reader, value: unknown, path: string): StyleSettings {
+  const s = r.record(value, path);
+  return {
+    faceStyle: r.string(s.faceStyle, `${path}.faceStyle`) as FaceStyle,
+    xRay: r.boolean(s.xRay, `${path}.xRay`),
+    frontColor: readRgb(r, s.frontColor, `${path}.frontColor`),
+    backColor: readRgb(r, s.backColor, `${path}.backColor`),
+    showEdges: r.boolean(s.showEdges, `${path}.showEdges`),
+    backEdges: r.boolean(s.backEdges, `${path}.backEdges`),
+    profiles: r.boolean(s.profiles, `${path}.profiles`),
+    profileWidth: r.number(s.profileWidth, `${path}.profileWidth`),
+    depthCue: r.boolean(s.depthCue, `${path}.depthCue`),
+    depthCueWidth: r.number(s.depthCueWidth, `${path}.depthCueWidth`),
+    extensions: r.boolean(s.extensions, `${path}.extensions`),
+    extensionLength: r.number(s.extensionLength, `${path}.extensionLength`),
+    endpoints: r.boolean(s.endpoints, `${path}.endpoints`),
+    edgeColorMode: r.string(s.edgeColorMode, `${path}.edgeColorMode`) as EdgeColorMode,
+    edgeColor: readRgb(r, s.edgeColor, `${path}.edgeColor`),
+    backgroundColor: readRgb(r, s.backgroundColor, `${path}.backgroundColor`),
+    sky: r.boolean(s.sky, `${path}.sky`),
+    skyColor: readRgb(r, s.skyColor, `${path}.skyColor`),
+    ground: r.boolean(s.ground, `${path}.ground`),
+    groundColor: readRgb(r, s.groundColor, `${path}.groundColor`),
+    groundFromBelow: r.boolean(s.groundFromBelow, `${path}.groundFromBelow`),
+  };
+}
+
+function readNamedStyles(r: Reader, value: unknown, path: string): NamedStyle[] {
+  return r.list(value, path).map((entry, i) => {
+    const p = `${path}[${String(i)}]`;
+    const n = r.record(entry, p);
+    return { name: r.string(n.name, `${p}.name`), settings: readStyle(r, n.settings, `${p}.settings`) };
+  });
+}
+
+function readFog(r: Reader, value: unknown, path: string): FogSettings {
+  const f = r.record(value, path);
+  return {
+    enabled: r.boolean(f.enabled, `${path}.enabled`),
+    start: r.number(f.start, `${path}.start`),
+    end: r.number(f.end, `${path}.end`),
+    useBackgroundColor: r.boolean(f.useBackgroundColor, `${path}.useBackgroundColor`),
+    color: readRgb(r, f.color, `${path}.color`),
+  };
+}
+
+function readEnvironment(r: Reader, value: unknown, path: string): EnvironmentSettings {
+  const e = r.record(value, path);
+  return {
+    enabled: r.boolean(e.enabled, `${path}.enabled`),
+    environmentId: r.string(e.environmentId, `${path}.environmentId`),
+    rotationDegrees: r.number(e.rotationDegrees, `${path}.rotationDegrees`),
+    exposure: r.number(e.exposure, `${path}.exposure`),
+    showAsBackground: r.boolean(e.showAsBackground, `${path}.showAsBackground`),
+    useForReflections: r.boolean(e.useForReflections, `${path}.useForReflections`),
+  };
+}
+
 function readScene(r: Reader, value: unknown, path: string): SceneData {
   const s = r.record(value, path);
   const saves = r.record(s.saves, `${path}.saves`);
@@ -812,7 +926,12 @@ function readScene(r: Reader, value: unknown, path: string): SceneData {
       activeSections: r.boolean(saves.activeSections, `${path}.saves.activeSections`),
       shadows: r.boolean(saves.shadows, `${path}.saves.shadows`),
       axes: r.boolean(saves.axes, `${path}.saves.axes`),
+      // Style and fog flags were added later; scenes without them save neither.
+      style: saves.style === undefined ? false : r.boolean(saves.style, `${path}.saves.style`),
+      fog: saves.fog === undefined ? false : r.boolean(saves.fog, `${path}.saves.fog`),
     },
+    style: s.style === undefined || s.style === null ? null : readStyle(r, s.style, `${path}.style`),
+    fog: s.fog === undefined || s.fog === null ? null : readFog(r, s.fog, `${path}.fog`),
     camera: nullable(s.camera, (): SceneCamera => {
       const c = r.record(s.camera, `${path}.camera`);
       if (c.projection !== 'perspective' && c.projection !== 'parallel') {
@@ -958,7 +1077,24 @@ export function readLoadPlan(
     root.scenes === undefined
       ? []
       : r.list(root.scenes, '$.scenes').map((entry, i) => readScene(r, entry, `$.scenes[${String(i)}]`));
+  // Documents saved before styles, fog and environments existed have none of them.
+  const style = root.style === undefined ? null : readStyle(r, root.style, '$.style');
+  const styles = root.styles === undefined ? [] : readNamedStyles(r, root.styles, '$.styles');
+  const fog = root.fog === undefined ? null : readFog(r, root.fog, '$.fog');
+  const environment =
+    root.environment === undefined ? null : readEnvironment(r, root.environment, '$.environment');
   if (r.errors.length > 0) return err(`Invalid document structure: ${r.errors.join('; ')}`);
+  const settingsChanges: Change[] = [];
+  if (style) settingsChanges.push({ kind: 'document.style', from: DEFAULT_STYLE_SETTINGS, to: style });
+  if (styles.length > 0) settingsChanges.push({ kind: 'document.styles', from: [], to: styles });
+  if (fog) settingsChanges.push({ kind: 'document.fog', from: DEFAULT_FOG_SETTINGS, to: fog });
+  if (environment) {
+    settingsChanges.push({
+      kind: 'document.environment',
+      from: DEFAULT_ENVIRONMENT_SETTINGS,
+      to: environment,
+    });
+  }
 
   const allIds = [
     ...textures.map((t) => t.id),
@@ -993,6 +1129,7 @@ export function readLoadPlan(
   }
   if (axes) changes.push({ kind: 'document.axes', from: DEFAULT_MODEL_AXES, to: axes });
   if (shadows) changes.push({ kind: 'document.shadows', from: DEFAULT_SHADOW_SETTINGS, to: shadows });
+  changes.push(...settingsChanges);
   scenes.forEach((data, index) => changes.push({ kind: 'scene.add', data, index }));
   for (const data of textures) changes.push({ kind: 'asset.add', data });
   for (const data of materials) changes.push({ kind: 'material.add', data });

@@ -135,6 +135,29 @@ before they existed load unchanged.
     kept in the file and skipped when the scene is shown.
   - The scene transition time and animation delay are editor settings and are not stored in the file yet.
 
+### Styles, fog and environment (implemented)
+
+All four fields are document level and written only when they differ from the default (or, for `styles`, when the
+list is not empty), so files without them keep their bytes and hash, and older files load unchanged.
+
+- **Style** (`style`): `faceStyle` (`"wireframe" | "hiddenLine" | "shaded" | "shadedWithTextures" | "monochrome"`),
+  `xRay`, `showEdges`, `backEdges`, `profiles`, `depthCue`, `extensions`, `endpoints`, `sky`, `ground`,
+  `groundFromBelow` (booleans); `profileWidth` and `depthCueWidth` (pixels, 1…20); `extensionLength` (pixels, 0…100);
+  `edgeColorMode` (`"allSame" | "byMaterial" | "byAxis"`); and the colors `frontColor`, `backColor`, `edgeColor`,
+  `backgroundColor`, `skyColor`, `groundColor` as `{ r, g, b }` in **sRGB**, each channel in [0, 1] (material colors
+  remain linear). The default reproduces the viewport colors of earlier versions.
+- **In-model styles** (`styles`): `[{ "name", "settings": <style> }]` in display order. Names are unique, not empty,
+  at most 80 characters, without surrounding spaces. Built-in presets are application data and are not stored.
+- **Fog** (`fog`): `enabled`, `useBackgroundColor` (booleans), `start` ≥ 0 and `end` > `start` (meters), `color` (sRGB).
+- **Environment** (`environment`): `enabled`, `showAsBackground`, `useForReflections` (booleans), `environmentId` (a
+  lowercase id matching `^[a-z][a-z0-9-]{0,39}$`: `studio` and `dusk` are built in, `custom` is an HDR image loaded in the
+  current session and never stored; unknown ids show the studio), `rotationDegrees` in [0, 360), `exposure` in [0, 4].
+- **Scenes** may also save the style and fog: `saves.style` and `saves.fog` are written only when `true`, and the scene's
+  `style` and `fog` objects only when saved. A missing flag reads as `false` and a missing object as `null`.
+- Invalid values are refused by validation (`invalid-style`, `invalid-styles`, `invalid-fog`, `invalid-environment`,
+  or `invalid-scene` for a scene's saved style or fog). Opening with repair resets the document-level setting to its
+  default (the whole in-model style list for `invalid-styles`) and removes an invalid scene.
+
 Bulk geometry is stored as columnar typed arrays encoded in base64. Compared with arrays of small objects, this is
 smaller, parses faster, and transfers to workers without copying. The exact field list is fixed in
 `src/io/format/schemaV1.ts` when persistence is implemented. This outline is the design target.

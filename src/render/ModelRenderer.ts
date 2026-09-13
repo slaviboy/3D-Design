@@ -24,6 +24,17 @@ import {
   VIEW_COLORS,
 } from './palette';
 import type { ViewChange, ViewEntityRef, ViewPreviewLineStyle, ViewSource } from './ViewSource';
+import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
+import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
+import { DEFAULT_STYLE_SETTINGS, type ModelAxes, type StyleSettings } from '../kernel/model/types';
+import { buildEdgeStyleArrays } from './styles/edgeGeometry';
+import {
+  BACK_EDGE_RENDER_ORDER,
+  EdgeStyleMaterials,
+  srgbColor,
+  X_RAY_OPACITY,
+  type StyleView,
+} from './styles/edgeStyle';
 
 /** Triangles of one definition that share a side and a material. `materialId` null means the default material. */
 interface FaceBucket {
@@ -38,6 +49,12 @@ interface DefinitionGeometry {
   readonly edges: THREE.BufferGeometry;
   readonly guides: THREE.BufferGeometry;
   readonly annotations: THREE.BufferGeometry;
+  /** Edge ends, for the endpoints style. */
+  readonly endpoints: THREE.BufferGeometry;
+  /** Wide outline candidates; null unless the style shows profiles. */
+  profiles: LineSegmentsGeometry | null;
+  /** Wide edges; null unless the style uses depth cue. */
+  depthCue: LineSegmentsGeometry | null;
 }
 
 /** A decoded texture image, shared by every material that uses the asset. */
@@ -222,12 +239,11 @@ export class ModelRenderer {
   readonly #source: ViewSource;
   /** Called when something finished loading in the background (a decoded texture) and a new frame is needed. */
   readonly #onAsyncChange: () => void;
-  readonly #edgeMaterial = new THREE.LineBasicMaterial({ color: VIEW_COLORS.edge });
-  readonly #fadedEdgeMaterial = new THREE.LineBasicMaterial({
-    color: VIEW_COLORS.edge,
-    transparent: true,
-    opacity: FADED_OPACITY,
-  });
+  /** Edge materials of the current style; rebuilt, with every definition's geometry, when the style changes. */
+  readonly #edgeStyles = new EdgeStyleMaterials(DEFAULT_STYLE_SETTINGS);
+  /** The style and drawing axes the current geometry and materials were built for. */
+  #style: StyleSettings | null = null;
+  #axes: ModelAxes | null = null;
   readonly #guideMaterial = new THREE.LineBasicMaterial({ color: VIEW_COLORS.guide });
   readonly #annotationMaterial = new THREE.LineBasicMaterial({ color: VIEW_COLORS.annotation });
   readonly #selectionFaceMaterial = new THREE.MeshBasicMaterial({
@@ -300,6 +316,10 @@ export class ModelRenderer {
           this.#dirtyAssets.add(modelChange.data.id);
           this.#structureDirty = true;
         }
+        // Edges colored by material show material colors, so material changes rebuild them.
+        if (modelChange.kind.startsWith('material.') && this.#style?.edgeColorMode === 'byMaterial') {
+          for (const definitionId of this.#geometries.keys()) this.#dirtyDefinitions.add(definitionId);
+        }
       }
       this.#selectionDirty = true;
       this.#previewDirty = true;
@@ -317,6 +337,16 @@ export class ModelRenderer {
   update(): boolean {
     const doc = this.#source.doc;
     let changed = false;
+    if (doc.style !== this.#style || (doc.style.edgeColorMode === 'byAxis' && doc.axes !== this.#axes)) {
+      // A new style rebuilds every material and definition; style changes are rare, one-step user actions.
+      this.#style = doc.style;
+      this.#axes = doc.axes;
+      this.#edgeStyles.setStyle(doc.style);
+      this.#disposeFaceMaterials(() => true);
+      for (const definitionId of this.#geometries.keys()) this.#dirtyDefinitions.add(definitionId);
+      this.#structureDirty = true;
+      changed = true;
+    }
     for (const assetId of this.#dirtyAssets) {
       const entry = this.#textures.get(assetId);
       if (entry && doc.asset(assetId)?.bytes !== entry.bytes) this.#disposeTexture(assetId);
@@ -386,8 +416,7 @@ export class ModelRenderer {
     this.#disposeFaceMaterials(() => true);
     for (const id of [...this.#textures.keys()]) this.#disposeTexture(id);
     const materials: THREE.Material[] = [
-      this.#edgeMaterial,
-      this.#fadedEdgeMaterial,
+      ...this.#edgeStyles.materials(),
       this.#guideMaterial,
       this.#annotationMaterial,
       this.#selectionFaceMaterial,
@@ -398,6 +427,11 @@ export class ModelRenderer {
       ...this.#previewMaterials.values(),
     ];
     for (const material of materials) material.dispose();
+  }
+
+  /** Passes the frame's drawing size, camera and model depth range to the style materials. */
+  setStyleView(view: StyleView): void {
+    this.#edgeStyles.setView(view);
   }
 
   // ---------------------------------------------------------------------------------------------- face materials
@@ -413,15 +447,26 @@ export class ModelRenderer {
     side: FaceSide,
     faded: boolean,
   ): THREE.Material {
-    const data = materialId === null ? undefined : doc.material(materialId);
+    const style = doc.style;
+    // Monochrome and hidden line ignore materials; every face shares the default bucket's material.
+    const ignoresMaterials = style.faceStyle === 'monochrome' || style.faceStyle === 'hiddenLine';
+    const data = materialId === null || ignoresMaterials ? undefined : doc.material(materialId);
     const key = `${data ? String(data.id) : 'default'}:${side}:${faded ? 'faded' : 'normal'}`;
     const cached = this.#faceMaterials.get(key);
     if (cached) return cached;
     const threeSide = side === 'front' ? THREE.FrontSide : THREE.BackSide;
     let material: THREE.Material;
-    if (!data) {
+    if (style.faceStyle === 'hiddenLine') {
+      // Unlit faces in the background color hide what is behind them.
+      material = new THREE.MeshBasicMaterial({
+        color: srgbColor(style.backgroundColor),
+        side: threeSide,
+        ...(faded ? { transparent: true, opacity: FADED_OPACITY } : {}),
+        ...FACE_POLYGON_OFFSET,
+      });
+    } else if (!data) {
       material = new THREE.MeshLambertMaterial({
-        color: side === 'front' ? VIEW_COLORS.faceFront : VIEW_COLORS.faceBack,
+        color: srgbColor(side === 'front' ? style.frontColor : style.backColor),
         side: threeSide,
         ...(faded ? { transparent: true, opacity: FADED_OPACITY } : {}),
         ...FACE_POLYGON_OFFSET,
@@ -439,7 +484,8 @@ export class ModelRenderer {
         depthWrite: !transparent || faded,
         ...FACE_POLYGON_OFFSET,
       });
-      const asset = data.texture ? doc.asset(data.texture.assetId) : undefined;
+      const showTextures = style.faceStyle === 'shadedWithTextures';
+      const asset = data.texture && showTextures ? doc.asset(data.texture.assetId) : undefined;
       const base = asset ? this.#textureFor(asset) : null;
       if (base && data.texture) {
         const map = base.clone();
@@ -449,6 +495,11 @@ export class ModelRenderer {
         standard.color.setRGB(1, 1, 1);
       }
       material = standard;
+    }
+    if (style.xRay) {
+      material.transparent = true;
+      material.opacity *= X_RAY_OPACITY;
+      material.depthWrite = false;
     }
     this.#faceMaterials.set(key, material);
     return material;
@@ -521,6 +572,9 @@ export class ModelRenderer {
         edges: new THREE.BufferGeometry(),
         guides: new THREE.BufferGeometry(),
         annotations: new THREE.BufferGeometry(),
+        endpoints: new THREE.BufferGeometry(),
+        profiles: null,
+        depthCue: null,
       };
       this.#fillGeometry(doc, doc.store(definitionId), geometry);
       this.#geometries.set(definitionId, geometry);
@@ -536,11 +590,34 @@ export class ModelRenderer {
       faces.setAttribute('uv', new THREE.Float32BufferAttribute(arrays.uvs, 2));
       return { side: arrays.side, materialId: arrays.materialId, geometry: faces };
     });
-    const edgePositions: number[] = [];
-    for (const edge of store.edges()) appendEdge(doc, store, edge.id, edgePositions);
+    const style = doc.style;
+    const edges = buildEdgeStyleArrays(doc, store, style, style.profiles);
     const guidePositions: number[] = [];
     appendGuides(doc, store, guidePositions);
-    setPositions(geometry.edges, edgePositions);
+    setPositions(geometry.edges, edges.positions);
+    geometry.edges.setAttribute('color', new THREE.Float32BufferAttribute(edges.colors, 3));
+    geometry.edges.setAttribute('edgeOther', new THREE.Float32BufferAttribute(edges.others, 3));
+    geometry.edges.setAttribute('lineDistance', new THREE.Float32BufferAttribute(edges.distances, 1));
+    setPositions(geometry.endpoints, edges.endpoints);
+    geometry.profiles?.dispose();
+    geometry.profiles = null;
+    if (style.profiles && edges.profilePositions.length > 0) {
+      const profiles = new LineSegmentsGeometry().setPositions(edges.profilePositions);
+      profiles.setAttribute(
+        'profileInA',
+        new THREE.InstancedBufferAttribute(new Float32Array(edges.profileInA), 3),
+      );
+      profiles.setAttribute(
+        'profileInB',
+        new THREE.InstancedBufferAttribute(new Float32Array(edges.profileInB), 3),
+      );
+      geometry.profiles = profiles;
+    }
+    geometry.depthCue?.dispose();
+    geometry.depthCue =
+      style.showEdges && style.depthCue && edges.positions.length > 0
+        ? new LineSegmentsGeometry().setPositions(edges.positions).setColors(edges.colors)
+        : null;
     setPositions(geometry.guides, guidePositions);
     const annotationPositions: number[] = [];
     appendAnnotations(doc, store, annotationPositions);
@@ -552,6 +629,9 @@ export class ModelRenderer {
     geometry.edges.dispose();
     geometry.guides.dispose();
     geometry.annotations.dispose();
+    geometry.endpoints.dispose();
+    geometry.profiles?.dispose();
+    geometry.depthCue?.dispose();
   }
 
   #rebuildTree(doc: ModelDocument): void {
@@ -611,15 +691,42 @@ export class ModelRenderer {
     guides.userData = { excludeFromBounds: true };
     const annotations = new THREE.LineSegments(geometry.annotations, this.#annotationMaterial);
     annotations.userData = { excludeFromBounds: true };
+    const style = doc.style;
+    const edgeStyles = this.#edgeStyles;
     for (const bucket of geometry.faces) {
       const material = this.#faceMaterial(doc, bucket.materialId ?? inherited, bucket.side, fadedNode);
-      group.add(new THREE.Mesh(bucket.geometry, material));
+      const mesh = new THREE.Mesh(bucket.geometry, material);
+      mesh.visible = style.faceStyle !== 'wireframe';
+      group.add(mesh);
     }
-    group.add(
-      new THREE.LineSegments(geometry.edges, fadedNode ? this.#fadedEdgeMaterial : this.#edgeMaterial),
-      guides,
-      annotations,
-    );
+    const edges = new THREE.LineSegments(geometry.edges, fadedNode ? edgeStyles.fadedEdge : edgeStyles.edge);
+    // Depth cue draws the edges as wide lines instead.
+    edges.visible = style.showEdges && geometry.depthCue === null;
+    group.add(edges, guides, annotations);
+    // Style extras share the definition's geometry; none of them count for bounds or cast shadows.
+    const addExtra = (object: THREE.Object3D): void => {
+      object.userData = { excludeFromBounds: true, noShadows: true };
+      group.add(object);
+    };
+    const facesHideEdges = style.faceStyle !== 'wireframe' && !style.xRay;
+    if (!fadedNode && style.showEdges && style.backEdges && facesHideEdges) {
+      const backEdges = new THREE.LineSegments(geometry.edges, edgeStyles.backEdge);
+      backEdges.renderOrder = BACK_EDGE_RENDER_ORDER;
+      addExtra(backEdges);
+    }
+    if (style.showEdges && geometry.depthCue) {
+      addExtra(
+        new LineSegments2(geometry.depthCue, fadedNode ? edgeStyles.fadedDepthCue : edgeStyles.depthCue),
+      );
+    }
+    if (style.profiles && geometry.profiles) {
+      addExtra(
+        new LineSegments2(geometry.profiles, fadedNode ? edgeStyles.fadedProfile : edgeStyles.profile),
+      );
+    }
+    if (!fadedNode && style.showEdges && style.endpoints) {
+      addExtra(new THREE.Points(geometry.endpoints, edgeStyles.endpoint));
+    }
     const nested = new Set(ancestors).add(definitionId);
     for (const instance of doc.store(definitionId).instances()) {
       if (instance.attributes.hidden) continue;

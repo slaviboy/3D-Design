@@ -14,6 +14,15 @@ import {
   type TextureAssetData,
 } from './types';
 import type { SceneId } from '../ids';
+import {
+  DEFAULT_ENVIRONMENT_SETTINGS,
+  DEFAULT_FOG_SETTINGS,
+  DEFAULT_STYLE_SETTINGS,
+  type EnvironmentSettings,
+  type FogSettings,
+  type NamedStyle,
+  type StyleSettings,
+} from './types';
 import { validateDocument } from './validate';
 
 export const DEFAULT_HISTORY_LIMIT = 500;
@@ -88,6 +97,10 @@ export class ModelDocument {
   #shadows: ShadowSettings = DEFAULT_SHADOW_SETTINGS;
   /** Replaced, never mutated, on every change, so readers can compare references. */
   #scenes: readonly SceneData[] = [];
+  #style: StyleSettings = DEFAULT_STYLE_SETTINGS;
+  #inModelStyles: readonly NamedStyle[] = [];
+  #fog: FogSettings = DEFAULT_FOG_SETTINGS;
+  #environment: EnvironmentSettings = DEFAULT_ENVIRONMENT_SETTINGS;
 
   constructor(options: DocumentOptions = {}, init: DocumentInit = {}) {
     this.#validateOnCommit = options.validateOnCommit ?? false;
@@ -172,6 +185,24 @@ export class ModelDocument {
 
   scene(id: SceneId): SceneData | undefined {
     return this.#scenes.find((scene) => scene.id === id);
+  }
+
+  /** How faces, edges and the background are drawn. */
+  get style(): StyleSettings {
+    return this.#style;
+  }
+
+  /** Styles saved in the model, in display order. The array is replaced whenever it changes. */
+  get inModelStyles(): readonly NamedStyle[] {
+    return this.#inModelStyles;
+  }
+
+  get fog(): FogSettings {
+    return this.#fog;
+  }
+
+  get environment(): EnvironmentSettings {
+    return this.#environment;
   }
 
   /** Every instance of `definitionId`, together with the definition that contains it. */
@@ -521,6 +552,18 @@ export class ModelDocument {
         return;
       case 'document.shadows':
         this.#shadows = change.to;
+        return;
+      case 'document.style':
+        this.#style = change.to;
+        return;
+      case 'document.styles':
+        this.#inModelStyles = change.to;
+        return;
+      case 'document.fog':
+        this.#fog = change.to;
+        return;
+      case 'document.environment':
+        this.#environment = change.to;
         return;
       case 'scene.add': {
         if (this.#scenes.some((scene) => scene.id === change.data.id)) {
