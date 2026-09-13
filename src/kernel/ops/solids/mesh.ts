@@ -31,9 +31,14 @@ export interface TriangleMesh {
 
 /** What a triangle's source face looked like, so faces rebuilt from a mesh keep their plane and materials. */
 export interface FaceProvenance {
-  /** The source face's plane in mesh coordinates. */
-  readonly plane: Plane;
+  /** The source face's plane in mesh coordinates. Omitted for meshes that have no source faces (imports). */
+  readonly plane?: Plane;
   readonly attributes: FaceAttributes;
+}
+
+export interface InsertTriangleMeshOptions {
+  /** Regroup adjacent coplanar triangles into polygons. Default true; false keeps every triangle as its own face. */
+  readonly mergeCoplanar?: boolean;
 }
 
 export type MeshProvenance = ReadonlyMap<number, FaceProvenance>;
@@ -263,7 +268,9 @@ export function insertTriangleMesh(
   context: DefinitionId,
   mesh: TriangleMesh,
   provenance: MeshProvenance,
+  options: InsertTriangleMeshOptions = {},
 ): InsertedMesh {
+  const mergeCoplanar = options.mergeCoplanar ?? true;
   const vertexCount = Math.floor(mesh.positions.length / 3);
   const raw = Array.from({ length: vertexCount }, (_, i) => pointAt(mesh.positions, i));
   const representative = weldVertices(raw);
@@ -343,6 +350,7 @@ export function insertTriangleMesh(
     const first = triangles[i];
     const second = triangles[j];
     if (
+      mergeCoplanar &&
       first &&
       second &&
       sameAttributes(attributesOf(first), attributesOf(second)) &&

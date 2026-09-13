@@ -17,15 +17,41 @@ const LAYER_RULES = [
   },
   { layer: 'render', packages: ['react', 'react-dom', 'zustand'], layers: ['app', 'io', 'workers', 'ui'] },
   { layer: 'io', packages: ['react', 'react-dom', 'zustand'], layers: ['app', 'render', 'ui'] },
+  {
+    // Imported scene data, conversion to the kernel, exporters, and the import registry run on the main thread, so
+    // they must not pull three.js into the application bundle. Only the parsers in io/import use three's loaders.
+    layer: 'io',
+    variant: 'main-thread',
+    files: [
+      'src/io/mesh/**/*.{ts,tsx}',
+      'src/io/export/**/*.{ts,tsx}',
+      'src/io/import/formats.ts',
+      'src/io/import/fileSet.ts',
+    ],
+    packages: ['react', 'react-dom', 'zustand', 'three'],
+    layers: ['app', 'render', 'ui'],
+  },
   { layer: 'workers', packages: ['react', 'react-dom', 'zustand'], layers: ['app', 'render', 'ui'] },
-  { layer: 'app', packages: ['react', 'react-dom'], layers: ['ui'] },
+  {
+    layer: 'app',
+    packages: ['react', 'react-dom', 'three/examples'],
+    layers: ['ui'],
+    // Import parsers run in the io worker; the application layer only reaches them through ImportEngine.
+    modules: [
+      {
+        regex: '(^|/)io/import/(parseImport|gltf|objStl3ds|dae|threeScene|mtl|xml)$',
+        message:
+          'The app layer must parse imports through the io worker (app/io/importEngine), not directly.',
+      },
+    ],
+  },
   { layer: 'ui', packages: ['three'], layers: ['workers'] },
 ];
 
-function boundaryConfig({ layer, packages, layers }) {
+function boundaryConfig({ layer, variant, files, packages, layers, modules = [] }) {
   return {
-    name: `planar/boundaries/${layer}`,
-    files: [`src/${layer}/**/*.{ts,tsx}`],
+    name: `planar/boundaries/${layer}${variant ? `/${variant}` : ''}`,
+    files: files ?? [`src/${layer}/**/*.{ts,tsx}`],
     rules: {
       'no-restricted-imports': [
         'error',
@@ -39,6 +65,7 @@ function boundaryConfig({ layer, packages, layers }) {
               regex: `(^|/)(${layers.join('|')})(/|$)`,
               message: `The ${layer} layer must not import from these layers: ${layers.join(', ')}.`,
             },
+            ...modules,
           ],
         },
       ],

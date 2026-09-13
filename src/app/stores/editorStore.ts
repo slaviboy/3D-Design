@@ -6,6 +6,7 @@ import type { Preferences } from '../preferences/preferences';
 import { collectAnnotationLabels, type AnnotationLabel } from '../annotations/annotationLabels';
 import { projectToScreen, type Projection } from '../camera/camera';
 import type { Editor, EditorNotification, InputRequest } from '../Editor';
+import type { ExchangeRequest } from '../io/ModelExchange';
 import type { InferenceKind } from '../inference/inference';
 import type { PanelId } from '../panels/panels';
 import type { ToolOverlay } from '../tools/Tool';
@@ -79,6 +80,8 @@ export interface EditorViewState {
   readonly inputRequest: InputRequest | null;
   /** Dimension and text labels in viewport pixels. */
   readonly annotationLabels: readonly ScreenAnnotationLabel[];
+  /** An import or export dialog, or import progress. */
+  readonly exchangeRequest: ExchangeRequest | null;
   /** The material the Paint Bucket applies; null for the default material. */
   readonly activeMaterialId: number | null;
   /** Selected section planes. */
@@ -185,6 +188,7 @@ export function createEditorStore(editor: Editor): EditorStore {
       openPanels: editor.openPanels,
       inputRequest: editor.inputRequest,
       annotationLabels: screenLabels(),
+      exchangeRequest: editor.exchange.request,
       activeMaterialId: session.activeMaterialId,
       selectionSections: selection.count('section'),
       scenes: doc.scenes,
@@ -218,6 +222,7 @@ export function createEditorStore(editor: Editor): EditorStore {
       }
       refresh();
     }),
+    editor.exchange.subscribe(refresh),
   ];
   return Object.assign(store, {
     dispose: () => {

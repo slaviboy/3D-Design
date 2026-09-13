@@ -4,6 +4,7 @@ import type { RecentFilesRepository } from '../../io/idb/recent';
 import type { RecoveryRepository, RecoverySnapshot } from '../../io/idb/recovery';
 import { ErrorBoundary } from '../common/ErrorBoundary';
 import { Notifications } from '../common/Notifications';
+import { ExchangeDialog } from '../dialogs/ExchangeDialogs';
 import { InputDialog } from '../dialogs/InputDialog';
 import { RecoveryDialog } from '../dialogs/RecoveryDialog';
 import { KeyboardShortcutsDialog } from '../dialogs/KeyboardShortcutsDialog';
@@ -50,6 +51,7 @@ export function App({
   const preferences = useEditorState((state) => state.preferences);
   const openPanels = useEditorState((state) => state.openPanels);
   const inputRequest = useEditorState((state) => state.inputRequest);
+  const exchangeRequest = useEditorState((state) => state.exchangeRequest);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [recoverable, setRecoverable] = useState<readonly RecoverySnapshot[]>([]);
   const [backups, setBackups] = useState<readonly RecoverySnapshot[] | null>(null);
@@ -229,6 +231,7 @@ export function App({
         />
       )}
       {inputRequest && <InputDialog request={inputRequest} />}
+      {exchangeRequest && <ExchangeDialog request={exchangeRequest} />}
       {paletteOpen && (
         <CommandPalette
           onClose={() => {

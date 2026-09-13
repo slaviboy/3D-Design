@@ -53,6 +53,15 @@ This document describes how Planar is structured and why. The detailed designs a
 | `app` | kernel, render, io, zustand | react, react-dom, ui |
 | `ui` | app, kernel types, react | three, workers |
 
+Two finer rules keep three.js loaders inside the io worker:
+
+- `src/io/mesh`, `src/io/export`, `src/io/import/formats.ts` and `src/io/import/fileSet.ts` run on the main thread and
+  must not import `three`. Only the parsers in `src/io/import` use three's loaders.
+- `app` must not import `three/examples/*` or the import parsers (`io/import/parseImport`, `gltf`, `objStl3ds`,
+  `dae`, `threeScene`, `mtl`, `xml`). It parses imports through `app/io/importEngine`, which posts to `io.worker`.
+
+See [IMPORT_EXPORT.md](IMPORT_EXPORT.md) for the formats.
+
 Two mechanisms enforce these rules:
 
 - **ESLint.** `no-restricted-imports` rules in `eslint.config.js` encode the table. `tests/architecture/boundaries.test.ts`

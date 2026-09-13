@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { ViewCaptureRelay } from '../../app/io/viewCapture';
 import type { PointerInput } from '../../app/tools/Tool';
 import { Viewport } from '../../render/Viewport';
 import { useEditor, useEditorState } from '../EditorContext';
@@ -48,7 +49,11 @@ export function ViewportHost() {
       editor.tools.wheel({ x: event.clientX - rect.left, y: event.clientY - rect.top, deltaY: event.deltaY });
     };
     host.addEventListener('wheel', onWheel, { passive: false });
+    const relay = editor.exchange.viewCapture;
+    const detachCapture =
+      relay instanceof ViewCaptureRelay ? relay.attach((options) => viewport.capture(options)) : null;
     return () => {
+      detachCapture?.();
       host.removeEventListener('wheel', onWheel);
       viewport.dispose();
     };

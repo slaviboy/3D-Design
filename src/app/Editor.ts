@@ -157,6 +157,10 @@ import { TapeMeasureTool } from './tools/TapeMeasureTool';
 import { SELECT_TOOL_ID } from './tools/Tool';
 import { ToolManager } from './tools/ToolManager';
 import { refsOfResult, scalingAbout, selectionBounds, transformSelectionOf } from './tools/transformSupport';
+import type { ImportLimits } from '../io/mesh/limits';
+import type { ImportEngine } from './io/importEngine';
+import { ModelExchange } from './io/ModelExchange';
+import type { ViewCapturePort } from './io/viewCapture';
 
 /** Characters that start typing into the measurements box. Once typing has started, any character continues it. */
 const MEASUREMENT_START = /^[0-9.,\-[</]$/;
@@ -245,6 +249,12 @@ export interface EditorEnvironment {
   readonly clock?: AnimationClock;
   /** Whether the user asked for reduced motion; scene changes are then instant. Defaults to the media query. */
   readonly prefersReducedMotion?: () => boolean;
+  /** Parses imported models. Defaults to the io worker, started on first use. */
+  readonly importEngine?: ImportEngine;
+  /** Renders the view for Export 2D Graphic. */
+  readonly viewCapture?: ViewCapturePort;
+  /** Overrides for the import resource limits. */
+  readonly importLimits?: Partial<ImportLimits>;
 }
 
 function systemPrefersReducedMotion(): boolean {
@@ -287,6 +297,8 @@ export class Editor {
   #shortcutOverrides: ShortcutOverrides = {};
   #shortcutStorage: ShortcutStorage | null = null;
   readonly tools: ToolManager;
+  /** Import, 3D export and image export. */
+  readonly exchange: ModelExchange;
   #preferences: Preferences = DEFAULT_PREFERENCES;
   #preferenceStorage: PreferenceStorage | null = null;
 
@@ -316,6 +328,7 @@ export class Editor {
     this.#environment = environment;
     this.platform = environment.platform;
     this.appVersion = environment.appVersion;
+    this.exchange = new ModelExchange(this, environment);
     this.#clock = environment.clock ?? createSystemClock();
     this.#cameraTransition = new CameraTransition(this.#clock);
     this.session.subscribe((event) => {

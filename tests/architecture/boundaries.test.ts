@@ -33,6 +33,12 @@ describe('architectural layer boundaries', () => {
     ['src/app/probe.ts', "export * from '../ui/probe';"],
     ['src/app/probe.ts', "export * from 'react-dom';"],
     ['src/ui/probe.tsx', "export * from 'three';"],
+    ['src/io/mesh/probe.ts', "export * from 'three';"],
+    ['src/io/export/probe.ts', "export * from 'three';"],
+    ['src/io/export/probe.ts', "export * from '../../app/probe';"],
+    ['src/io/import/formats.ts', "export * from 'three/examples/jsm/loaders/OBJLoader.js';"],
+    ['src/app/io/probe.ts', "export * from 'three/examples/jsm/loaders/GLTFLoader.js';"],
+    ['src/app/io/probe.ts', "export * from '../../io/import/parseImport';"],
   ])('%s rejects: %s', async (filePath, code) => {
     expect(await boundaryViolations(filePath, code)).not.toHaveLength(0);
   });
@@ -45,6 +51,10 @@ describe('architectural layer boundaries', () => {
     ['src/render/probe.ts', "export * from 'three';"],
     ['src/io/probe.ts', "export * from '../kernel/probe';"],
     ['src/kernel/ops/probe.ts', "export * from '../tolerance';"],
+    ['src/io/import/probe.ts', "export * from 'three/examples/jsm/loaders/STLLoader.js';"],
+    ['src/workers/probe.ts', "export * from '../io/import/parseImport';"],
+    ['src/app/io/probe.ts', "export * from '../../io/import/formats';"],
+    ['src/app/io/probe.ts', "export * from '../../io/export/formats';"],
   ])('%s allows: %s', async (filePath, code) => {
     expect(await boundaryViolations(filePath, code)).toEqual([]);
   });

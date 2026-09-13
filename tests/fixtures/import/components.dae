@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Two placements of one library node, in centimeters, Z up. -->
+<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
+  <asset>
+    <unit name="centimeter" meter="0.01"/>
+    <up_axis>Z_UP</up_axis>
+  </asset>
+  <library_effects>
+    <effect id="blue-effect">
+      <profile_COMMON>
+        <technique sid="common">
+          <lambert>
+            <diffuse><color>0 0 1 1</color></diffuse>
+          </lambert>
+        </technique>
+      </profile_COMMON>
+    </effect>
+  </library_effects>
+  <library_materials>
+    <material id="blue" name="Blue &amp; Bold">
+      <instance_effect url="#blue-effect"/>
+    </material>
+  </library_materials>
+  <library_geometries>
+    <geometry id="tile" name="Tile">
+      <mesh>
+        <source id="tile-positions">
+          <float_array id="tile-positions-array" count="12">0 0 0 100 0 0 100 100 0 0 100 0</float_array>
+          <technique_common>
+            <accessor source="#tile-positions-array" count="4" stride="3">
+              <param name="X" type="float"/>
+              <param name="Y" type="float"/>
+              <param name="Z" type="float"/>
+            </accessor>
+          </technique_common>
+        </source>
+        <vertices id="tile-vertices">
+          <input semantic="POSITION" source="#tile-positions"/>
+        </vertices>
+        <polylist material="tile-material" count="1">
+          <input semantic="VERTEX" source="#tile-vertices" offset="0"/>
+          <vcount>4</vcount>
+          <p>0 1 2 3</p>
+        </polylist>
+      </mesh>
+    </geometry>
+  </library_geometries>
+  <library_nodes>
+    <node id="tile-node" name="Tile">
+      <instance_geometry url="#tile">
+        <bind_material>
+          <technique_common>
+            <instance_material symbol="tile-material" target="#blue"/>
+          </technique_common>
+        </bind_material>
+      </instance_geometry>
+    </node>
+  </library_nodes>
+  <library_visual_scenes>
+    <visual_scene id="scene">
+      <node id="first" name="First">
+        <instance_node url="#tile-node"/>
+      </node>
+      <node id="second" name="Second">
+        <translate>300 0 0</translate>
+        <rotate>0 0 1 90</rotate>
+        <instance_node url="#tile-node"/>
+      </node>
+    </visual_scene>
+  </library_visual_scenes>
+  <scene>
+    <instance_visual_scene url="#scene"/>
+  </scene>
+</COLLADA>
