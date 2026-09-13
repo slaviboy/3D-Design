@@ -14,6 +14,20 @@ test('the workspace shows menus, tools, the 3D view and panels', async ({ page }
   await expect(page.getByTestId('selection-count')).toHaveText('Nothing selected');
 });
 
+test('the 3D view and status bar fit the window however many tools the palette has', async ({ page }) => {
+  await page.goto('/');
+  const windowHeight = await page.evaluate(() => window.innerHeight);
+  const viewport = await page.getByRole('application', { name: '3D viewport' }).boundingBox();
+  const statusBar = await page.getByRole('contentinfo').boundingBox();
+  if (!viewport || !statusBar) throw new Error('workspace not laid out');
+  expect(viewport.y + viewport.height).toBeLessThanOrEqual(statusBar.y + 1);
+  expect(statusBar.y + statusBar.height).toBeLessThanOrEqual(windowHeight + 1);
+  const palette = page.getByRole('toolbar', { name: 'Tools' });
+  const lastTool = palette.getByRole('button').last();
+  await lastTool.scrollIntoViewIfNeeded();
+  await expect(lastTool).toBeInViewport();
+});
+
 test('the production build sets a restrictive Content-Security-Policy', async ({ page }) => {
   await page.goto('/');
   const policy = await page.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute('content');

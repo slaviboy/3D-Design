@@ -25,6 +25,7 @@
   "dependencies": {
     "earcut": "^3.2.3",
     "fflate": "^0.8.3",
+    "manifold-3d": "^3.5.3",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "robust-predicates": "^3.0.3",

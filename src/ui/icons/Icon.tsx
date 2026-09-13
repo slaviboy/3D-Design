@@ -40,6 +40,13 @@ const PATHS: Readonly<Record<string, string>> = {
   'tool.text': 'M4 4h12M10 4v12M7 16h6',
   'tool.offset': 'M3 3h14v14H3zM7 7h6v6H7z',
   'tool.axes': 'M5 15V3M5 15h12M5 15l-3 3M3 5l2-2 2 2M15 13l2 2-2 2',
+  'tool.followMe': 'M3 17h6a8 8 0 0 0 8-8V3M2 14h4v4H2zM15 3h4',
+  'tools.outerShell': 'M7 3a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM13 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10z',
+  'tools.union': 'M7 3a5 5 0 0 0-1 9.9A5 5 0 1 0 13.9 8 5 5 0 0 0 7 3z',
+  'tools.subtract': 'M7 3a5 5 0 1 0 0 10 5 5 0 0 1 5-5 5 5 0 0 0-5-5zM13 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10z',
+  'tools.trim': 'M7 3a5 5 0 1 0 0 10 5 5 0 0 1 5-5 5 5 0 0 0-5-5z',
+  'tools.intersect': 'M10 7.6a5 5 0 0 1 0 4.8 5 5 0 0 1 0-4.8zM7 3a5 5 0 1 0 0 10M13 7a5 5 0 1 1 0 10',
+  'tools.split': 'M7 3a5 5 0 1 0 0 10M13 7a5 5 0 1 1 0 10M10 2v16',
 };
 
 export function hasIcon(commandId: string): boolean {

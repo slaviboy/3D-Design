@@ -1,9 +1,11 @@
 import type { DefinitionId, EdgeId, FaceId, InstanceId, TagId } from '../../kernel/ids';
+import { linearDeterminant } from '../../kernel/math/mat4';
 import { distance } from '../../kernel/math/vec3';
 import type { ModelDocument } from '../../kernel/model/ModelDocument';
 import type { CurveKind } from '../../kernel/model/types';
 import { faceArea } from '../../kernel/ops/planar/regions';
-import { formatArea, formatLength, type UnitSettings } from '../../kernel/units/units';
+import { isSolid, solidVolume } from '../../kernel/ops/solids/solid';
+import { formatArea, formatLength, formatVolume, type UnitSettings } from '../../kernel/units/units';
 import type { Selection } from './Selection';
 
 export interface InfoRow {
@@ -165,8 +167,9 @@ function summarize(
       const instance = store.getInstance(instanceId);
       const definition = doc.getDefinition(instance.definitionId);
       const inner = definition.store;
+      const solid = isSolid(inner);
       return {
-        title: definition.attributes.isGroup ? 'Group' : 'Component',
+        title: `${solid ? 'Solid ' : ''}${definition.attributes.isGroup ? 'Group' : 'Component'}`,
         rows: [
           ...(definition.attributes.isGroup
             ? []
@@ -179,6 +182,17 @@ function summarize(
             label: 'Contents',
             value: `${plural(inner.faceCount, 'face')}, ${plural(inner.edgeCount, 'edge')}`,
           },
+          ...(solid
+            ? [
+                {
+                  label: 'Volume',
+                  value: formatVolume(
+                    Math.abs(solidVolume(inner) * linearDeterminant(instance.transform)),
+                    units,
+                  ),
+                },
+              ]
+            : []),
         ],
       };
     }

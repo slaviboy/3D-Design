@@ -42,6 +42,8 @@ export const MENUS: readonly MenuDefinition[] = [
       'edit.makeUnique',
       'edit.lock',
       'edit.unlock',
+      'edit.intersectWithModel',
+      'edit.intersectWithSelection',
     ],
   },
   {
@@ -101,6 +103,16 @@ export const MENUS: readonly MenuDefinition[] = [
       'tool.orbit',
       'tool.pan',
       'tool.zoom',
+      null,
+      'tool.followMe',
+      // Solid Tools
+      null,
+      'tools.outerShell',
+      'tools.union',
+      'tools.subtract',
+      'tools.trim',
+      'tools.intersect',
+      'tools.split',
     ],
   },
   {

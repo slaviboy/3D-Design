@@ -139,6 +139,8 @@
 .workspace {
   display: grid;
   grid-template-columns: var(--tool-palette-width) minmax(0, 1fr) var(--dock-width);
+  /* One row that never grows past the space it is given, so a long tool palette can't push the view off-screen. */
+  grid-template-rows: minmax(0, 1fr);
   min-height: 0;
 }
 
@@ -147,9 +149,17 @@
   flex-direction: column;
   align-items: center;
   gap: 2px;
+  min-height: 0;
   padding: 6px 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
   background: var(--chrome-bg);
   border-right: 1px solid var(--chrome-border);
+}
+
+.tool-palette > * {
+  flex-shrink: 0;
 }
 
 .workspace__viewport {

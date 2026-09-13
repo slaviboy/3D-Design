@@ -146,6 +146,36 @@ against the given normal (GEOMETRY.md, "Algorithm: Offset").
 | H5 | Split | 3 solids | — |
 | H6 | Outer Shell on 3 overlapping boxes | 1 solid | No internal faces |
 | H7 | Non-solid input (open box) | Tool refuses | Clear message; no history entry |
+| H8 | B1 | solid | `isSolid` true; volume from triangulated faces |
+| H9 | B1 with one face deleted; B1 plus a fin edge; B1 with one face reversed; empty definition | not solid | — |
+| H10 | B1 → triangle mesh → faces in a new definition | 8/12/6 | Solid; same volume; face materials restored; undo restores the hash |
+| H11 | H10 through a mirroring transform | 8/12/6 | Faces still point outward (positive volume) |
+| H12 | H10 with positions rounded to single precision | 8/12/6 | Vertices snap back onto their face planes; model valid |
+
+Solid tools take the first selected object to be the one created first (lowest id). H1–H7 use A = [0,2]³ (the first)
+and B = [1,3]³: Union volume 15, Subtract B − A volume 7, Trim leaves volumes 7 and 8, Intersect gives a unit cube
+8/12/6, Split gives volumes 1, 7 and 7, and Outer Shell on three boxes overlapping along X gives one 8/12/6 box.
+
+## K. Intersect Faces
+
+| # | Scenario | Expected V/E/F | Extra assertions |
+|---|---|---|---|
+| K1 | `Box(2,2,2)` at the origin and a box [1,3]³, drawn in one context; intersect all faces with the model | 16/24/12 → 22/36/18 | 6 new edges forming one closed loop, each on 4 faces; undo restores the hash |
+| K2 | `Box(1,1,1)` and a 3×3 rectangle at z = 0.5 around it; intersect the rectangle with the model | 12/16/7 → 16/24/12 | The four sides split; the rectangle gets a hole plus an inner face |
+| K3 | Rectangle in a group, overlapping coplanar rectangle in the root; intersect with the model | unchanged | Coplanar faces give no edges and no history entry |
+| K4 | Box [1,3]³ in a group, `Box(2,2,2)` in the root; intersect with the model | root 14/21/9 | The group is unchanged |
+| K5 | `Box(2,2,2)` and a 4×4 rectangle at z = 1; intersect one side face with the selection | 1 edge | A single selected face creates nothing |
+
+## L. Follow Me
+
+| # | Scenario | Expected V/E/F | Extra assertions |
+|---|---|---|---|
+| L1 | 1×1 square in plane x = 0 (z from 0.5 to 1.5), loose L-shaped path (0,0,0)→(5,0,0)→(5,5,0) | 15/22/10 | The original face is the start cap; mitred corner; consistent orientation; volume 10 |
+| L2 | 24-sided circle r 0.25 in plane x = 2, closed loose path (0,0,0)→(2,0,0)→(4,0,0)→(4,3,0)→(0,3,0) | 125/245/120 | Closed ring, no caps; the profile face is removed; volume = area × 14 |
+| L3 | 1×1 rectangle in plane y = 0 spanning x 1–2, closed 24-segment circle path r 1 as one curve | 96/192/96 | Lathe is a solid with positive volume; the 96 ring edges are soft and smooth |
+| L4 | L1 with a straight path | 10/13/6 | Undo restores the hash |
+| L5 | Disconnected path; branching path | rejected | `KernelError`; hash and history unchanged |
+| L6 | Profile plane parallel to the path; empty path | rejected | `KernelError`; hash unchanged |
 
 ## I. VCB parsing (default units: meters, decimal)
 

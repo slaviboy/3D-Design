@@ -43,6 +43,7 @@ const TOOL_PALETTE: readonly string[] = [
   'tool.orbit',
   'tool.pan',
   'tool.zoom',
+  'tool.followMe',
 ];
 
 function CommandButton({

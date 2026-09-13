@@ -29,6 +29,7 @@ import { PROTRACTOR_TOOL_ID } from '../tools/ProtractorTool';
 import { ROTATED_RECTANGLE_TOOL_ID } from '../tools/RotatedRectangleTool';
 import { ROTATE_TOOL_ID } from '../tools/RotateTool';
 import { SCALE_TOOL_ID } from '../tools/ScaleTool';
+import { registerSolidCommands } from '../solids/solidCommands';
 import type { CommandCategory, CommandDefinition, CommandRegistry } from './CommandRegistry';
 
 type EditorCommand = CommandDefinition<Editor>;
@@ -352,6 +353,7 @@ export function registerDefaultCommands(registry: CommandRegistry<Editor>): void
       },
     },
   );
+  registerSolidCommands(registry);
   registerOrganizationCommands(registry);
 }
 
