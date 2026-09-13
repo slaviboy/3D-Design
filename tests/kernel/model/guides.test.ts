@@ -51,7 +51,7 @@ describe('guides', () => {
     expect(doc.undoDepth).toBe(1);
 
     const tag = doc.transact('Hide', () => {
-      const created = addTag(doc, { name: 'Construction', visible: true });
+      const created = addTag(doc, { name: 'Construction', visible: true, color: { r: 1, g: 0, b: 0 } });
       setGuideAttributes(doc, root, guide, { hidden: true, tagId: created });
       return created;
     });

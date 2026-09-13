@@ -7,7 +7,10 @@ import { RecoveryDialog } from '../dialogs/RecoveryDialog';
 import { useEditor, useEditorState } from '../EditorContext';
 import { MenuBar } from '../menubar/MenuBar';
 import { CommandPalette } from '../palette/CommandPalette';
+import { ComponentsPanel } from '../panels/ComponentsPanel';
 import { EntityInfoPanel } from '../panels/EntityInfoPanel';
+import { OutlinerPanel } from '../panels/OutlinerPanel';
+import { TagsPanel } from '../panels/TagsPanel';
 import { StatusBar } from '../statusbar/StatusBar';
 import { Toolbar, ToolPalette } from '../toolbar/Toolbar';
 import { ViewportHost } from '../viewport/ViewportHost';
@@ -24,6 +27,7 @@ export function App({ recovery }: { readonly recovery?: RecoveryOptions }) {
   const documentName = useEditorState((state) => state.documentName);
   const isDirty = useEditorState((state) => state.isDirty);
   const paletteRequests = useEditorState((state) => state.commandPaletteRequests);
+  const openPanels = useEditorState((state) => state.openPanels);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [recoverable, setRecoverable] = useState<readonly RecoverySnapshot[]>([]);
 
@@ -81,9 +85,26 @@ export function App({ recovery }: { readonly recovery?: RecoveryOptions }) {
           </ErrorBoundary>
         </main>
         <aside className="dock" aria-label="Panels">
-          <ErrorBoundary area="the Entity Info panel">
-            <EntityInfoPanel />
-          </ErrorBoundary>
+          {openPanels.includes('entityInfo') && (
+            <ErrorBoundary area="the Entity Info panel">
+              <EntityInfoPanel />
+            </ErrorBoundary>
+          )}
+          {openPanels.includes('outliner') && (
+            <ErrorBoundary area="the Outliner panel">
+              <OutlinerPanel />
+            </ErrorBoundary>
+          )}
+          {openPanels.includes('components') && (
+            <ErrorBoundary area="the Components panel">
+              <ComponentsPanel />
+            </ErrorBoundary>
+          )}
+          {openPanels.includes('tags') && (
+            <ErrorBoundary area="the Tags panel">
+              <TagsPanel />
+            </ErrorBoundary>
+          )}
         </aside>
       </div>
       <StatusBar />

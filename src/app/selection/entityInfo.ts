@@ -1,6 +1,7 @@
-import type { DefinitionId, EdgeId, FaceId, InstanceId } from '../../kernel/ids';
+import type { DefinitionId, EdgeId, FaceId, InstanceId, TagId } from '../../kernel/ids';
 import { distance } from '../../kernel/math/vec3';
 import type { ModelDocument } from '../../kernel/model/ModelDocument';
+import type { CurveKind } from '../../kernel/model/types';
 import { faceArea } from '../../kernel/ops/planar/regions';
 import { formatArea, formatLength, type UnitSettings } from '../../kernel/units/units';
 import type { Selection } from './Selection';
@@ -10,13 +11,46 @@ export interface InfoRow {
   readonly value: string;
 }
 
+/** A boolean attribute over a selection: the common value, or `mixed` when entities disagree. */
+export type Tristate = boolean | 'mixed';
+
+/** The editable attributes Entity Info shows. A field is present only when it applies to the whole selection. */
+export interface EntityInfoFields {
+  /** Every selected entity has a tag. */
+  readonly tag?: TagId | null | 'mixed';
+  readonly hidden?: Tristate;
+  /** Only groups and components are selected. */
+  readonly locked?: Tristate;
+  /** Only edges are selected. */
+  readonly soft?: Tristate;
+  readonly smooth?: Tristate;
+  /** Exactly one group or component is selected. */
+  readonly name?: string;
+  /** Exactly one component instance is selected. */
+  readonly definition?: { readonly id: DefinitionId; readonly name: string };
+}
+
 export interface EntityInfo {
   readonly title: string;
+  /** Read-only details. */
   readonly rows: readonly InfoRow[];
+  readonly fields: EntityInfoFields;
 }
 
 const plural = (count: number, singular: string, pluralForm = `${singular}s`): string =>
   `${String(count)} ${count === 1 ? singular : pluralForm}`;
+
+const CURVE_LABELS: Readonly<Record<CurveKind, string>> = {
+  circle: 'Circle',
+  arc: 'Arc',
+  polygon: 'Polygon',
+  polyline: 'Polyline',
+};
+
+function combine<T>(values: readonly T[]): T | 'mixed' {
+  const first = values[0] as T;
+  return values.every((value) => value === first) ? first : 'mixed';
+}
 
 /** What the Entity Info panel shows for the current selection (or the whole context when nothing is selected). */
 export function describeSelection(
@@ -25,6 +59,52 @@ export function describeSelection(
   selection: Selection,
   units: UnitSettings,
 ): EntityInfo {
+  return { ...summarize(doc, context, selection, units), fields: selectionFields(doc, context, selection) };
+}
+
+/** The editable attributes common to the selection. */
+export function selectionFields(
+  doc: ModelDocument,
+  context: DefinitionId,
+  selection: Selection,
+): EntityInfoFields {
+  if (selection.isEmpty) return {};
+  const store = doc.store(context);
+  const instances = (selection.ids('instance') as InstanceId[]).map((id) => store.getInstance(id));
+  const faces = (selection.ids('face') as FaceId[]).map((id) => store.getFace(id));
+  const edges = (selection.ids('edge') as EdgeId[]).map((id) => store.getEdge(id));
+  const attributes = [
+    ...instances.map((instance) => instance.attributes),
+    ...faces.map((face) => face.attributes),
+    ...edges.map((edge) => edge.attributes),
+  ];
+  const single = selection.size === 1 ? instances[0] : undefined;
+  const definition = single ? doc.getDefinition(single.definitionId) : undefined;
+  return {
+    tag: combine(attributes.map((a) => a.tagId)),
+    hidden: combine(attributes.map((a) => a.hidden)),
+    ...(faces.length === 0 && edges.length === 0
+      ? { locked: combine(instances.map((instance) => instance.attributes.locked)) }
+      : {}),
+    ...(instances.length === 0 && faces.length === 0
+      ? {
+          soft: combine(edges.map((edge) => edge.attributes.soft)),
+          smooth: combine(edges.map((edge) => edge.attributes.smooth)),
+        }
+      : {}),
+    ...(single ? { name: single.attributes.name } : {}),
+    ...(definition && !definition.attributes.isGroup
+      ? { definition: { id: definition.id, name: definition.attributes.name } }
+      : {}),
+  };
+}
+
+function summarize(
+  doc: ModelDocument,
+  context: DefinitionId,
+  selection: Selection,
+  units: UnitSettings,
+): Omit<EntityInfo, 'fields'> {
   const store = doc.store(context);
   const faces = selection.ids('face') as FaceId[];
   const edges = selection.ids('edge') as EdgeId[];
@@ -63,13 +143,23 @@ export function describeSelection(
     }
     if (edgeId !== undefined) {
       const edge = store.getEdge(edgeId);
-      return {
-        title: 'Edge',
-        rows: [
-          { label: 'Length', value: formatLength(totalLength(), units) },
-          { label: 'Faces', value: String(edge.faces.length) },
-        ],
-      };
+      const rows: InfoRow[] = [
+        { label: 'Length', value: formatLength(totalLength(), units) },
+        { label: 'Faces', value: String(edge.faces.length) },
+      ];
+      if (edge.curve !== null) {
+        const params = store.getCurve(edge.curve).params;
+        rows.push({ label: 'Curve', value: CURVE_LABELS[params.kind] });
+        if (params.kind !== 'polyline') {
+          rows.push({ label: 'Radius', value: formatLength(params.radius, units) });
+          rows.push(
+            params.kind === 'polygon'
+              ? { label: 'Sides', value: String(params.sides) }
+              : { label: 'Segments', value: String(params.segments) },
+          );
+        }
+      }
+      return { title: 'Edge', rows };
     }
     if (instanceId !== undefined) {
       const instance = store.getInstance(instanceId);
@@ -80,7 +170,10 @@ export function describeSelection(
         rows: [
           ...(definition.attributes.isGroup
             ? []
-            : [{ label: 'Definition', value: definition.attributes.name }]),
+            : [
+                { label: 'Definition', value: definition.attributes.name },
+                { label: 'Instances', value: String(doc.instancesOf(definition.id).length) },
+              ]),
           ...(instance.attributes.name ? [{ label: 'Name', value: instance.attributes.name }] : []),
           {
             label: 'Contents',

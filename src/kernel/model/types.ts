@@ -190,7 +190,12 @@ export interface MaterialData extends MaterialAttributes {
 export interface TagAttributes {
   readonly name: string;
   readonly visible: boolean;
+  /** Display color of the tag (used by color-by-tag styles and shown in the Tags panel). */
+  readonly color: Rgb;
 }
+
+/** Color given to tags read from files that predate tag colors. */
+export const DEFAULT_TAG_COLOR: Rgb = Object.freeze({ r: 0.5, g: 0.5, b: 0.5 });
 
 export interface TagData extends TagAttributes {
   readonly id: TagId;

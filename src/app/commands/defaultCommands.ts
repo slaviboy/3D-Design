@@ -1,6 +1,8 @@
 import type { InstanceId } from '../../kernel/ids';
 import type { StandardView } from '../camera/camera';
 import type { Editor } from '../Editor';
+import { PANELS } from '../panels/panels';
+import { PLACE_COMPONENT_TOOL_ID } from '../tools/ComponentPlacementTool';
 import {
   CIRCLE_TOOL_ID,
   ERASER_TOOL_ID,
@@ -252,5 +254,95 @@ export function registerDefaultCommands(registry: CommandRegistry<Editor>): void
         editor.requestUi('command-palette');
       },
     },
+  );
+  registerOrganizationCommands(registry);
+}
+
+/** Tags, components, locking and dock panels. */
+function registerOrganizationCommands(registry: CommandRegistry<Editor>): void {
+  registry.register(
+    {
+      id: 'edit.makeUnique',
+      label: 'Make Unique',
+      category: 'Edit',
+      description: 'Give the selected component its own definition, so later edits change only this instance',
+      aliases: ['unique', 'separate instance', 'detach component'],
+      isEnabled: (editor) => editor.selectedComponentInstance() !== null,
+      run: (editor) => {
+        editor.makeUniqueSelection();
+      },
+    },
+    {
+      id: 'edit.lock',
+      label: 'Lock',
+      category: 'Edit',
+      description: 'Protect the selected groups and components from changes',
+      aliases: ['protect', 'freeze'],
+      isEnabled: hasSelectedInstances,
+      run: (editor) => {
+        editor.updateSelectionAttributes({ locked: true });
+      },
+    },
+    {
+      id: 'edit.unlock',
+      label: 'Unlock',
+      category: 'Edit',
+      aliases: ['unprotect', 'unfreeze'],
+      isEnabled: hasSelectedInstances,
+      run: (editor) => {
+        editor.updateSelectionAttributes({ locked: false });
+      },
+    },
+    {
+      id: 'tags.add',
+      label: 'Add Tag',
+      category: 'View',
+      aliases: ['new tag', 'layer', 'new layer'],
+      run: (editor) => {
+        editor.addTag();
+      },
+    },
+    {
+      id: 'tags.purgeUnused',
+      label: 'Purge Unused Tags',
+      category: 'View',
+      aliases: ['clean up tags', 'remove unused layers'],
+      run: (editor) => {
+        editor.purgeUnusedTags();
+      },
+    },
+    {
+      id: 'components.purgeUnused',
+      label: 'Purge Unused Components',
+      category: 'Edit',
+      aliases: ['clean up components', 'remove unused definitions'],
+      run: (editor) => {
+        editor.purgeUnusedComponents();
+      },
+    },
+    {
+      id: PLACE_COMPONENT_TOOL_ID,
+      label: 'Place Component',
+      category: 'Tools',
+      description: 'Place another instance of a component; choose which one in the Components panel',
+      aliases: ['insert component', 'place instance'],
+      isEnabled: (editor) => editor.componentDefinitions().length > 0,
+      isChecked: (editor) => editor.tools.activeToolId === PLACE_COMPONENT_TOOL_ID,
+      run: (editor) => {
+        const definitionId = editor.placementDefinition ?? editor.componentDefinitions()[0]?.id;
+        if (definitionId !== undefined) editor.placeComponent(definitionId);
+      },
+    },
+    ...PANELS.map(({ id, label, aliases }): EditorCommand => ({
+      id: `window.${id}`,
+      label,
+      category: 'Window',
+      description: `Show or hide the ${label} panel`,
+      aliases: ['panel', ...aliases],
+      isChecked: (editor) => editor.isPanelOpen(id),
+      run: (editor) => {
+        editor.togglePanel(id);
+      },
+    })),
   );
 }

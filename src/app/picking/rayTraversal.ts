@@ -10,6 +10,7 @@ import {
 import { add, AXIS_X, AXIS_Y, AXIS_Z, length, scale, type Vec3 } from '../../kernel/math/vec3';
 import type { EntityStore } from '../../kernel/model/EntityStore';
 import type { ModelDocument } from '../../kernel/model/ModelDocument';
+import { isTagVisible } from '../../kernel/model/visibility';
 import { worldUnitsPerPixel, type CameraState, type Ray, type ViewportSize } from '../camera/camera';
 import { aabbCorners, definitionBounds } from '../geometry/bounds';
 import type { EntityRef } from '../selection/Selection';
@@ -103,7 +104,8 @@ export function traverseAlongRay(
       topLevel,
     });
     for (const instance of store.instances()) {
-      if (instance.attributes.hidden) continue;
+      // An instance hidden directly or by its tag hides everything inside it.
+      if (instance.attributes.hidden || !isTagVisible(doc, instance.attributes.tagId)) continue;
       walk(
         instance.definitionId,
         multiply(toWorld, instance.transform),

@@ -2,6 +2,7 @@ import { createStore, type StoreApi } from 'zustand/vanilla';
 import { projectToScreen, type Projection } from '../camera/camera';
 import type { Editor, EditorNotification } from '../Editor';
 import type { InferenceKind } from '../inference/inference';
+import type { PanelId } from '../panels/panels';
 import type { ToolOverlay } from '../tools/Tool';
 
 /** The inference marker in viewport pixels. */
@@ -41,6 +42,12 @@ export interface EditorViewState {
   readonly notifications: readonly EditorNotification[];
   /** Increments each time something asks for the command palette. */
   readonly commandPaletteRequests: number;
+  /** The tag new groups and components go on; null for untagged. */
+  readonly activeTagId: number | null;
+  /** Instance ids of the open groups and components, outermost first. */
+  readonly editPath: readonly number[];
+  /** Panels shown in the dock. */
+  readonly openPanels: readonly PanelId[];
 }
 
 export interface EditorStore extends StoreApi<EditorViewState> {
@@ -86,6 +93,9 @@ export function createEditorStore(editor: Editor): EditorStore {
       projection: session.camera.projection,
       notifications: editor.notifications,
       commandPaletteRequests,
+      activeTagId: session.activeTagId,
+      editPath: session.editPath,
+      openPanels: editor.openPanels,
     };
   };
   const store = createStore<EditorViewState>(snapshot);

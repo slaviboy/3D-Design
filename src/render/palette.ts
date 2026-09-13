@@ -6,6 +6,8 @@ export const VIEW_COLORS = Object.freeze({
   edge: 0x1d232b,
   selection: 0x1f66d6,
   hover: 0xe0892b,
+  /** Selection box of locked groups and components. */
+  locked: 0xc2362b,
   guide: 0x5d6673,
   preview: 0x1d232b,
   axisX: 0xd4443b,

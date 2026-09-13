@@ -19,6 +19,7 @@ import {
   type Vec3,
 } from '../../kernel/math/vec3';
 import type { ModelDocument } from '../../kernel/model/ModelDocument';
+import { isTagVisible } from '../../kernel/model/visibility';
 import {
   cameraBasis,
   pointOnTargetPlane,
@@ -156,7 +157,7 @@ export function infer(
     const worldEnd = transformPoint(visit.toWorld, visit.end);
     for (const edgeId of visit.store.queryEdges(visit.box)) {
       const edge = visit.store.getEdge(edgeId);
-      if (edge.attributes.hidden) continue;
+      if (edge.attributes.hidden || !isTagVisible(doc, edge.attributes.tagId)) continue;
       const a = transformPoint(visit.toWorld, visit.store.position(edge.v0));
       const b = transformPoint(visit.toWorld, visit.store.position(edge.v1));
       const entity: EntityRef = visit.topLevel ?? { kind: 'edge', id: edgeId };
@@ -169,6 +170,8 @@ export function infer(
     }
     for (const curve of visit.store.curves()) {
       if (curve.params.kind === 'polyline') continue;
+      const first = curve.edges[0] === undefined ? undefined : visit.store.edge(curve.edges[0]);
+      if (first && (first.attributes.hidden || !isTagVisible(doc, first.attributes.tagId))) continue;
       offer({
         point: transformPoint(visit.toWorld, curve.params.center),
         kind: 'center',
@@ -179,7 +182,7 @@ export function infer(
   });
 
   for (const guide of doc.store(context).guides()) {
-    if (guide.attributes.hidden) continue;
+    if (guide.attributes.hidden || !isTagVisible(doc, guide.attributes.tagId)) continue;
     const point = transformPoint(contextTransform, guide.geometry.point);
     if (guide.geometry.kind === 'point') {
       offer({ point, kind: 'endpoint', label: 'Guide Point', inGroup: false });

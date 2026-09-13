@@ -12,6 +12,7 @@ import { EPS_LEN } from '../../kernel/tolerance';
 import type { MeasurementIntent } from '../../kernel/vcb/parseMeasurement';
 import type { Editor } from '../Editor';
 import type { Inference } from '../inference/inference';
+import { refuseLocked } from '../selection/locking';
 import { Selection, type EntityRef } from '../selection/Selection';
 import { DRAG_THRESHOLD_PX } from './SelectTool';
 import {
@@ -118,6 +119,7 @@ export class MoveTool implements Tool {
       if (!hit) return;
       session.setSelection(Selection.of([hit.ref]));
     }
+    if (refuseLocked(editor, session.selection.refs())) return;
     const start = inferAt(editor, input);
     this.#operation = {
       selection: transformSelectionOf(session.selection),

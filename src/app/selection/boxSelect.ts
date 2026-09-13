@@ -3,6 +3,7 @@ import { aabbIsEmpty, type Aabb } from '../../kernel/math/aabb';
 import { classifyPointInRing, orient, type Point2 } from '../../kernel/math/geom2d';
 import { multiply, transformPoint, type Mat4 } from '../../kernel/math/mat4';
 import type { ModelDocument } from '../../kernel/model/ModelDocument';
+import { isTagVisible } from '../../kernel/model/visibility';
 import {
   projectToScreen,
   type CameraState,
@@ -87,7 +88,7 @@ export function boxSelect(
   const refs: EntityRef[] = [];
 
   for (const edge of store.edges()) {
-    if (!isEdgeSelectable(store, edge.id)) continue;
+    if (!isEdgeSelectable(store, edge.id) || !isTagVisible(doc, edge.attributes.tagId)) continue;
     const a = screenOf(edge.v0);
     const b = screenOf(edge.v1);
     const selected =
@@ -101,7 +102,7 @@ export function boxSelect(
 
   const center: Point2 = { x: (rect.minX + rect.maxX) / 2, y: (rect.minY + rect.maxY) / 2 };
   for (const face of store.faces()) {
-    if (face.attributes.hidden) continue;
+    if (face.attributes.hidden || !isTagVisible(doc, face.attributes.tagId)) continue;
     const outline = store.loopVertices(face.outer).map(screenOf);
     let selected: boolean;
     if (mode === 'window') {
@@ -121,7 +122,7 @@ export function boxSelect(
 
   const boundsCache = new Map<DefinitionId, Aabb>();
   for (const instance of store.instances()) {
-    if (instance.attributes.hidden) continue;
+    if (instance.attributes.hidden || !isTagVisible(doc, instance.attributes.tagId)) continue;
     const bounds = definitionBounds(doc, instance.definitionId, boundsCache);
     if (aabbIsEmpty(bounds)) continue;
     const toWorld = multiply(contextTransform, instance.transform);
