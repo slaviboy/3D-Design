@@ -160,6 +160,7 @@ import { refsOfResult, scalingAbout, selectionBounds, transformSelectionOf } fro
 import type { ImportLimits } from '../io/mesh/limits';
 import type { ImportEngine } from './io/importEngine';
 import { ModelExchange } from './io/ModelExchange';
+import { purgeAllUnused as purgeAllUnusedOp, purgedCount } from '../kernel/ops/purge';
 import type { ViewCapturePort } from './io/viewCapture';
 
 /** Characters that start typing into the measurements box. Once typing has started, any character continues it. */
@@ -273,6 +274,9 @@ function uniqueSectionName(doc: ModelDocument): string {
     if (!names.has(name)) return name;
   }
 }
+
+const THUMBNAIL_WIDTH = 320;
+const THUMBNAIL_HEIGHT = 240;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -1461,6 +1465,20 @@ export class Editor {
     return removed;
   }
 
+  /** Removes unused components, materials, texture images and tags in one undoable step. Returns how many. */
+  purgeAllUnused(): number {
+    this.tools.cancel();
+    const result = purgeAllUnusedOp(this.session.doc);
+    const removed = purgedCount(result);
+    const parts = [
+      result.definitions.length > 0 ? countOf(result.definitions.length, 'component') : null,
+      result.materials.length > 0 ? countOf(result.materials.length, 'material') : null,
+      result.tags.length > 0 ? countOf(result.tags.length, 'tag') : null,
+    ].filter((part): part is string => part !== null);
+    this.notify('info', removed === 0 ? 'Nothing in the model is unused' : `Purged ${parts.join(', ')}`);
+    return removed;
+  }
+
   // ---------------------------------------------------------------------------------------------- panels
 
   get openPanels(): readonly PanelId[] {
@@ -1938,9 +1956,30 @@ export class Editor {
     return true;
   }
 
-  /** The current document as .planar file bytes. */
-  encodeDocument(): Uint8Array {
-    return encodePlanarFile(this.session.doc, { appVersion: this.appVersion, now: new Date() });
+  /** The current document as .planar file bytes, with an optional PNG preview. */
+  encodeDocument(thumbnail?: Uint8Array): Uint8Array {
+    return encodePlanarFile(this.session.doc, {
+      appVersion: this.appVersion,
+      now: new Date(),
+      ...(thumbnail ? { thumbnail } : {}),
+    });
+  }
+
+  /** A small PNG of the current view for the saved file, or undefined when no view is attached or capture fails. */
+  async #captureThumbnail(): Promise<Uint8Array | undefined> {
+    const capture = this.exchange.viewCapture;
+    if (!capture?.available) return undefined;
+    try {
+      const blob = await capture.capture({
+        width: THUMBNAIL_WIDTH,
+        height: THUMBNAIL_HEIGHT,
+        transparentBackground: false,
+      });
+      return new Uint8Array(await blob.arrayBuffer());
+    } catch {
+      // A preview is optional; the model is saved without one.
+      return undefined;
+    }
   }
 
   saveFile(): Promise<boolean> {
@@ -1955,7 +1994,7 @@ export class Editor {
     const access = this.#environment.fileAccess;
     if (!access) return false;
     const { session } = this;
-    const bytes = this.encodeDocument();
+    const bytes = this.encodeDocument(await this.#captureThumbnail());
     if (!chooseLocation && session.fileHandle !== null) await this.#backUpLastSave();
     const result = await access.save(
       bytes,

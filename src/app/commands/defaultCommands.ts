@@ -633,6 +633,16 @@ function registerOrganizationCommands(registry: CommandRegistry<Editor>): void {
       },
     },
     {
+      id: 'file.purgeAll',
+      label: 'Purge Unused',
+      category: 'File',
+      description: 'Remove unused components, materials, texture images and tags in one step',
+      aliases: ['clean up model', 'purge all', 'reduce file size', 'remove unused'],
+      run: (editor) => {
+        editor.purgeAllUnused();
+      },
+    },
+    {
       id: PLACE_COMPONENT_TOOL_ID,
       label: 'Place Component',
       category: 'Tools',

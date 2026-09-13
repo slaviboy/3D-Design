@@ -21,6 +21,10 @@ const COMPRESSION_LEVEL = 6;
 
 const MANIFEST_ENTRY = 'manifest.json';
 const MODEL_ENTRY = 'model.json';
+const THUMBNAIL_ENTRY = 'thumbnail.png';
+/** Thumbnails larger than this are not written or read. */
+export const MAX_THUMBNAIL_BYTES = 2 * 1024 * 1024;
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 const TEXTURE_DIRECTORY = 'assets/textures/';
 const TEXTURE_ENTRY = /^assets\/textures\/([0-9a-f]{64})\.(?:png|jpg)$/;
 
@@ -37,6 +41,12 @@ export interface EncodeOptions {
   readonly now: Date;
   /** Creation time to preserve from an earlier save; defaults to `now`. */
   readonly createdAt?: string;
+  /** A small PNG preview of the view, stored as `thumbnail.png`. Ignored unless it is a PNG within the size limit. */
+  readonly thumbnail?: Uint8Array;
+}
+
+function isPng(bytes: Uint8Array): boolean {
+  return PNG_SIGNATURE.every((value, index) => bytes[index] === value);
 }
 
 export function encodePlanarFile(doc: ModelDocument, options: EncodeOptions): Uint8Array {
@@ -55,7 +65,25 @@ export function encodePlanarFile(doc: ModelDocument, options: EncodeOptions): Ui
   for (const [digest, file] of snapshotTextureFiles(doc)) {
     entries[textureEntryName(digest, file.mimeType)] = [file.bytes, { level: 0 }];
   }
+  const thumbnail = options.thumbnail;
+  if (thumbnail && thumbnail.byteLength <= MAX_THUMBNAIL_BYTES && isPng(thumbnail)) {
+    entries[THUMBNAIL_ENTRY] = [thumbnail, { level: 0 }];
+  }
   return zipSync(entries, { level: COMPRESSION_LEVEL });
+}
+
+/** The PNG preview stored in a .planar file, or null when there is none or the file can't be read. */
+export function readPlanarThumbnail(bytes: Uint8Array): Uint8Array | null {
+  if (bytes.byteLength > MAX_PLANAR_FILE_BYTES) return null;
+  try {
+    const entries = unzipSync(bytes, {
+      filter: (file) => file.name === THUMBNAIL_ENTRY && file.originalSize <= MAX_THUMBNAIL_BYTES,
+    });
+    const thumbnail = entries[THUMBNAIL_ENTRY];
+    return thumbnail && thumbnail.byteLength <= MAX_THUMBNAIL_BYTES && isPng(thumbnail) ? thumbnail : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Archive path of a texture image: `assets/textures/<sha256>.<png|jpg>`. */

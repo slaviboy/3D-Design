@@ -11,7 +11,7 @@ example.planar
 ├── model.json               document, definitions, geometry
 ├── assets/textures/<sha256>.<png|jpg>   texture images, stored without recompression
 ├── assets/environments/<sha256>.<hdr|exr>   (planned)
-└── thumbnail.png            preview image (optional, planned)
+└── thumbnail.png            320×240 PNG preview of the view at save time (optional, stored uncompressed, ≤ 2 MB)
 ```
 
 ## manifest.json

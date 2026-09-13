@@ -24,6 +24,8 @@ export const MENUS: readonly MenuDefinition[] = [
       'file.exportModel',
       'file.exportImage',
       null,
+      'file.purgeAll',
+      null,
       'file.openSample',
     ],
   },
