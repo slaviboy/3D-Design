@@ -1,9 +1,23 @@
 import { createStore, type StoreApi } from 'zustand/vanilla';
+import type { AnnotationId, DefinitionId } from '../../kernel/ids';
+import type { AnnotationKind } from '../../kernel/model/types';
+import { collectAnnotationLabels, type AnnotationLabel } from '../annotations/annotationLabels';
 import { projectToScreen, type Projection } from '../camera/camera';
 import type { Editor, EditorNotification, InputRequest } from '../Editor';
 import type { InferenceKind } from '../inference/inference';
 import type { PanelId } from '../panels/panels';
 import type { ToolOverlay } from '../tools/Tool';
+
+/** A dimension or text label in viewport pixels. */
+export interface ScreenAnnotationLabel {
+  readonly key: string;
+  readonly context: DefinitionId;
+  readonly id: AnnotationId;
+  readonly kind: AnnotationKind;
+  readonly text: string;
+  readonly x: number;
+  readonly y: number;
+}
 
 /** The inference marker in viewport pixels. */
 export interface ScreenMarker {
@@ -50,6 +64,8 @@ export interface EditorViewState {
   readonly openPanels: readonly PanelId[];
   /** A question the editor is waiting for the user to answer. */
   readonly inputRequest: InputRequest | null;
+  /** Dimension and text labels in viewport pixels. */
+  readonly annotationLabels: readonly ScreenAnnotationLabel[];
 }
 
 export interface EditorStore extends StoreApi<EditorViewState> {
@@ -60,6 +76,36 @@ export interface EditorStore extends StoreApi<EditorViewState> {
 export function createEditorStore(editor: Editor): EditorStore {
   let selectionVersion = 0;
   let commandPaletteRequests = 0;
+  let labelsRevision = -1;
+  let worldLabels: readonly AnnotationLabel[] = [];
+  // Labels are collected when the model changes and projected on every refresh, since the camera moves often.
+  const screenLabels = (): ScreenAnnotationLabel[] => {
+    const { session } = editor;
+    if (session.revision !== labelsRevision) {
+      worldLabels = collectAnnotationLabels(session.doc, editor.units);
+      labelsRevision = session.revision;
+    }
+    const size = editor.viewportSize;
+    const result: ScreenAnnotationLabel[] = [];
+    for (const label of worldLabels) {
+      const position = label.screen
+        ? { x: label.screen.x * size.width, y: label.screen.y * size.height }
+        : label.world
+          ? projectToScreen(session.camera, label.world, size)
+          : null;
+      if (!position) continue;
+      result.push({
+        key: label.key,
+        context: label.context,
+        id: label.id,
+        kind: label.kind,
+        text: label.text,
+        x: position.x,
+        y: position.y,
+      });
+    }
+    return result;
+  };
   const snapshot = (): EditorViewState => {
     const { session, tools } = editor;
     const { doc, selection } = session;
@@ -99,6 +145,7 @@ export function createEditorStore(editor: Editor): EditorStore {
       editPath: session.editPath,
       openPanels: editor.openPanels,
       inputRequest: editor.inputRequest,
+      annotationLabels: screenLabels(),
     };
   };
   const store = createStore<EditorViewState>(snapshot);

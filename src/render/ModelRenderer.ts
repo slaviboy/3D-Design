@@ -4,6 +4,7 @@ import { changeContext } from '../kernel/model/changes';
 import type { EntityStore } from '../kernel/model/EntityStore';
 import type { ModelDocument } from '../kernel/model/ModelDocument';
 import { isTagVisible } from '../kernel/model/visibility';
+import { resolveAnnotation } from '../kernel/ops/annotations';
 import { triangulateFace } from '../kernel/ops/triangulate';
 import {
   FADED_OPACITY,
@@ -19,6 +20,7 @@ interface DefinitionGeometry {
   readonly faces: THREE.BufferGeometry;
   readonly edges: THREE.BufferGeometry;
   readonly guides: THREE.BufferGeometry;
+  readonly annotations: THREE.BufferGeometry;
 }
 
 interface MaterialSet {
@@ -87,6 +89,15 @@ function appendGuides(doc: ModelDocument, store: EntityStore, positions: number[
       positions.push(point.x, point.y - s, point.z, point.x, point.y + s, point.z);
       positions.push(point.x, point.y, point.z - s, point.x, point.y, point.z + s);
     }
+  }
+}
+
+/** Extension, dimension and leader lines of a definition's visible annotations. */
+function appendAnnotations(doc: ModelDocument, store: EntityStore, positions: number[]): void {
+  for (const annotation of store.annotations()) {
+    if (annotation.attributes.hidden || !isTagVisible(doc, annotation.attributes.tagId)) continue;
+    for (const [a, b] of resolveAnnotation(store, annotation).lines)
+      positions.push(a.x, a.y, a.z, b.x, b.y, b.z);
   }
 }
 
@@ -181,6 +192,7 @@ export class ModelRenderer {
     edge: new THREE.LineBasicMaterial({ color: VIEW_COLORS.edge, transparent: true, opacity: FADED_OPACITY }),
   };
   readonly #guideMaterial = new THREE.LineBasicMaterial({ color: VIEW_COLORS.guide });
+  readonly #annotationMaterial = new THREE.LineBasicMaterial({ color: VIEW_COLORS.annotation });
   readonly #selectionFaceMaterial = new THREE.MeshBasicMaterial({
     color: VIEW_COLORS.selection,
     transparent: true,
@@ -309,6 +321,7 @@ export class ModelRenderer {
       this.#faded.back,
       this.#faded.edge,
       this.#guideMaterial,
+      this.#annotationMaterial,
       this.#selectionFaceMaterial,
       this.#selectionEdgeMaterial,
       this.#lockedEdgeMaterial,
@@ -326,6 +339,7 @@ export class ModelRenderer {
         faces: new THREE.BufferGeometry(),
         edges: new THREE.BufferGeometry(),
         guides: new THREE.BufferGeometry(),
+        annotations: new THREE.BufferGeometry(),
       };
       this.#fillGeometry(doc, doc.store(definitionId), geometry);
       this.#geometries.set(definitionId, geometry);
@@ -344,12 +358,16 @@ export class ModelRenderer {
     setPositions(geometry.faces, facePositions, faceNormals);
     setPositions(geometry.edges, edgePositions);
     setPositions(geometry.guides, guidePositions);
+    const annotationPositions: number[] = [];
+    appendAnnotations(doc, store, annotationPositions);
+    setPositions(geometry.annotations, annotationPositions);
   }
 
   #disposeGeometry(geometry: DefinitionGeometry): void {
     geometry.faces.dispose();
     geometry.edges.dispose();
     geometry.guides.dispose();
+    geometry.annotations.dispose();
   }
 
   #rebuildTree(doc: ModelDocument): void {
@@ -405,11 +423,14 @@ export class ModelRenderer {
     const materials = faded || pathDepth !== null ? this.#faded : this.#normal;
     const guides = new THREE.LineSegments(geometry.guides, this.#guideMaterial);
     guides.userData = { excludeFromBounds: true };
+    const annotations = new THREE.LineSegments(geometry.annotations, this.#annotationMaterial);
+    annotations.userData = { excludeFromBounds: true };
     group.add(
       new THREE.Mesh(geometry.faces, materials.front),
       new THREE.Mesh(geometry.faces, materials.back),
       new THREE.LineSegments(geometry.edges, materials.edge),
       guides,
+      annotations,
     );
     const nested = new Set(ancestors).add(definitionId);
     for (const instance of doc.store(definitionId).instances()) {

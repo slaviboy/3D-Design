@@ -9,6 +9,7 @@ export const VIEW_COLORS = Object.freeze({
   /** Selection box of locked groups and components. */
   locked: 0xc2362b,
   guide: 0x5d6673,
+  annotation: 0x2b3440,
   preview: 0x1d232b,
   axisX: 0xd4443b,
   axisY: 0x3b9a4b,

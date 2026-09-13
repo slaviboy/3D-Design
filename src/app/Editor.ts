@@ -1,4 +1,4 @@
-import type { DefinitionId, EdgeId, FaceId, InstanceId, TagId, CurveId } from '../kernel/ids';
+import type { DefinitionId, EdgeId, FaceId, InstanceId, TagId, CurveId, AnnotationId } from '../kernel/ids';
 import { ModelDocument } from '../kernel/model/ModelDocument';
 import {
   addTag as addTagMutation,
@@ -58,6 +58,9 @@ import { divideEdge, explodeCurve, weldEdges } from '../kernel/ops/curveEdit';
 import { softenEdgesByAngle } from '../kernel/ops/soften';
 import { ArcTool } from './tools/ArcTool';
 import { OffsetTool } from './tools/OffsetTool';
+import { DimensionTool } from './tools/DimensionTool';
+import { TextTool } from './tools/TextTool';
+import { removeAnnotation, updateAnnotation } from '../kernel/model/mutations';
 import { AxesTool } from './tools/AxesTool';
 import { CircleTool } from './tools/CircleTool';
 import { EraserTool } from './tools/EraserTool';
@@ -217,6 +220,8 @@ export class Editor {
         new ProtractorTool(),
         new AxesTool(),
         new OffsetTool(),
+        new DimensionTool(),
+        new TextTool(),
         this.#placementTool,
       ],
       SELECT_TOOL_ID,
@@ -502,6 +507,41 @@ export class Editor {
       transformEntities(doc, session.activeContext, selection, scalingAbout(center, factors)),
     );
     session.setSelection(Selection.of(refsOfResult(result)));
+  }
+
+  // ---------------------------------------------------------------------------------------------- annotations
+
+  /**
+   * Asks for new text for a dimension or text label. Clearing a dimension's text shows its measured value again;
+   * clearing a text label deletes it.
+   */
+  editAnnotation(context: DefinitionId, id: AnnotationId): void {
+    const { session } = this;
+    if (context !== session.activeContext) {
+      this.notify('info', 'Open the group or component that contains this label to edit it');
+      return;
+    }
+    const doc = session.doc;
+    const annotation = doc.store(context).annotation(id);
+    if (!annotation) return;
+    const isDimension =
+      annotation.geometry.kind === 'linear-dimension' || annotation.geometry.kind === 'radial-dimension';
+    this.tools.cancel();
+    this.requestInput({
+      title: isDimension ? 'Dimension Text' : 'Edit Text',
+      label: isDimension
+        ? 'Text (leave empty to show the measurement)'
+        : 'Text (leave empty to delete the label)',
+      initial: annotation.attributes.text ?? '',
+      confirmLabel: 'Save',
+      submit: (value) => {
+        const empty = value.trim() === '';
+        doc.transact(isDimension ? 'Edit Dimension' : empty ? 'Delete Text' : 'Edit Text', () => {
+          if (empty && !isDimension) removeAnnotation(doc, context, id);
+          else updateAnnotation(doc, context, id, { attributes: { text: empty ? null : value } });
+        });
+      },
+    });
   }
 
   // ---------------------------------------------------------------------------------------------- curves & softening

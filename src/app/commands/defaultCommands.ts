@@ -3,6 +3,8 @@ import { setModelAxes } from '../../kernel/model/mutations';
 import { DEFAULT_MODEL_AXES } from '../../kernel/model/types';
 import { AXES_TOOL_ID } from '../tools/AxesTool';
 import { OFFSET_TOOL_ID } from '../tools/OffsetTool';
+import { DIMENSION_TOOL_ID } from '../tools/DimensionTool';
+import { TEXT_TOOL_ID } from '../tools/TextTool';
 import type { StandardView } from '../camera/camera';
 import type { Editor } from '../Editor';
 import { PANELS } from '../panels/panels';
@@ -256,6 +258,8 @@ export function registerDefaultCommands(registry: CommandRegistry<Editor>): void
     toolCommand(PROTRACTOR_TOOL_ID, 'Protractor', null, ['angle', 'angled guide']),
     toolCommand(AXES_TOOL_ID, 'Axes', null, ['move axes', 'origin', 'drawing axes']),
     toolCommand(OFFSET_TOOL_ID, 'Offset', 'F', ['inset', 'outline', 'parallel copy', 'wall thickness']),
+    toolCommand(DIMENSION_TOOL_ID, 'Dimension', null, ['measure', 'dimension', 'length label']),
+    toolCommand(TEXT_TOOL_ID, 'Text', null, ['label', 'leader', 'note', 'annotation']),
     {
       id: 'edit.divide',
       label: 'Divide…',

@@ -38,6 +38,8 @@ const TOOL_PALETTE: readonly string[] = [
   'tool.offset',
   'tool.tapeMeasure',
   'tool.protractor',
+  'tool.dimension',
+  'tool.text',
   'tool.orbit',
   'tool.pan',
   'tool.zoom',

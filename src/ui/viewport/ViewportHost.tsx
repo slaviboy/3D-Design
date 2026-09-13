@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import type { PointerInput } from '../../app/tools/Tool';
 import { Viewport } from '../../render/Viewport';
 import { useEditor, useEditorState } from '../EditorContext';
+import { AnnotationLabels } from './AnnotationLabels';
 
 function pointerInput(event: ReactPointerEvent<HTMLElement>, element: HTMLElement): PointerInput {
   const rect = element.getBoundingClientRect();
@@ -91,6 +92,7 @@ export function ViewportHost() {
         event.preventDefault();
       }}
     >
+      <AnnotationLabels />
       {marker && (
         <>
           <span
