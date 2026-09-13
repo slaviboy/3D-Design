@@ -4,13 +4,13 @@
   "fileBytes": 50126484,
   "trianglesInFile": 1002528,
   "defaultLimit": 250000,
-  "refusedWithDefaultLimitMs": 12.1,
+  "refusedWithDefaultLimitMs": 12.4,
   "refusalMessage": "the model has 1,002,528 triangles, more than the import limit of 250,000",
   "parseWithRaisedLimit": {
     "maxTriangles": 2000000,
-    "parseMs": 186.5,
+    "parseMs": 181.2,
     "parsedScene": {
-      "heapMb": -0.6,
+      "heapMb": -1.1,
       "arrayBuffersMb": 84.1
     },
     "kernel": "not run: the insertion exhausts the default V8 heap"

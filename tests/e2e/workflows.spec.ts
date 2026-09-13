@@ -89,7 +89,10 @@ test('saves a model to a file and opens it again', async ({ page }, testInfo) =>
   await page.goto('/');
   await openSample(page);
   await page.keyboard.press('ControlOrMeta+A');
+  // Wait for the selection, or Delete can run before Select All under load.
+  await expect(page.getByTestId('selection-count')).not.toHaveText('Nothing selected');
   await page.keyboard.press('Delete');
+  await expect.poll(async () => (await modelState(page)).instances).toBe(0);
 
   const downloadPromise = page.waitForEvent('download');
   await page.keyboard.press('ControlOrMeta+S');

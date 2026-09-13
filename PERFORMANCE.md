@@ -195,13 +195,44 @@ Retained memory is measured with both the parsed scene and the model still alive
     (`import-stl-1000000.json`).
   - Inserting it into the kernel was attempted once and aborted the Vitest worker when the V8 heap ran out, so it is
     not measured. The benchmark now stops after parsing.
-- **Insertion dominates import time.** Parsing is under 0.3% of the total. Insertion costs about 110 µs and 2.8 KB
-  of heap per triangle, roughly linearly (2.5× the triangles took 2.6× the time), and about the same for STL and
-  GLB.
-  - A file at the limit takes about half a minute and 700 MB. That is the slowest workload measured so far, and the
-    first candidate for optimization in the performance phase.
+- **Insertion dominates import time.** Parsing is under 0.3% of the total. Before the Phase 10 optimization below,
+  insertion cost about 110 µs and 2.8 KB of heap per triangle, roughly linearly, and about the same for STL and GLB.
+  A file at the limit took about half a minute and 700 MB, the slowest workload measured.
 - The few faces fewer than triangles come from pairs that Merge coplanar faces joined where the waves are nearly
   flat.
+
+#### Phase 10 optimization: building imported meshes directly
+
+**Measured cause.** CPU profiles of the 100k-triangle STL import (bundled with esbuild, `node --cpu-prof`) showed
+no single hotspot. Every triangle took the full sticky-geometry path: its edges were inserted with intersection
+checks, then its face was settled with plane resolution (`settleRegion` → `resolvePlane`, about 9%). On top of that,
+spatial-index maintenance took about 13%, welding with string cell keys about 14%, and garbage collection about 8%.
+
+**Changes.**
+- **Direct build.** When the target context is empty (imports always create a new group), nothing can interact
+  with the new geometry except the mesh itself. `insertTriangleMesh` now builds vertices, shared edges and faces
+  directly. It then validates that context, and on any problem (self-intersections, overlaps, T-junctions) reverts
+  to a transaction savepoint and uses the sticky path as before. The savepoint is `ModelDocument.savepoint()` /
+  `revertToSavepoint()`.
+- **Numeric keys.** Vertex welding, triangle adjacency and boundary tracing use numeric keys instead of strings.
+- **Tests.** `tests/kernel/ops/meshInsert.test.ts` checks that the direct build gives the same faces and areas as
+  sticky insertion, that a self-intersecting mesh falls back and stays valid, and that undo restores the document.
+
+| Import | Before (Vitest) | After (Vitest) | After (bundled Node) |
+|---|---|---|---|
+| Binary STL, 100,352 triangles | 11.1 s | 7.6 s | 2.8 s |
+| Binary STL, 249,218 triangles | 28.7 s | 20.6 s | 7.1 s |
+| GLB, 249,218 triangles | 26.1 s | 20.4 s | — |
+
+- **Vitest vs bundled.** The Vitest benchmark runs unbundled TypeScript through Vite's transform, which is about
+  2.7× slower than the same code bundled. The production app runs bundled code, so the bundled Node column is
+  closer to what users see. The bundled script is the same workload (`parseImportFiles`, then
+  `insertImportedScene`) bundled with esbuild and run in Node 25.5.
+- **Same result.** Faces out are identical before and after (100,338 and 249,177).
+- **Memory is unchanged.** Retained heap is about 670 MB at the limit, about 2.7 KB per triangle. Most of it is
+  kernel entity records and the spatial index; reducing it needs a more compact store, not faster insertion.
+- **Still slow at the limit.** Insertion runs on the main thread, so a 250k-triangle import still blocks the
+  interface for several seconds in the app.
 
 ### Export (`export-100000`)
 
@@ -266,7 +297,9 @@ The medians include the first run, which is slower while the code warms up.
 
 ## Not measured yet
 
-- Kernel insertion of imports above the 250,000-triangle limit. It ran out of V8 heap in the Node worker.
+- Kernel insertion of imports above the 250,000-triangle limit. It ran out of V8 heap in the Node worker before the
+  Phase 10 optimization; memory per triangle is unchanged, so the limit stays.
+- Import insertion off the main thread: a file at the limit still blocks the interface for several seconds.
 - Import and export in the running app: the io worker round trip, file picker and download, and the import dialog.
 - Real photographic textures, whose PNG or JPEG decode is slower than the generated checkerboard's. Also GPU memory
   and decoded-image memory, which the JS heap metric doesn't include.

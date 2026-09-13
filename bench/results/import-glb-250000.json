@@ -2,13 +2,13 @@
   "benchmark": "import-glb-250000",
   "format": "glb",
   "fileBytes": 4495000,
-  "parseMs": 23.4,
-  "kernelMs": 26106.7,
+  "parseMs": 24.1,
+  "kernelMs": 20374.6,
   "trianglesIn": 249218,
   "facesOut": 249177,
   "degenerateTriangles": 0,
   "retained": {
-    "heapMb": 676,
+    "heapMb": 671,
     "arrayBuffersMb": 6.7
   }
 }

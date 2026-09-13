@@ -358,9 +358,9 @@ export function insertTriangleMesh(
   // Group adjacent coplanar triangles that face the same way and share attributes.
   const attributesOf = (triangle: MeshTriangle): FaceAttributes =>
     provenance.get(triangle.key)?.attributes ?? DEFAULT_FACE_ATTRIBUTES;
-  const edgeKey = (a: number, b: number): string =>
-    a < b ? `${String(a)}:${String(b)}` : `${String(b)}:${String(a)}`;
-  const trianglesByEdge = new Map<string, number[]>();
+  // Vertex pairs packed into one number (vertex counts stay far below the safe-integer range when squared).
+  const edgeKey = (a: number, b: number): number => (a < b ? a * vertexCount + b : b * vertexCount + a);
+  const trianglesByEdge = new Map<number, number[]>();
   triangles.forEach((triangle, index) => {
     for (let k = 0; k < 3; k++) {
       const key = edgeKey(triangle.corners[k] ?? 0, triangle.corners[(k + 1) % 3] ?? 0);
@@ -409,12 +409,12 @@ export function insertTriangleMesh(
 
   // Boundary edges of each group, and how many boundary edges meet at each vertex over all groups.
   const boundaryByGroup = new Map<number, [number, number][]>();
-  const featureEdges = new Set<string>();
+  const featureEdges = new Set<number>();
   for (const [root, list] of members) {
-    const directed = new Set<string>();
+    const directed = new Set<number>();
     for (const index of list) {
       const { corners } = triangles[index] ?? { corners: [0, 0, 0] };
-      for (let k = 0; k < 3; k++) directed.add(`${String(corners[k])}>${String(corners[(k + 1) % 3])}`);
+      for (let k = 0; k < 3; k++) directed.add((corners[k] ?? 0) * vertexCount + (corners[(k + 1) % 3] ?? 0));
     }
     const boundary: [number, number][] = [];
     for (const index of list) {
@@ -422,7 +422,7 @@ export function insertTriangleMesh(
       for (let k = 0; k < 3; k++) {
         const a = corners[k] ?? 0;
         const b = corners[(k + 1) % 3] ?? 0;
-        if (directed.has(`${String(b)}>${String(a)}`)) continue;
+        if (directed.has(b * vertexCount + a)) continue;
         boundary.push([a, b]);
         featureEdges.add(edgeKey(a, b));
       }
@@ -431,7 +431,8 @@ export function insertTriangleMesh(
   }
   const featureNeighbours = new Map<number, Set<number>>();
   for (const key of featureEdges) {
-    const [a, b] = key.split(':').map(Number) as [number, number];
+    const a = Math.floor(key / vertexCount);
+    const b = key % vertexCount;
     featureNeighbours.set(a, (featureNeighbours.get(a) ?? new Set()).add(b));
     featureNeighbours.set(b, (featureNeighbours.get(b) ?? new Set()).add(a));
   }
@@ -563,7 +564,7 @@ export function insertTriangleMesh(
       doc.revertToSavepoint(mark);
     }
     const segments: SegmentInput[] = [];
-    const segmentIndex = new Map<string, number>();
+    const segmentIndex = new Map<number, number>();
     const segmentOf = (a: number, b: number): number => {
       const key = edgeKey(a, b);
       let index = segmentIndex.get(key);
@@ -616,7 +617,7 @@ function buildMeshDirectly(
   position: readonly Vec3[],
 ): InsertedMesh | null {
   const vertices = new Map<number, VertexId>();
-  const edges = new Map<string, EdgeId>();
+  const edges = new Map<number, EdgeId>();
   const faces: FaceId[] = [];
   const vertexOf = (index: number): VertexId => {
     let id = vertices.get(index);
@@ -629,7 +630,7 @@ function buildMeshDirectly(
   const useOf = (a: number, b: number): LoopUse => {
     const low = Math.min(a, b);
     const high = Math.max(a, b);
-    const key = `${String(low)}:${String(high)}`;
+    const key = low * position.length + high;
     let id = edges.get(key);
     if (id === undefined) {
       id = addEdge(doc, context, vertexOf(low), vertexOf(high));
