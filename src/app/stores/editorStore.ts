@@ -4,6 +4,7 @@ import type { AnnotationKind } from '../../kernel/model/types';
 import { collectAnnotationLabels, type AnnotationLabel } from '../annotations/annotationLabels';
 import { projectToScreen, type Projection } from '../camera/camera';
 import type { Editor, EditorNotification, InputRequest } from '../Editor';
+import type { ExchangeRequest } from '../io/ModelExchange';
 import type { InferenceKind } from '../inference/inference';
 import type { PanelId } from '../panels/panels';
 import type { ToolOverlay } from '../tools/Tool';
@@ -66,6 +67,8 @@ export interface EditorViewState {
   readonly inputRequest: InputRequest | null;
   /** Dimension and text labels in viewport pixels. */
   readonly annotationLabels: readonly ScreenAnnotationLabel[];
+  /** An import or export dialog, or import progress. */
+  readonly exchangeRequest: ExchangeRequest | null;
 }
 
 export interface EditorStore extends StoreApi<EditorViewState> {
@@ -146,6 +149,7 @@ export function createEditorStore(editor: Editor): EditorStore {
       openPanels: editor.openPanels,
       inputRequest: editor.inputRequest,
       annotationLabels: screenLabels(),
+      exchangeRequest: editor.exchange.request,
     };
   };
   const store = createStore<EditorViewState>(snapshot);
@@ -162,6 +166,7 @@ export function createEditorStore(editor: Editor): EditorStore {
       if (event.kind === 'ui-request') commandPaletteRequests++;
       refresh();
     }),
+    editor.exchange.subscribe(refresh),
   ];
   return Object.assign(store, {
     dispose: () => {

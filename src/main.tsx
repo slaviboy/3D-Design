@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { AutosaveController } from './app/autosave/AutosaveController';
 import { Editor } from './app/Editor';
 import { projectToScreen } from './app/camera/camera';
+import { ViewCaptureRelay } from './app/io/viewCapture';
 import type { Platform } from './app/shortcuts/shortcuts';
 import { vec3 } from './kernel/math/vec3';
 import { createEditorStore } from './app/stores/editorStore';
@@ -42,6 +43,7 @@ async function start(): Promise<void> {
     platform: detectPlatform(),
     appVersion: __APP_VERSION__,
     fileAccess: createBrowserFileAccess(),
+    viewCapture: new ViewCaptureRelay(),
     confirmDiscardChanges: (name) => Promise.resolve(window.confirm(`Discard unsaved changes to "${name}"?`)),
   });
   const store = createEditorStore(editor);

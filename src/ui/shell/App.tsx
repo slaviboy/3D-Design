@@ -3,6 +3,7 @@ import { isEditableTarget } from '../../app/shortcuts/shortcuts';
 import type { RecoveryRepository, RecoverySnapshot } from '../../io/idb/recovery';
 import { ErrorBoundary } from '../common/ErrorBoundary';
 import { Notifications } from '../common/Notifications';
+import { ExchangeDialog } from '../dialogs/ExchangeDialogs';
 import { InputDialog } from '../dialogs/InputDialog';
 import { RecoveryDialog } from '../dialogs/RecoveryDialog';
 import { useEditor, useEditorState } from '../EditorContext';
@@ -31,6 +32,7 @@ export function App({ recovery }: { readonly recovery?: RecoveryOptions }) {
   const paletteRequests = useEditorState((state) => state.commandPaletteRequests);
   const openPanels = useEditorState((state) => state.openPanels);
   const inputRequest = useEditorState((state) => state.inputRequest);
+  const exchangeRequest = useEditorState((state) => state.exchangeRequest);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [recoverable, setRecoverable] = useState<readonly RecoverySnapshot[]>([]);
 
@@ -118,6 +120,7 @@ export function App({ recovery }: { readonly recovery?: RecoveryOptions }) {
       <StatusBar />
       <Notifications />
       {inputRequest && <InputDialog request={inputRequest} />}
+      {exchangeRequest && <ExchangeDialog request={exchangeRequest} />}
       {paletteOpen && (
         <CommandPalette
           onClose={() => {

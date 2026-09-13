@@ -1,5 +1,5 @@
 import { PLANAR_FILE_EXTENSION, PLANAR_MIME_TYPE } from '../format/planarFile';
-import type { FileAccess, OpenedFile, SavedFile } from './types';
+import type { FileAccess, FileTypeFilter, OpenedFile, SavedFile } from './types';
 
 /*
  * File access in the browser. Chromium-based browsers get the File System Access API, so Save writes back to the
@@ -19,6 +19,7 @@ interface PickerOptions {
   }[];
   readonly suggestedName?: string;
   readonly excludeAcceptAllOption?: boolean;
+  readonly multiple?: boolean;
 }
 
 interface FileSystemAccessWindow {
@@ -67,8 +68,30 @@ function pickWithInput(doc: Document): Promise<File | null> {
   });
 }
 
-function download(doc: Document, bytes: Uint8Array, name: string): void {
-  const blob = new Blob([bytes.slice()], { type: PLANAR_MIME_TYPE });
+function pickManyWithInput(doc: Document, accept: string): Promise<File[] | null> {
+  return new Promise((resolve) => {
+    const input = doc.createElement('input');
+    input.type = 'file';
+    input.multiple = true;
+    input.accept = accept;
+    input.style.display = 'none';
+    const finish = (files: File[] | null): void => {
+      input.remove();
+      resolve(files);
+    };
+    input.addEventListener('change', () => {
+      finish(input.files ? [...input.files] : null);
+    });
+    input.addEventListener('cancel', () => {
+      finish(null);
+    });
+    doc.body.append(input);
+    input.click();
+  });
+}
+
+function download(doc: Document, bytes: Uint8Array, name: string, mimeType: string = PLANAR_MIME_TYPE): void {
+  const blob = new Blob([bytes.slice()], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const anchor = doc.createElement('a');
   anchor.href = url;
@@ -118,6 +141,54 @@ export function createBrowserFileAccess(win: Window & FileSystemAccessWindow = w
         throw error;
       }
       download(win.document, bytes, suggestedName);
+      return { name: suggestedName, handle: null };
+    },
+
+    async openFiles(filter: FileTypeFilter): Promise<OpenedFile[] | null> {
+      if (win.showOpenFilePicker) {
+        try {
+          const handles = await win.showOpenFilePicker({
+            multiple: true,
+            types: [{ description: filter.description, accept: { [filter.mimeType]: filter.extensions } }],
+          });
+          const files = await Promise.all(handles.map((handle) => handle.getFile()));
+          return await Promise.all(
+            files.map(async (file) => ({ name: file.name, bytes: await readFile(file), handle: null })),
+          );
+        } catch (error) {
+          if (isAbort(error)) return null;
+          throw error;
+        }
+      }
+      const files = await pickManyWithInput(win.document, filter.extensions.join(','));
+      return files
+        ? Promise.all(
+            files.map(async (file) => ({ name: file.name, bytes: await readFile(file), handle: null })),
+          )
+        : null;
+    },
+
+    async saveCopy(
+      bytes: Uint8Array,
+      suggestedName: string,
+      filter: FileTypeFilter,
+    ): Promise<SavedFile | null> {
+      if (win.showSaveFilePicker) {
+        try {
+          const target = await win.showSaveFilePicker({
+            suggestedName,
+            types: [{ description: filter.description, accept: { [filter.mimeType]: filter.extensions } }],
+          });
+          const writable = await target.createWritable();
+          await writable.write(bytes.slice());
+          await writable.close();
+          return { name: target.name, handle: null };
+        } catch (error) {
+          if (isAbort(error)) return null;
+          throw error;
+        }
+      }
+      download(win.document, bytes, suggestedName, filter.mimeType);
       return { name: suggestedName, handle: null };
     },
   };

@@ -899,3 +899,38 @@
   background: transparent;
   border-color: transparent;
 }
+
+/* Import and export dialogs ------------------------------------------------------------------------- */
+
+.exchange-dialog__field {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.exchange-dialog__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.exchange-dialog__check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.exchange-dialog__note {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--muted-fg);
+}
+
+.exchange-dialog__progress {
+  width: 100%;
+}
+
+.exchange-dialog .dialog__footer {
+  gap: 8px;
+}

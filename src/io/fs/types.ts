@@ -10,8 +10,23 @@ export interface SavedFile {
   readonly handle: unknown;
 }
 
+/** Which files a picker offers, and what a saved file is. */
+export interface FileTypeFilter {
+  readonly description: string;
+  readonly mimeType: string;
+  /** Extensions with the leading dot. */
+  readonly extensions: readonly string[];
+}
+
 /** Local file access. Implementations never upload anything. */
 export interface FileAccess {
+  /** Lets the user pick one or more files of the given types (for imports). Resolves to null when cancelled. */
+  openFiles?(filter: FileTypeFilter): Promise<OpenedFile[] | null>;
+  /**
+   * Saves a new file of the given type (for exports): asks for a location, or downloads. Never writes to the open
+   * document's file. Resolves to null when cancelled.
+   */
+  saveCopy?(bytes: Uint8Array, suggestedName: string, filter: FileTypeFilter): Promise<SavedFile | null>;
   /** Lets the user pick a file. Resolves to null when cancelled. */
   open(): Promise<OpenedFile | null>;
   /**

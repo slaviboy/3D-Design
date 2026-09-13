@@ -189,4 +189,76 @@ export class Viewport {
     camera.updateProjectionMatrix();
     return camera;
   }
+
+  /**
+   * Renders the current view into an offscreen image of the given size and encodes it as PNG. The on-screen canvas
+   * is not changed. Tool previews, overlays and the drawing axes are left out. The size is clamped to what the GPU
+   * can render.
+   */
+  capture(options: { width: number; height: number; transparentBackground: boolean }): Promise<Blob> {
+    const renderer = this.#renderer;
+    const max = renderer.capabilities.maxTextureSize;
+    const width = Math.max(1, Math.min(max, Math.round(options.width)));
+    const height = Math.max(1, Math.min(max, Math.round(options.height)));
+    const target = new THREE.WebGLRenderTarget(width, height, { samples: 4, type: THREE.UnsignedByteType });
+    const previous = {
+      width: this.#width,
+      height: this.#height,
+      color: renderer.getClearColor(new THREE.Color()),
+    };
+    const previousAlpha = renderer.getClearAlpha();
+    const hidden = [this.#model.overlay, this.#model.preview, this.#axes].filter((object) => object.visible);
+    const pixels = new Uint8Array(width * height * 4);
+    try {
+      for (const object of hidden) object.visible = false;
+      this.#width = width;
+      this.#height = height;
+      this.#model.update();
+      const camera = this.#syncCamera();
+      if (options.transparentBackground) renderer.setClearColor(0x000000, 0);
+      renderer.setRenderTarget(target);
+      renderer.render(this.#scene, camera);
+      renderer.readRenderTargetPixels(target, 0, 0, width, height, pixels);
+    } finally {
+      renderer.setRenderTarget(null);
+      renderer.setClearColor(previous.color, previousAlpha);
+      this.#width = previous.width;
+      this.#height = previous.height;
+      for (const object of hidden) object.visible = true;
+      target.dispose();
+      this.requestRender();
+    }
+    // Render targets hold linear color, bottom row first; PNG wants sRGB, top row first, not premultiplied.
+    const toSrgb = new Uint8ClampedArray(256);
+    for (let i = 0; i < 256; i++) {
+      const linear = i / 255;
+      toSrgb[i] = Math.round(
+        255 * (linear <= 0.0031308 ? linear * 12.92 : 1.055 * linear ** (1 / 2.4) - 0.055),
+      );
+    }
+    const image = new ImageData(width, height);
+    for (let y = 0; y < height; y++) {
+      const from = (height - 1 - y) * width * 4;
+      const to = y * width * 4;
+      for (let x = 0; x < width * 4; x += 4) {
+        const alpha = pixels[from + x + 3] ?? 255;
+        const unpremultiply = alpha > 0 && alpha < 255 ? 255 / alpha : 1;
+        for (let c = 0; c < 3; c++) {
+          image.data[to + x + c] =
+            toSrgb[Math.min(255, Math.round((pixels[from + x + c] ?? 0) * unpremultiply))] ?? 0;
+        }
+        image.data[to + x + 3] = options.transparentBackground ? alpha : 255;
+      }
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext('2d')?.putImageData(image, 0, 0);
+    return new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error('The image could not be encoded'));
+      }, 'image/png');
+    });
+  }
 }

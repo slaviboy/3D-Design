@@ -81,6 +81,10 @@ import { TapeMeasureTool } from './tools/TapeMeasureTool';
 import { SELECT_TOOL_ID } from './tools/Tool';
 import { ToolManager } from './tools/ToolManager';
 import { refsOfResult, scalingAbout, selectionBounds, transformSelectionOf } from './tools/transformSupport';
+import type { ImportLimits } from '../io/mesh/limits';
+import type { ImportEngine } from './io/importEngine';
+import { ModelExchange } from './io/ModelExchange';
+import type { ViewCapturePort } from './io/viewCapture';
 
 /** Characters that start typing into the measurements box. Once typing has started, any character continues it. */
 const MEASUREMENT_START = /^[0-9.,\-[</]$/;
@@ -157,6 +161,12 @@ export interface EditorEnvironment {
   readonly confirmDiscardChanges?: (documentName: string) => Promise<boolean>;
   /** Runs solid-tool booleans. Defaults to the manifold-3d worker, started on first use. */
   readonly booleanEngine?: BooleanEngine;
+  /** Parses imported models. Defaults to the io worker, started on first use. */
+  readonly importEngine?: ImportEngine;
+  /** Renders the view for Export 2D Graphic. */
+  readonly viewCapture?: ViewCapturePort;
+  /** Overrides for the import resource limits. */
+  readonly importLimits?: Partial<ImportLimits>;
 }
 
 function errorMessage(error: unknown): string {
@@ -181,6 +191,8 @@ export class Editor {
   readonly shortcuts: ShortcutMap;
   readonly tools: ToolManager;
   readonly units: UnitSettings = METRIC_UNIT_SETTINGS;
+  /** Import, 3D export and image export. */
+  readonly exchange: ModelExchange;
 
   readonly #environment: EditorEnvironment;
   readonly #listeners = new Set<(event: EditorEvent) => void>();
@@ -197,6 +209,7 @@ export class Editor {
     this.#environment = environment;
     this.platform = environment.platform;
     this.appVersion = environment.appVersion;
+    this.exchange = new ModelExchange(this, environment);
     registerDefaultCommands(this.commands);
     this.shortcuts = ShortcutMap.fromCommands(this.commands.all());
     this.tools = new ToolManager(
