@@ -21,6 +21,12 @@ export const EPS_AREA = EPS_LEN * EPS_LEN;
 /** Edges shorter than this are still valid, but the user gets a warning about very small geometry. */
 export const SMALL_EDGE_WARNING_LEN = 10 * EPS_LEN;
 
+/**
+ * How far a vertex coming back from a triangle mesh (for example a boolean result, which is computed in single
+ * precision) may lie from the plane of the face it came from and still be snapped back onto that plane.
+ */
+export const EPS_MESH_SNAP = 100 * EPS_LEN;
+
 /** Cell size of the vertex welding hash grid. Must be at least 2 × EPS_LEN so a weld query spans at most 2 cells per axis. */
 export const WELD_GRID_CELL_SIZE = 4 * EPS_LEN;
 

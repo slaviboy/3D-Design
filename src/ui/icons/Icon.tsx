@@ -36,6 +36,13 @@ const PATHS: Readonly<Record<string, string>> = {
   'tool.freehand': 'M3 14c2-6 4 2 6-3s3-5 5-1 2 4 3 2',
   'tool.rotatedRectangle': 'M10 2l8 8-8 8-8-8z',
   'tool.protractor': 'M3 15a7 7 0 0 1 14 0zM10 15l4-6',
+  'tool.followMe': 'M3 17h6a8 8 0 0 0 8-8V3M2 14h4v4H2zM15 3h4',
+  'tools.outerShell': 'M7 3a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM13 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10z',
+  'tools.union': 'M7 3a5 5 0 0 0-1 9.9A5 5 0 1 0 13.9 8 5 5 0 0 0 7 3z',
+  'tools.subtract': 'M7 3a5 5 0 1 0 0 10 5 5 0 0 1 5-5 5 5 0 0 0-5-5zM13 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10z',
+  'tools.trim': 'M7 3a5 5 0 1 0 0 10 5 5 0 0 1 5-5 5 5 0 0 0-5-5z',
+  'tools.intersect': 'M10 7.6a5 5 0 0 1 0 4.8 5 5 0 0 1 0-4.8zM7 3a5 5 0 1 0 0 10M13 7a5 5 0 1 1 0 10',
+  'tools.split': 'M7 3a5 5 0 1 0 0 10M13 7a5 5 0 1 1 0 10M10 2v16',
 };
 
 export function hasIcon(commandId: string): boolean {

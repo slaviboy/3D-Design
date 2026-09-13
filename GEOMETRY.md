@@ -15,6 +15,7 @@ are a code-review defect.
 | `EPS_PARALLEL` | 1e-7 | Two unit directions are parallel when the sine of the angle between them is below this. |
 | `EPS_UNIT_LENGTH` | 1e-9 | A stored unit direction (such as a guide line's) may differ from length 1 by at most this. |
 | `SMALL_EDGE_WARNING_LEN` | 1e-5 m | Edges shorter than this are allowed, but the user is warned. |
+| `EPS_MESH_SNAP` | 1e-4 m | A vertex coming back from a triangle mesh (a boolean result, computed in single precision) is snapped back onto its source face planes if it lies within this distance of them. |
 
 **Why these values**
 
@@ -196,6 +197,115 @@ Push/Pull applies to a planar face F. Let `n` be F's normal and `d` the signed d
 Rows marked ⚑ in the behavior matrix are cases where the reference behavior is unclear and must be confirmed before
 this tool is marked done.
 
+## Algorithm: Intersect Faces
+
+`intersectFaces(doc, context, faceIds, { with })` in `src/kernel/ops/intersect.ts`. The faces don't need to form solids.
+
+1. **Collect polygons.** The given faces of the context are the *selected* polygons. The *other* polygons are:
+   - `with: 'selection'`: the selected polygons themselves;
+   - `with: 'model'`: every other face of the context, plus the faces of every group and component inside it at any
+     depth, with their loops transformed into context coordinates. Those instances are read, never changed.
+2. **Pair up.** Each selected polygon is paired with each other polygon whose bounding box, inflated by `EPS_LEN`,
+   overlaps its own. A pair of context faces is visited once.
+3. **Intersect the planes.** The line direction is `u = n₁ × n₂`. When `|u|` is within `EPS_PARALLEL` the planes are
+   parallel, and coplanar or parallel pairs produce nothing. Otherwise the line passes through
+   `(d₁ (n₂ × u) + d₂ (u × n₁)) / |u|²`.
+4. **Clip against each polygon, holes included.** Project the line and every loop into the polygon's 2D basis.
+   - Each loop edge whose endpoints lie strictly on opposite sides of the line contributes its crossing parameter.
+   - An endpoint within `EPS_LEN` of the line contributes its own parameter.
+   - Sort the parameters and merge any closer than `EPS_LEN`.
+   - Between each consecutive pair, classify the midpoint with the exact point-in-polygon test. Inside or boundary
+     keeps the interval; adjacent kept intervals merge.
+5. **Overlap.** Intersect the two interval sets. Every overlap longer than `EPS_LEN` is a segment.
+6. **Insert.** All segments go through insertSegments with `autoFace` on, in one transaction. Each segment lies in the
+   planes of both faces it came from, so candidate-plane collection (insertSegments step 5) splits both. Existing edges
+   the line runs along are reused, so touching faces add nothing. The created edges are returned. When there are no
+   segments, nothing is recorded in history.
+
+## Algorithm: Follow Me
+
+`followMe(doc, context, profileFaceId, pathEdgeIds)` in `src/kernel/ops/followMe.ts`.
+
+1. **Order the path.** Path edges that belong to the profile are ignored. The remaining edges must form one chain, open
+   (two ends) or closed (no ends, at least three edges). A vertex with three or more path edges is a branch, and a chain
+   that doesn't reach every edge is disconnected. Both are refused with `KernelError`.
+2. **Start at the profile.**
+   - Open path: start at the end nearer the profile's centroid.
+   - Closed path: start at the path vertex nearest the centroid, and run in the direction whose first segment is more
+     nearly perpendicular to the profile.
+   - If the first segment direction `d₀` is parallel to the profile plane (`|n·d₀|` within `EPS_PARALLEL`), refuse.
+3. **Miter planes.** At interior path vertex *i* the plane passes through the vertex, with normal
+   `normalize(dᵢ₋₁ + dᵢ)`: the bisector of the joint. At the end of an open path the normal is the last direction.
+   A joint that turns straight back is refused.
+4. **Profile copies.**
+   - Copy 0 is the profile itself for an open path. For a closed path it is the profile slid along `d₀` onto the miter
+     plane at the start.
+   - Copy *i + 1* is copy *i* with every point slid along `dᵢ` onto the next miter plane: `q + t·dᵢ`, with `t` chosen to
+     land on the plane.
+   - Sliding keeps each cross-section perpendicular to its segment, so a closed planar path returns exactly to copy 0,
+     and a regular polygon path gives an exact rotation (a lathe).
+5. **Faces.**
+   - Each loop edge `a → b` of the profile, together with its copy on the next ring, makes a four-sided side face
+     `a, b, b′, a′`. It is planar because both new points moved along the same direction. Coincident points collapse,
+     so a profile point on the axis gives triangles.
+   - Open paths add caps: the start cap (the original face) and an end cap.
+   - Closed paths wrap the last ring back to copy 0 and remove the original face, along with its boundary edges that
+     are left with no faces, before inserting.
+6. **Orientation.** The planned faces enclose a closed shell. If its signed volume, `⅓ Σ A·p` over all loops, is
+   negative, every loop is reversed. For an open path, the original face is reversed first if it faces into the sweep.
+7. **Soft edges.**
+   - A ring at a path vertex is soft and smooth when the two path edges meeting there belong to the same curve.
+   - A longitudinal edge is soft and smooth when the two profile edges meeting at its profile point belong to the same
+     curve.
+8. **Insert.** Rings and longitudinal segments go through insertSegments with `autoFace` off. Every planned face is
+   then settled with `settleRegion` (rule `merge`) and the profile's attributes, all in one transaction.
+9. **Known limit.** A closed path that isn't planar twists the profile, so the last band isn't planar. The transaction
+   then fails validation and rolls back.
+
+## Algorithm: solid detection
+
+`isSolid(store)` in `src/kernel/ops/solids/solid.ts` is true when all of these hold:
+
+- the definition has at least one face and no nested groups or components;
+- every edge bounds exactly two faces, so there are no loose edges, no open borders and no fins;
+- the two faces at each edge traverse it in opposite directions (consistent orientation).
+
+`solidVolume(store)` sums `a · ((b − a) × (c − a)) / 6` over the triangles of every face (the divergence theorem). It
+is positive when the faces point outward. Entity Info shows "Solid Group" or "Solid Component" with the absolute
+volume, scaled by the instance transform's determinant.
+
+## Algorithm: mesh round trip
+
+`src/kernel/ops/solids/mesh.ts` moves solids between the kernel and triangle meshes, as the solid tools need.
+
+1. **To a mesh.** `toTriangleMesh(store, transform)` triangulates each face (`triangulateFace`) into one indexed mesh,
+   sharing vertices. Each triangle records its source face id. Under a mirroring transform the winding is swapped so
+   triangles still face outward. `faceProvenance(store, transform)` records each face's transformed plane and
+   attributes. The solid tools rekey the face ids per input, so two instances of one component stay distinct.
+2. **Booleans** (`src/workers/manifoldBoolean.ts`, run in `boolean.worker`).
+   - The meshes are centered at the origin and converted to single precision.
+   - Each triangle's face key is passed as manifold-3d's `faceID`, which survives the operation.
+   - Union, difference, intersection, or split (intersection, A − B, B − A) runs, and the results are shifted back.
+3. **From a mesh.** `insertTriangleMesh(doc, context, mesh, provenance)`:
+   1. Weld vertices within `EPS_LEN` and drop degenerate triangles.
+   2. A triangle whose corners all lie within `EPS_MESH_SNAP` of its source face plane uses that plane.
+   3. Each vertex moves to the least-squares point of the distinct source planes around it: onto a single plane, onto
+      the line where two meet, or to the corner of three or more. A tiny pull toward the original position keeps the
+      system well posed. The move is kept only if it is within `EPS_MESH_SNAP`.
+   4. Union-find merges triangles across each two-triangle edge when they face the same way, have identical
+      attributes, and are coplanar: they share a source face, or each triangle's corners lie within `EPS_LEN` of the
+      other's plane.
+   5. Each group's boundary is the directed edges whose reverse isn't in the group; they are traced into loops. The
+      edges shared by coplanar triangles are dropped.
+   6. A boundary vertex is dropped from its loops when exactly two boundary edges meet there and they are collinear,
+      so no face needs it as a corner.
+   7. Loops with positive area in the group's plane basis are outlines. Holes go to the smallest outline containing
+      them.
+   8. All loop segments go through insertSegments with `autoFace` off. Each outline is settled with `settleRegion`
+      (rule `merge`), facing the group's normal, with the source face's attributes: front and back materials, tag and
+      hidden flag.
+4. **Guarantee.** Faces → mesh → faces gives back the same V/E/F counts for planar-faced solids (behavior matrix H10).
+
 ## Other operations
 
 This section is expanded as each operation is implemented.
@@ -206,16 +316,14 @@ This section is expanded as each operation is implemented.
 - **Offset.** Each loop is offset in the face's 2D basis using miter joins. Arcs are offset analytically. Overlaps are
   removed by inserting the result into the same planar arrangement engine and keeping regions by winding number, so no
   Clipper dependency is needed.
-- **Follow Me.** The profile is propagated through miter planes along the path, with stitching for closed paths and
-  lathe paths. Edges along a curve path are softened.
-- **Intersect Faces.** For each pair of non-parallel faces, intersect the two planes, clip the resulting line against
-  both polygons, intersect the two sets of intervals, and insert the segments with insertSegments. Section fill and the
-  Split tool reuse this.
-- **Solid tools.**
-  - Check that the input is a valid solid: every edge has exactly two faces and orientation is consistent.
-  - Triangulate, keeping each triangle's source face id.
-  - Run the operation with manifold-3d in a worker.
-  - Group coplanar triangles by source face, extract their boundaries, and rebuild faces with insertSegments.
-  - Restore materials and soft-edge flags.
+- **Follow Me, Intersect Faces, solids.** See the algorithm sections above.
+- **Solid tools** (`src/app/solids/solidTools.ts`).
+  - Every selected group or component must pass `isSolid`; otherwise the tool refuses with a message.
+  - Each input is meshed in context coordinates, and meshes enclosing negative volume are reversed.
+  - The boolean runs in `boolean.worker`: Outer Shell and Union take the union of all inputs, Intersect the
+    intersection, Subtract and Trim the second input minus the first, and Split three results.
+  - The inputs are replaced by new groups rebuilt with `insertTriangleMesh`, in one undoable transaction. Subtract
+    deletes the cutter and Trim keeps it.
+  - Soft-edge flags are not restored yet.
 - **Triangulation.** earcut on loops projected to 2D, with a check that triangle areas sum to the polygon area. On
   failure, fall back to ear clipping with exact predicates and log a diagnostic.

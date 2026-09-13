@@ -204,6 +204,7 @@ Every runtime dependency is bundled; nothing is fetched at runtime.
 | `robust-predicates` | Unlicense | kernel | Exact 2D orientation tests for planar topology |
 | `earcut` | ISC | kernel | Triangulating faces with holes |
 | `fflate` | MIT | io | ZIP container for `.planar` files |
+| `manifold-3d` | Apache-2.0 | workers | Watertight mesh booleans for the solid tools. The WebAssembly module is bundled as a local asset, loaded lazily by `boolean.worker`, and precached for offline use. Its optional CAD and glTF helpers are never imported; npm installs their peer packages (`@gltf-transform/*`, `esbuild-wasm`) for development only, and they are not bundled |
 | `workbox-window` | MIT | main | Registering the offline service worker |
 
 | Development package | License | Why |

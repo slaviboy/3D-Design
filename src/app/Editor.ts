@@ -28,6 +28,7 @@ import { definitionBounds } from './geometry/bounds';
 import { pick, type PickHit, type PickRequest } from './picking/picker';
 import { createSampleModel, SAMPLE_MODEL_NAME } from './sample/sampleModel';
 import { boxSelect, type BoxSelectMode, type ScreenRect } from './selection/boxSelect';
+import { WorkerBooleanEngine, type BooleanEngine } from './solids/booleanClient';
 import { allSelectableRefs } from './selection/queries';
 import { Selection, type EntityRef } from './selection/Selection';
 import { EditorSession, UNTITLED_DOCUMENT_NAME } from './session/EditorSession';
@@ -35,6 +36,7 @@ import { chordFromKeyboard, ShortcutMap, type KeyChordInput, type Platform } fro
 import { ArcTool } from './tools/ArcTool';
 import { CircleTool } from './tools/CircleTool';
 import { EraserTool } from './tools/EraserTool';
+import { FollowMeTool } from './tools/FollowMeTool';
 import { FreehandTool } from './tools/FreehandTool';
 import { LineTool } from './tools/LineTool';
 import { MoveTool } from './tools/MoveTool';
@@ -81,6 +83,8 @@ export interface EditorEnvironment {
   readonly fileAccess?: FileAccess;
   /** Asks the user whether unsaved changes may be discarded. Without it, changes are discarded silently. */
   readonly confirmDiscardChanges?: (documentName: string) => Promise<boolean>;
+  /** Runs solid-tool booleans. Defaults to the manifold-3d worker, started on first use. */
+  readonly booleanEngine?: BooleanEngine;
 }
 
 function errorMessage(error: unknown): string {
@@ -112,6 +116,7 @@ export class Editor {
   #notifications: readonly EditorNotification[] = [];
   #nextNotificationId = 1;
   #measurementText = '';
+  #booleans: BooleanEngine | null = null;
 
   constructor(environment: EditorEnvironment) {
     this.#environment = environment;
@@ -143,9 +148,16 @@ export class Editor {
         new FreehandTool(),
         new RotatedRectangleTool(),
         new ProtractorTool(),
+        new FollowMeTool(),
       ],
       SELECT_TOOL_ID,
     );
+  }
+
+  /** The engine the solid tools use for booleans. */
+  get booleans(): BooleanEngine {
+    this.#booleans ??= this.#environment.booleanEngine ?? new WorkerBooleanEngine();
+    return this.#booleans;
   }
 
   activateTool(toolId: string): void {
