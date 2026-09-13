@@ -60,6 +60,10 @@ export interface EditorViewState {
   readonly backupRequests: number;
   /** Increments each time something asks for the start screen. */
   readonly startScreenRequests: number;
+  /** Increments each time something asks for the Keyboard Shortcuts dialog. */
+  readonly shortcutsDialogRequests: number;
+  /** Increments whenever shortcuts change, so labels that show them refresh. */
+  readonly shortcutsVersion: number;
   /** The tag new groups and components go on; null for untagged. */
   readonly activeTagId: number | null;
   /** Instance ids of the open groups and components, outermost first. */
@@ -82,6 +86,8 @@ export function createEditorStore(editor: Editor): EditorStore {
   let commandPaletteRequests = 0;
   let backupRequests = 0;
   let startScreenRequests = 0;
+  let shortcutsDialogRequests = 0;
+  let shortcutsVersion = 0;
   let labelsRevision = -1;
   let worldLabels: readonly AnnotationLabel[] = [];
   // Labels are collected when the model changes and projected on every refresh, since the camera moves often.
@@ -149,6 +155,8 @@ export function createEditorStore(editor: Editor): EditorStore {
       commandPaletteRequests,
       backupRequests,
       startScreenRequests,
+      shortcutsDialogRequests,
+      shortcutsVersion,
       activeTagId: session.activeTagId,
       editPath: session.editPath,
       openPanels: editor.openPanels,
@@ -167,9 +175,11 @@ export function createEditorStore(editor: Editor): EditorStore {
     }),
     editor.tools.subscribe(refresh),
     editor.subscribe((event) => {
+      if (event.kind === 'shortcuts') shortcutsVersion++;
       if (event.kind === 'ui-request') {
         if (event.request === 'backups') backupRequests++;
         else if (event.request === 'start') startScreenRequests++;
+        else if (event.request === 'shortcuts') shortcutsDialogRequests++;
         else commandPaletteRequests++;
       }
       refresh();

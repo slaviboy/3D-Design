@@ -55,7 +55,8 @@ function CommandButton({
 }) {
   const editor = useEditor();
   useEditorState(
-    (state) => `${String(state.revision)}|${String(state.selectionVersion)}|${state.activeToolId}`,
+    (state) =>
+      `${String(state.revision)}|${String(state.selectionVersion)}|${state.activeToolId}|${String(state.shortcutsVersion)}`,
   );
   const command = editor.commands.get(commandId);
   if (!command) return null;

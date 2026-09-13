@@ -5,6 +5,7 @@ import { Editor } from './app/Editor';
 import { projectToScreen } from './app/camera/camera';
 import type { Platform } from './app/shortcuts/shortcuts';
 import { vec3 } from './kernel/math/vec3';
+import { exportShortcuts, parseStoredOverrides } from './app/shortcuts/customization';
 import { createEditorStore } from './app/stores/editorStore';
 import { createBrowserFileAccess } from './io/fs/browserFileAccess';
 import { IndexedDbRecentFilesRepository, type RecentFilesRepository } from './io/idb/recent';
@@ -53,6 +54,20 @@ async function start(): Promise<void> {
         projectToScreen(editor.session.camera, vec3(point.x, point.y, point.z), editor.viewportSize),
     };
   }
+
+  const shortcutsKey = 'planar.shortcuts';
+  editor.setShortcutStorage({
+    load: () => {
+      try {
+        return parseStoredOverrides(window.localStorage.getItem(shortcutsKey), editor.commands.all());
+      } catch {
+        return {};
+      }
+    },
+    save: (overrides) => {
+      window.localStorage.setItem(shortcutsKey, exportShortcuts(overrides));
+    },
+  });
 
   let recovery: RecoveryOptions | undefined;
   let recent: RecentFilesRepository | undefined;

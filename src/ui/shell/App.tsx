@@ -6,6 +6,7 @@ import { ErrorBoundary } from '../common/ErrorBoundary';
 import { Notifications } from '../common/Notifications';
 import { InputDialog } from '../dialogs/InputDialog';
 import { RecoveryDialog } from '../dialogs/RecoveryDialog';
+import { KeyboardShortcutsDialog } from '../dialogs/KeyboardShortcutsDialog';
 import { StartScreen, startScreenEnabled } from '../dialogs/StartScreen';
 import { useEditor, useEditorState } from '../EditorContext';
 import { MenuBar } from '../menubar/MenuBar';
@@ -39,12 +40,14 @@ export function App({
   const paletteRequests = useEditorState((state) => state.commandPaletteRequests);
   const backupRequests = useEditorState((state) => state.backupRequests);
   const startScreenRequests = useEditorState((state) => state.startScreenRequests);
+  const shortcutsDialogRequests = useEditorState((state) => state.shortcutsDialogRequests);
   const openPanels = useEditorState((state) => state.openPanels);
   const inputRequest = useEditorState((state) => state.inputRequest);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [recoverable, setRecoverable] = useState<readonly RecoverySnapshot[]>([]);
   const [backups, setBackups] = useState<readonly RecoverySnapshot[] | null>(null);
   const [startOpen, setStartOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const startupChecked = useRef(false);
 
   useEffect(() => {
@@ -58,6 +61,10 @@ export function App({
   useEffect(() => {
     if (startScreenRequests > 0) setStartOpen(true);
   }, [startScreenRequests]);
+
+  useEffect(() => {
+    if (shortcutsDialogRequests > 0) setShortcutsOpen(true);
+  }, [shortcutsDialogRequests]);
 
   useEffect(() => {
     if (backupRequests === 0 || !recovery) return;
@@ -162,6 +169,13 @@ export function App({
       </div>
       <StatusBar />
       <Notifications />
+      {shortcutsOpen && (
+        <KeyboardShortcutsDialog
+          onClose={() => {
+            setShortcutsOpen(false);
+          }}
+        />
+      )}
       {startOpen && (
         <StartScreen
           {...(recent ? { recent } : {})}

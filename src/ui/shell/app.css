@@ -980,3 +980,99 @@
   gap: 6px;
   margin-right: auto;
 }
+
+/* Keyboard shortcuts --------------------------------------------------------------------------------- */
+
+.palette__edit-shortcut {
+  padding: 0 6px;
+  font: inherit;
+  color: var(--muted-fg);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+}
+
+.palette__edit-shortcut:hover,
+.palette__edit-shortcut:focus-visible {
+  color: var(--fg);
+  border-color: var(--chrome-border);
+}
+
+.shortcut-capture {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  padding: 6px 10px;
+  background: var(--pressed-bg);
+  border: 1px dashed var(--accent);
+  border-radius: 4px;
+}
+
+.shortcut-capture:focus-visible {
+  outline: 2px solid var(--focus-ring);
+}
+
+.shortcut-capture__text {
+  margin-right: auto;
+}
+
+.shortcuts-dialog {
+  width: min(720px, calc(100vw - 32px));
+}
+
+.shortcuts-dialog__list {
+  max-height: min(60vh, 520px);
+  margin: 8px 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.shortcuts-dialog__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 2px;
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+.shortcuts-dialog__chords {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.shortcuts-dialog__chord {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+  font-size: 12px;
+  background: var(--chrome-bg);
+  border: 1px solid var(--chrome-border);
+  border-radius: 3px;
+}
+
+.shortcuts-dialog__remove {
+  padding: 0 2px;
+  font: inherit;
+  color: var(--muted-fg);
+  background: transparent;
+  border: 0;
+}
+
+.shortcuts-dialog__actions {
+  display: flex;
+  gap: 4px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

@@ -364,6 +364,16 @@ export function registerDefaultCommands(registry: CommandRegistry<Editor>): void
     toolCommand(PAN_TOOL_ID, 'Pan', 'H', ['hand', 'scroll view']),
     toolCommand(ZOOM_TOOL_ID, 'Zoom', 'Z', ['magnify']),
     {
+      id: 'help.keyboardShortcuts',
+      label: 'Keyboard Shortcuts…',
+      category: 'Help',
+      description: 'See, change, reset, import and export keyboard shortcuts',
+      aliases: ['keys', 'hotkeys', 'bindings', 'customize shortcuts'],
+      run: (editor) => {
+        editor.requestUi('shortcuts');
+      },
+    },
+    {
       id: 'help.commandPalette',
       label: 'Search Commands…',
       category: 'Help',

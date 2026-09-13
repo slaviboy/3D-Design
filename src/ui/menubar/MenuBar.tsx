@@ -129,7 +129,7 @@ export const MENUS: readonly MenuDefinition[] = [
     label: 'Window',
     items: ['window.entityInfo', 'window.outliner', 'window.components', 'window.tags', 'window.soften'],
   },
-  { label: 'Help', items: ['help.commandPalette'] },
+  { label: 'Help', items: ['help.commandPalette', 'help.keyboardShortcuts'] },
 ];
 
 /** WAI-ARIA menubar: arrow keys move between menus and items, Enter or Space runs, Escape closes. */

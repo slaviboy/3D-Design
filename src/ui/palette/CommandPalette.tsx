@@ -1,13 +1,17 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { searchCommands } from '../../app/commands/search';
 import { formatChord } from '../../app/shortcuts/shortcuts';
 import { Dialog } from '../common/Dialog';
-import { useEditor } from '../EditorContext';
+import { useEditor, useEditorState } from '../EditorContext';
+import { ShortcutCapture } from './ShortcutCapture';
 
 export function CommandPalette({ onClose }: { readonly onClose: () => void }) {
   const editor = useEditor();
+  useEditorState((state) => state.shortcutsVersion);
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
+  const [capturing, setCapturing] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const results = useMemo(() => searchCommands(editor.commands.all(), query), [editor, query]);
   const activeIndex = Math.min(active, Math.max(0, results.length - 1));
 
@@ -19,6 +23,7 @@ export function CommandPalette({ onClose }: { readonly onClose: () => void }) {
   return (
     <Dialog title="Search commands" onClose={onClose} className="palette">
       <input
+        ref={inputRef}
         className="palette__input"
         type="search"
         role="combobox"
@@ -47,6 +52,15 @@ export function CommandPalette({ onClose }: { readonly onClose: () => void }) {
           }
         }}
       />
+      {capturing && (
+        <ShortcutCapture
+          commandId={capturing}
+          onDone={() => {
+            setCapturing(null);
+            inputRef.current?.focus();
+          }}
+        />
+      )}
       <ul className="palette__results" id="palette-results" role="listbox" aria-label="Commands">
         {results.length === 0 && <li className="palette__empty">No matching commands</li>}
         {results.map((command, index) => {
@@ -70,6 +84,18 @@ export function CommandPalette({ onClose }: { readonly onClose: () => void }) {
               <span className="palette__category">{command.category}</span>
               <span className="palette__label">{command.label}</span>
               <span className="palette__shortcut">{chord ? formatChord(chord, editor.platform) : ''}</span>
+              <button
+                type="button"
+                className="palette__edit-shortcut"
+                aria-label={`Change shortcut for ${command.label}`}
+                title="Change shortcut"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setCapturing(command.id);
+                }}
+              >
+                ⌨
+              </button>
             </li>
           );
         })}

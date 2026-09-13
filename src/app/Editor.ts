@@ -56,7 +56,24 @@ import { WorkerBooleanEngine, type BooleanEngine } from './solids/booleanClient'
 import { allSelectableRefs } from './selection/queries';
 import { Selection, type EntityRef } from './selection/Selection';
 import { EditorSession, UNTITLED_DOCUMENT_NAME } from './session/EditorSession';
-import { chordFromKeyboard, ShortcutMap, type KeyChordInput, type Platform } from './shortcuts/shortcuts';
+import {
+  assignShortcut as assignShortcutOverride,
+  buildShortcutMap,
+  exportShortcuts as exportShortcutsFile,
+  importShortcuts as importShortcutsFile,
+  removeShortcut as removeShortcutOverride,
+  resetShortcut as resetShortcutOverride,
+  validateUserChord,
+  type ConflictResolution,
+  type ShortcutOverrides,
+  type ShortcutStorage,
+} from './shortcuts/customization';
+import {
+  chordFromKeyboard,
+  type KeyChordInput,
+  type Platform,
+  type ShortcutMap,
+} from './shortcuts/shortcuts';
 import { divideEdge, explodeCurve, weldEdges } from '../kernel/ops/curveEdit';
 import { softenEdgesByAngle } from '../kernel/ops/soften';
 import { ArcTool } from './tools/ArcTool';
@@ -116,14 +133,15 @@ export interface RecentFilesRecorder {
   record(name: string, handle: unknown): void;
 }
 
-export type UiRequest = 'command-palette' | 'backups' | 'start';
+export type UiRequest = 'command-palette' | 'backups' | 'start' | 'shortcuts';
 
 export type EditorEvent =
   | { readonly kind: 'notifications' }
   | { readonly kind: 'measurement' }
   | { readonly kind: 'ui-request'; readonly request: UiRequest }
   | { readonly kind: 'panels' }
-  | { readonly kind: 'input-request' };
+  | { readonly kind: 'input-request' }
+  | { readonly kind: 'shortcuts' };
 
 /** Attributes Entity Info and commands can change on the selection. Each applies to the kinds that have it. */
 export interface SelectionAttributePatch {
@@ -185,7 +203,9 @@ export class Editor {
   readonly appVersion: string;
   readonly session = new EditorSession();
   readonly commands = new CommandRegistry<Editor>();
-  readonly shortcuts: ShortcutMap;
+  #shortcuts: ShortcutMap;
+  #shortcutOverrides: ShortcutOverrides = {};
+  #shortcutStorage: ShortcutStorage | null = null;
   readonly tools: ToolManager;
   readonly units: UnitSettings = METRIC_UNIT_SETTINGS;
 
@@ -209,7 +229,7 @@ export class Editor {
     this.platform = environment.platform;
     this.appVersion = environment.appVersion;
     registerDefaultCommands(this.commands);
-    this.shortcuts = ShortcutMap.fromCommands(this.commands.all());
+    this.#shortcuts = buildShortcutMap(this.commands.all(), {});
     this.tools = new ToolManager(
       this,
       [
@@ -390,6 +410,99 @@ export class Editor {
     return true;
   }
 
+  // ---------------------------------------------------------------------------------------------- shortcuts
+
+  get shortcuts(): ShortcutMap {
+    return this.#shortcuts;
+  }
+
+  /** The user's changes to the default shortcuts. */
+  get shortcutOverrides(): ShortcutOverrides {
+    return this.#shortcutOverrides;
+  }
+
+  /** Loads the user's shortcut changes from storage, and saves later changes there. */
+  setShortcutStorage(storage: ShortcutStorage): void {
+    this.#shortcutStorage = storage;
+    this.#applyShortcutOverrides(storage.load(), false);
+  }
+
+  /** Other commands that already use a chord, so the UI can ask whether to replace them. */
+  shortcutConflicts(commandId: string, chord: string): string[] {
+    return this.#shortcuts.commandsFor(chord).filter((id) => id !== commandId);
+  }
+
+  /**
+   * Adds a shortcut to a command. Throws for chords that can't be used. With `keep`, nothing changes when another
+   * command already uses the chord; returns whether the shortcut was assigned.
+   */
+  assignShortcut(commandId: string, chordText: string, resolution: ConflictResolution): boolean {
+    if (!this.commands.get(commandId)) throw new Error(`Unknown command "${commandId}"`);
+    const chord = validateUserChord(chordText);
+    if (!chord.ok) throw new Error(chord.error);
+    const next = assignShortcutOverride(
+      this.#shortcutOverrides,
+      this.#shortcuts,
+      commandId,
+      chord.value,
+      resolution,
+    );
+    if (next === this.#shortcutOverrides) return false;
+    this.#applyShortcutOverrides(next, true);
+    return true;
+  }
+
+  removeShortcut(commandId: string, chord: string): void {
+    this.#applyShortcutOverrides(
+      removeShortcutOverride(this.#shortcutOverrides, this.#shortcuts, commandId, chord),
+      true,
+    );
+  }
+
+  resetShortcut(commandId: string): void {
+    this.#applyShortcutOverrides(resetShortcutOverride(this.#shortcutOverrides, commandId), true);
+  }
+
+  resetAllShortcuts(): void {
+    this.#applyShortcutOverrides({}, true);
+  }
+
+  /** The user's shortcut changes as the contents of a shortcuts file. */
+  exportShortcuts(): string {
+    return exportShortcutsFile(this.#shortcutOverrides);
+  }
+
+  /** Replaces the user's shortcut changes with those from a shortcuts file. Throws when the file is invalid. */
+  importShortcuts(text: string): void {
+    const result = importShortcutsFile(text, this.commands.all());
+    if (!result.ok) throw new Error(result.error);
+    this.#applyShortcutOverrides(result.value, true);
+  }
+
+  #applyShortcutOverrides(overrides: ShortcutOverrides, persist: boolean): void {
+    // Changes for commands that no longer exist are dropped, so stored shortcuts from other versions can't break the map.
+    const known = new Set(this.commands.all().map((command) => command.id));
+    const valid = Object.fromEntries(Object.entries(overrides).filter(([id]) => known.has(id)));
+    try {
+      this.#shortcuts = buildShortcutMap(this.commands.all(), valid);
+      this.#shortcutOverrides = valid;
+    } catch (error) {
+      this.#shortcuts = buildShortcutMap(this.commands.all(), {});
+      this.#shortcutOverrides = {};
+      this.notify(
+        'error',
+        `Your shortcuts could not be applied, so the defaults are used: ${errorMessage(error)}`,
+      );
+    }
+    if (persist) {
+      try {
+        this.#shortcutStorage?.save(this.#shortcutOverrides);
+      } catch (error) {
+        this.notify('error', `Could not save your shortcuts: ${errorMessage(error)}`);
+      }
+    }
+    this.#emit({ kind: 'shortcuts' });
+  }
   // ---------------------------------------------------------------------------------------------- viewport
 
   get viewportSize(): ViewportSize {

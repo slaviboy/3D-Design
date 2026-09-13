@@ -146,6 +146,11 @@ export class ShortcutMap {
     return this.#commandsByChord.get(chord)?.[0];
   }
 
+  /** Every command bound to a chord, in registration order. */
+  commandsFor(chord: string): readonly string[] {
+    return this.#commandsByChord.get(chord) ?? [];
+  }
+
   chordsFor(commandId: string): readonly string[] {
     return this.#chordsByCommand.get(commandId) ?? [];
   }
