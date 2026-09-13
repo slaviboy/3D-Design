@@ -1,0 +1,12 @@
+{
+  "benchmark": "render-orbit-10000",
+  "entities": 10010,
+  "boxes": 385,
+  "fileBytes": 89533,
+  "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Max, Unspecified Version)",
+  "loadMs": 101,
+  "frames": 120,
+  "medianFrameMs": 16.7,
+  "p95FrameMs": 16.7,
+  "medianFps": 59.9
+}

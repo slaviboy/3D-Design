@@ -73,6 +73,41 @@ coplanar edge graph, which is linear in its size. The new profile shows no domin
 tracing and loop keys each take 5–6%). Restricting resolution to the faces the new edges touch would remove that,
 but it changes how enclosing faces and islands are found, so it waits for a real model that needs it.
 
+## Phase 10: rendering frame rate
+
+**How it is measured.** `npm run bench:render` builds the e2e-mode production app and runs
+`tests/perf/render.perf.ts` with `playwright.perf.config.ts` (Chromium, 1280 × 800, one test at a time, its own
+preview port).
+- **Models.** Each model is a square grid of separate 1 m boxes (26 entities each: 8 vertices, 12 edges, 6 faces).
+  It is built with the kernel in Node, encoded as `.planar`, and opened with `editor.loadFile`, then framed with
+  Zoom Extents in the default style.
+- **Orbit.** The benchmark orbits the camera for 120 frames after 10 warm-up frames. Each step changes the camera,
+  which schedules the viewport's render for the next animation frame. A `requestAnimationFrame` callback registered
+  afterwards runs after that render, and the interval between callbacks is the frame time.
+- **Load time.** This is the time from `loadFile` until the model has been rendered twice.
+- **Renderer.** Each result records the WebGL renderer that was used (`bench/results/render-orbit-*.json`).
+
+**Results, 2026-09-13, Apple M1 Max.**
+
+| Model | Entities | Renderer | Load | Median frame | p95 frame | Median FPS |
+|---|---|---|---|---|---|---|
+| 39 boxes | 1,014 | Metal (hardware) | 152 ms | 16.7 ms | 16.7 ms | 60 |
+| 385 boxes | 10,010 | Metal (hardware) | 101 ms | 16.7 ms | 16.7 ms | 60 |
+| 3,847 boxes | 100,022 | Metal (hardware) | 627 ms | 16.7 ms | 16.8 ms | 60 |
+| 39 boxes | 1,014 | SwiftShader (software) | 261 ms | 16.7 ms | 16.7 ms | 60 |
+| 385 boxes | 10,010 | SwiftShader (software) | 308 ms | 16.7 ms | 16.8 ms | 60 |
+| 3,847 boxes | 100,022 | SwiftShader (software) | 844 ms | 66.7 ms | 66.8 ms | 15 |
+
+**Reading the numbers.**
+- The plan's targets are met on this machine: 60 FPS orbit at 10k entities, and also at 100k with a hardware GPU.
+- Frames are paced by `requestAnimationFrame`, so 60 FPS (16.7 ms) is a ceiling. These runs show the targets are
+  met, not how much headroom is left.
+- Headless Chromium renders in software (SwiftShader) unless it is launched with GPU flags, and those rows show the
+  cost of a software fallback. The config asks for Metal (`--use-angle=metal`); the hardware rows come from that
+  configuration.
+- Not covered yet: heavier styles (profiles, back edges, shadows, X-ray), textured models, and single models larger
+  than 100k entities.
+
 ## Not measured yet
 
 Rendering frame rate, memory, texture and import/export workloads need the viewport and file pipeline. They are

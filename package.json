@@ -17,6 +17,7 @@
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
     "bench": "vitest bench --run --testTimeout=600000",
+    "bench:render": "vite build --mode e2e && playwright test -c playwright.perf.config.ts",
     "build": "npm run typecheck && vite build",
     "preview": "vite preview --port 4173 --strictPort",
     "e2e": "vite build --mode e2e && playwright test",
