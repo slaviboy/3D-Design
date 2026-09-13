@@ -1,6 +1,14 @@
 /** Panels in the dock, in display order. */
 export type PanelId =
-  'entityInfo' | 'outliner' | 'components' | 'tags' | 'soften' | 'materials' | 'scenes' | 'shadows';
+  | 'entityInfo'
+  | 'outliner'
+  | 'components'
+  | 'tags'
+  | 'soften'
+  | 'materials'
+  | 'scenes'
+  | 'shadows'
+  | 'instructor';
 
 export interface PanelDescriptor {
   readonly id: PanelId;
@@ -18,6 +26,7 @@ export const PANELS: readonly PanelDescriptor[] = [
   { id: 'materials', label: 'Materials', aliases: ['colors', 'textures', 'paint', 'swatches'] },
   { id: 'scenes', label: 'Scenes', aliases: ['views', 'pages', 'saved views', 'animation'] },
   { id: 'shadows', label: 'Shadows', aliases: ['sun', 'daylight', 'location', 'geolocation', 'time of day'] },
+  { id: 'instructor', label: 'Instructor', aliases: ['help', 'hints', 'tool help', 'how to use a tool'] },
 ];
 
 export const PANEL_IDS: readonly PanelId[] = PANELS.map((panel) => panel.id);

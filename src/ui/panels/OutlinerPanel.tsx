@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { buildOutlinerTree, flattenOutliner, type OutlinerNode } from '../../app/outliner/outlinerTree';
 import { useEditor, useEditorState } from '../EditorContext';
+import { showContextMenu } from '../contextmenu/contextMenuStore';
 import { Glyph } from './panelIcons';
 import { Panel } from './Panel';
 
@@ -143,6 +144,14 @@ export function OutlinerPanel() {
       case 'F2':
         setRenaming(node.key);
         break;
+      case 'ContextMenu':
+      case 'F10': {
+        if (event.key === 'F10' && !event.shiftKey) return;
+        select(node);
+        const rect = event.currentTarget.getBoundingClientRect();
+        showContextMenu(editor, { x: rect.left + 24, y: rect.bottom }, event.currentTarget);
+        break;
+      }
       default:
         return;
     }
@@ -212,6 +221,11 @@ export function OutlinerPanel() {
                 }}
                 onDoubleClick={() => {
                   editor.openInstanceAtPath(node.parentPath, node.id);
+                }}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  select(node);
+                  showContextMenu(editor, { x: event.clientX, y: event.clientY }, event.currentTarget);
                 }}
                 onFocus={(event) => {
                   if (event.target === event.currentTarget) setFocusKey(node.key);

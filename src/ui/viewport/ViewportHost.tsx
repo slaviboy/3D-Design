@@ -4,6 +4,11 @@ import type { PointerInput } from '../../app/tools/Tool';
 import { Viewport } from '../../render/Viewport';
 import { useEditor, useEditorState } from '../EditorContext';
 import { AnnotationLabels } from './AnnotationLabels';
+import { selectForContextMenu } from '../../app/contextMenu/contextMenu';
+import { contextMenuJustOpened, showContextMenu } from '../contextmenu/contextMenuStore';
+
+/** The right mouse button opens the context menu instead of reaching the active tool. */
+const SECONDARY_BUTTON = 2;
 
 function pointerInput(event: ReactPointerEvent<HTMLElement>, element: HTMLElement): PointerInput {
   const rect = element.getBoundingClientRect();
@@ -80,6 +85,10 @@ export function ViewportHost() {
       onPointerDown={(event) => {
         const host = hostRef.current;
         if (!host) return;
+        if (event.button === SECONDARY_BUTTON) {
+          host.focus({ preventScroll: true });
+          return;
+        }
         host.setPointerCapture(event.pointerId);
         host.focus({ preventScroll: true });
         editor.tools.pointerDown(pointerInput(event, host));
@@ -88,6 +97,7 @@ export function ViewportHost() {
         if (hostRef.current) editor.tools.pointerMove(pointerInput(event, hostRef.current));
       }}
       onPointerUp={(event) => {
+        if (event.button === SECONDARY_BUTTON) return;
         if (hostRef.current) editor.tools.pointerUp(pointerInput(event, hostRef.current));
       }}
       onPointerCancel={() => {
@@ -95,6 +105,11 @@ export function ViewportHost() {
       }}
       onContextMenu={(event) => {
         event.preventDefault();
+        const host = hostRef.current;
+        if (!host || contextMenuJustOpened()) return;
+        const rect = host.getBoundingClientRect();
+        selectForContextMenu(editor, { x: event.clientX - rect.left, y: event.clientY - rect.top });
+        showContextMenu(editor, { x: event.clientX, y: event.clientY }, host);
       }}
     >
       <AnnotationLabels />

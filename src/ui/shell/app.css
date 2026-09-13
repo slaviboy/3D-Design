@@ -1430,3 +1430,149 @@
 .exchange-dialog .dialog__footer {
   gap: 8px;
 }
+
+/* Context menus ------------------------------------------------------------------------------------ */
+
+.context-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 220px;
+  max-width: calc(100vw - 8px);
+  max-height: calc(100vh - 8px);
+  overflow-y: auto;
+  padding: 4px 0;
+  background: var(--surface-bg);
+  border: 1px solid var(--chrome-border);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 18%);
+}
+
+.context-menu .menu__item:focus {
+  background: var(--accent);
+  color: var(--accent-fg);
+  outline: none;
+}
+
+/* Dock resizing and reordering ---------------------------------------------------------------------- */
+
+.workspace {
+  position: relative;
+}
+
+.dock {
+  display: flex;
+  flex-direction: column;
+}
+
+.dock > * {
+  flex-shrink: 0;
+}
+
+.dock-splitter {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: calc(var(--dock-width) - 3px);
+  z-index: 6;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.dock-splitter:hover {
+  background: rgb(31 102 214 / 35%);
+}
+
+.dock-splitter:focus-visible {
+  background: var(--accent);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 0;
+}
+
+.panel {
+  position: relative;
+}
+
+.panel__title[draggable='true'] {
+  cursor: grab;
+}
+
+.panel__toggle {
+  padding-right: 56px;
+}
+
+.panel__actions {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  display: flex;
+  gap: 2px;
+}
+
+.panel--drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.panel--drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* Instructor ---------------------------------------------------------------------------------------- */
+
+.instructor {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.instructor__title {
+  margin: 0 0 2px;
+  font-size: 13px;
+}
+
+.instructor__purpose,
+.instructor__measurements {
+  margin: 0;
+}
+
+.instructor__heading {
+  margin: 10px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted-fg);
+}
+
+.instructor__steps {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.instructor__keys {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.instructor__key {
+  display: grid;
+  grid-template-columns: minmax(64px, max-content) 1fr;
+  gap: 8px;
+}
+
+.instructor__key dt,
+.instructor__key dd {
+  margin: 0;
+}
+
+.instructor kbd {
+  padding: 0 4px;
+  font: inherit;
+  white-space: nowrap;
+  background: var(--chrome-bg);
+  border: 1px solid var(--chrome-border);
+  border-radius: 3px;
+}
+
+/* A selected Outliner row keeps its highlight, with text at full contrast in both themes. */
+.outliner__row--selected,
+.outliner__row--selected:hover {
+  color: var(--fg);
+}

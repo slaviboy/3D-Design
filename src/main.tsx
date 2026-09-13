@@ -20,6 +20,7 @@ import { IndexedDbRecoveryRepository, openPlanarDatabase } from './io/idb/recove
 import { EditorProvider } from './ui/EditorContext';
 import { App, type RecoveryOptions } from './ui/shell/App';
 import './ui/shell/base.css';
+import { DEFAULT_DOCK_LAYOUT, parseDockLayout, serializeDockLayout } from './app/dock/dockLayout';
 
 declare global {
   interface Window {
@@ -88,6 +89,20 @@ async function start(): Promise<void> {
     },
     save: (preferences) => {
       window.localStorage.setItem(preferencesKey, serializePreferences(preferences));
+    },
+  });
+
+  const dockKey = 'planar.dock';
+  editor.setDockLayoutStorage({
+    load: () => {
+      try {
+        return parseDockLayout(window.localStorage.getItem(dockKey));
+      } catch {
+        return DEFAULT_DOCK_LAYOUT;
+      }
+    },
+    save: (layout) => {
+      window.localStorage.setItem(dockKey, serializeDockLayout(layout));
     },
   });
 

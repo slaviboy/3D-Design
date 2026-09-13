@@ -161,6 +161,17 @@ import type { ImportLimits } from '../io/mesh/limits';
 import type { ImportEngine } from './io/importEngine';
 import { ModelExchange } from './io/ModelExchange';
 import type { ViewCapturePort } from './io/viewCapture';
+import {
+  DEFAULT_DOCK_LAYOUT,
+  moveDockPanel,
+  moveDockPanelTo,
+  withDockWidth,
+  withPanelCollapsed,
+  type DockLayout,
+  type DockLayoutStorage,
+  type DropPlacement,
+  type PanelFocusRequest,
+} from './dock/dockLayout';
 
 /** Characters that start typing into the measurements box. Once typing has started, any character continues it. */
 const MEASUREMENT_START = /^[0-9.,\-[</]$/;
@@ -1994,6 +2005,77 @@ export class Editor {
   async #confirmDiscard(): Promise<boolean> {
     const confirm = this.#environment.confirmDiscardChanges;
     return !this.session.isDirty || !confirm || confirm(this.session.documentName);
+  }
+
+  // ---------------------------------------------------------------------------------------------- dock layout
+
+  #dockLayout: DockLayout = DEFAULT_DOCK_LAYOUT;
+  #dockLayoutStorage: DockLayoutStorage | null = null;
+  #panelFocusRequest: PanelFocusRequest | null = null;
+
+  /** Width of the dock, the order of its panels and which are collapsed. Kept on this device. */
+  get dockLayout(): DockLayout {
+    return this.#dockLayout;
+  }
+
+  /** Loads the dock layout from storage, and saves later changes there. */
+  setDockLayoutStorage(storage: DockLayoutStorage): void {
+    this.#dockLayoutStorage = storage;
+    this.#applyDockLayout(storage.load(), false);
+  }
+
+  /** Sets the dock width before the interface scale is applied, in CSS pixels; null restores the default. */
+  setDockWidth(width: number | null): void {
+    this.#applyDockLayout(withDockWidth(this.#dockLayout, width), true);
+  }
+
+  /** Moves a panel above (−1) or below (+1) the nearest shown panel. */
+  movePanel(panel: PanelId, offset: -1 | 1): void {
+    this.#applyDockLayout(moveDockPanel(this.#dockLayout, panel, offset, this.#openPanels), true);
+  }
+
+  /** Puts a panel just before or after another one (dropping a dragged panel). */
+  movePanelTo(panel: PanelId, target: PanelId, placement: DropPlacement): void {
+    this.#applyDockLayout(moveDockPanelTo(this.#dockLayout, panel, target, placement), true);
+  }
+
+  isPanelCollapsed(panel: PanelId): boolean {
+    return this.#dockLayout.collapsed.includes(panel);
+  }
+
+  setPanelCollapsed(panel: PanelId, collapsed: boolean): void {
+    this.#applyDockLayout(withPanelCollapsed(this.#dockLayout, panel, collapsed), true);
+  }
+
+  /** The latest request to bring a panel into view. */
+  get panelFocusRequest(): PanelFocusRequest | null {
+    return this.#panelFocusRequest;
+  }
+
+  /** Shows and expands a panel, and asks the UI to scroll it into view and focus it. */
+  focusPanel(panel: PanelId): void {
+    this.setPanelOpen(panel, true);
+    if (this.isPanelCollapsed(panel)) this.setPanelCollapsed(panel, false);
+    this.#panelFocusRequest = { panel, serial: (this.#panelFocusRequest?.serial ?? 0) + 1 };
+    this.#emit({ kind: 'panels' });
+  }
+
+  /** Shows the default panels in their default order, expanded, at the default dock width. */
+  resetDockLayout(): void {
+    this.#openPanels = DEFAULT_OPEN_PANELS;
+    this.#applyDockLayout(DEFAULT_DOCK_LAYOUT, true);
+  }
+
+  #applyDockLayout(layout: DockLayout, persist: boolean): void {
+    this.#dockLayout = layout;
+    if (persist) {
+      try {
+        this.#dockLayoutStorage?.save(layout);
+      } catch (error) {
+        this.notify('error', `Could not save the panel layout: ${errorMessage(error)}`);
+      }
+    }
+    this.#emit({ kind: 'panels' });
   }
 
   #emit(event: EditorEvent): void {

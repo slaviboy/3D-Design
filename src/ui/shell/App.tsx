@@ -25,6 +25,9 @@ import { SceneTabs } from '../scenes/SceneTabs';
 import { StatusBar } from '../statusbar/StatusBar';
 import { Toolbar, ToolPalette } from '../toolbar/Toolbar';
 import { ViewportHost } from '../viewport/ViewportHost';
+import { ContextMenuLayer } from '../contextmenu/ContextMenu';
+import { DockSplitter } from '../dock/DockSplitter';
+import { InstructorPanel } from '../panels/InstructorPanel';
 import './app.css';
 
 export interface RecoveryOptions {
@@ -204,10 +207,17 @@ export function App({
               <ShadowsPanel />
             </ErrorBoundary>
           )}
+          {openPanels.includes('instructor') && (
+            <ErrorBoundary area="the Instructor panel">
+              <InstructorPanel />
+            </ErrorBoundary>
+          )}
         </aside>
+        <DockSplitter />
       </div>
       <StatusBar />
       <Notifications />
+      <ContextMenuLayer />
       {preferencesOpen && (
         <PreferencesDialog
           onClose={() => {
