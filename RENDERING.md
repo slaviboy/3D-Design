@@ -244,3 +244,89 @@ Implemented in `src/render/ModelRenderer.ts`, with pure helpers in `src/kernel/o
 - Fills are one solid color (no hatch pattern), and there are no markers at gaps in open outlines.
 - The ground receiver is a finite plane and does not follow the camera; very large or far-away models may need a
   larger extent. Shadow quality is fixed (no cascades).
+
+## Current implementation (Phase 7): styles, fog and environments
+
+Style, fog and environment settings are document data (`StyleSettings`, `FogSettings`, `EnvironmentSettings` in
+`src/kernel/model/types.ts`), changed through undoable `document.style`, `document.fog` and `document.environment`
+changes. The renderer reads them from the document; there is no separate `StyleApplier` object. The default style
+reproduces the fixed colors of earlier phases exactly (colors are sRGB and go through `Color.setRGB(…, SRGBColorSpace)`,
+which is what the old hex constants did).
+
+### Faces (`ModelRenderer.#faceMaterial`)
+
+- **Shaded with textures** is the earlier behavior. **Shaded** is the same without texture maps.
+- **Monochrome** ignores materials: every face uses the style's front or back color (Lambert).
+- **Hidden line** draws unlit faces in the background color (`MeshBasicMaterial`), so they only hide what is behind them.
+- **Wireframe** keeps the face meshes but makes them invisible.
+- **X-ray** (combinable with any mode) makes every face material transparent at 45 % opacity without depth writes.
+- Any style change disposes all face materials and rebuilds every definition's geometry and the scene tree. Style
+  changes are rare single user actions, so this is simpler than tracking which parts depend on which setting.
+
+### Edges (`src/render/styles/`)
+
+- **Plain edges** are 1 px `LineSegments` with per-vertex colors (`buildEdgeStyleArrays`). "All the same" uses the edge
+  color; "by material" uses the edge's own material (edges without one use the edge color); "by axis" gives edges
+  parallel to the document's red, green or blue axis the axis colors. Axis matching uses each definition's own
+  coordinates, so edges inside rotated groups are compared with unrotated axes (an approximation).
+- **Back edges** redraw the edge geometry with `depthFunc = GreaterDepth` and no depth writes, after the faces, so only
+  edges hidden behind faces appear, dashed. Dash lengths are world distances scaled by the view (`pixels per unit / depth`
+  in perspective), so dashes stay *roughly* 5 px long; they stretch slightly along steep edges. Off in wireframe and
+  x-ray, and for faded contexts.
+- **Profiles** are wide screen-space lines (three's bundled `LineSegments2` / `LineMaterial`) for every edge that bounds a
+  visible face. Each carries two directions pointing from the edge into its faces. The vertex shader keeps the edge only
+  when both faces lie on the same side of the plane through the edge and the eye (or the edge bounds a single face),
+  so outlines follow the camera without CPU work and do not depend on face orientation. Width is in CSS pixels.
+- **Depth cue** replaces the plain edges with wide lines whose width falls linearly from the style's width at the
+  nearest model point to 1 px at the farthest (the model's bounding sphere gives the range). This is an approximation of
+  depth-dependent line weight.
+- **Extensions** push both ends of every edge outward by a fixed number of pixels in the vertex shader (plain edges use an
+  `edgeOther` attribute holding the other end; wide lines use the line direction they already compute).
+- **Endpoints** are drawn as square `Points` (4 px) at every distinct edge end, an approximation of short thick end
+  strokes.
+- Section clipping applies to all of these: the section overlay clones them like any other model material. The style
+  materials share one set of view uniforms (resolution, pixel ratio, depth range) with their clones.
+- Shader changes are made by replacing named fragments of three's shader source; a fragment that is missing throws, so
+  an incompatible three.js update fails loudly (the E2E suite fails on console errors).
+
+### Background, sky and ground (`BackgroundController`)
+
+- The background color is the renderer's clear color.
+- Sky and ground are one full-screen quad drawn first. Each pixel rebuilds its view ray from the inverse projection and
+  camera matrices. A ray that reaches the ground plane (z = 0) shows the ground color, blended with the background right
+  at the horizon; other rays above the horizon blend from the background color at the horizon to the sky color about
+  25° up. With the camera below the ground, the ground shows only when "show ground from below" is on. Parallel views
+  have one ray direction, so there the ray's origin height decides between sky and ground, and the sky is a flat blend.
+- The ground is not geometry: it never hides model geometry below z = 0 (unlike an opaque ground plane would).
+
+### Fog
+
+`scene.fog` is a three.js linear `Fog` from `start` to `end` meters (model units) while fog is on, in the background
+color or the fog color. It applies to faces, edges and overlays; the sky quad is not fogged.
+
+### Environments
+
+- **Built-in environments** are generated in code (`environments.ts`): 256 × 128 half-float equirectangular textures
+  from simple formulas: "Soft Studio" (bright ceiling, gray horizon, darker floor, three soft light panels) and "Warm
+  Dusk" (blue zenith, orange horizon, low sun). No image files are bundled or downloaded; each uses about 0.5 MB of GPU
+  memory and adds only code to the bundle.
+- The texture is prefiltered with `PMREMGenerator` and used as `scene.environment` when "use for reflections" is on, so
+  painted (`MeshStandardMaterial`) faces are lit and reflect it. Default-material faces stay Lambert and are unaffected.
+  "Show as background" sets the equirectangular texture as `scene.background` in perspective views. Parallel views keep
+  the style background, because three's background box does not project correctly with an orthographic camera.
+- **Rotation** and the Y-up to Z-up turn use `scene.environmentRotation` and `scene.backgroundRotation` (Euler
+  `(90°, 0, rotation)`, order `ZXY`). **Exposure** sets `environmentIntensity` and `backgroundIntensity`.
+- **Local HDR files** (`.hdr`, Radiance RGBE) are picked through the existing file access, checked for a Radiance
+  header and a 64 MB limit in the application layer, and parsed from memory by three's bundled `HDRLoader` on the main
+  thread. They are session-only: the model stores the `custom` environment id, and a file opened without a loaded image
+  falls back to the studio. Unreadable files also fall back to the studio. EXR is not supported.
+
+### Known limitations
+
+- Edges inside hidden-line faces use the same depth offset as before; very shallow angles can still show edges through
+  faces.
+- Profiles are evaluated per edge, not per pixel: a curved surface's outline follows its facets, and non-manifold edges
+  use their first two visible faces.
+- Endpoints and extensions have fixed shapes; there is no jitter, halo or per-tag dash pattern yet.
+- Style changes rebuild all geometry; very large models pause briefly when switching styles.
+- User HDR images are not saved in the `.planar` file.

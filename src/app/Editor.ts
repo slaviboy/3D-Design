@@ -161,6 +161,15 @@ import type { ImportLimits } from '../io/mesh/limits';
 import type { ImportEngine } from './io/importEngine';
 import { ModelExchange } from './io/ModelExchange';
 import type { ViewCapturePort } from './io/viewCapture';
+import {
+  setEnvironmentSettings,
+  setFogSettings,
+  setInModelStyles,
+  setStyleSettings,
+} from '../kernel/model/mutations';
+import type { EnvironmentSettings, FogSettings, StyleSettings } from '../kernel/model/types';
+import { CUSTOM_ENVIRONMENT_ID, stylePreset, uniqueStyleName } from './styles/stylePresets';
+import { HDR_FILTER, isRadianceHeader, MAX_ENVIRONMENT_IMAGE_BYTES } from './styles/environmentImage';
 
 /** Characters that start typing into the measurements box. Once typing has started, any character continues it. */
 const MEASUREMENT_START = /^[0-9.,\-[</]$/;
@@ -1605,6 +1614,167 @@ export class Editor {
     return this.updateShadowSettings({ dateTime });
   }
 
+  // ---------------------------------------------------------------------------------------------- styles, fog, environment
+
+  get styleSettings(): StyleSettings {
+    return this.session.doc.style;
+  }
+
+  get fogSettings(): FogSettings {
+    return this.session.doc.fog;
+  }
+
+  get environmentSettings(): EnvironmentSettings {
+    return this.session.doc.environment;
+  }
+
+  /** Runs one undoable settings change. Returns false (and notifies) when a value is invalid. */
+  #settingsTransaction(label: string, change: (doc: ModelDocument) => void): boolean {
+    const doc = this.session.doc;
+    try {
+      doc.transact(label, () => {
+        change(doc);
+      });
+      return true;
+    } catch (error) {
+      this.notify('error', errorMessage(error));
+      return false;
+    }
+  }
+
+  /** Changes the style in one undoable step. */
+  updateStyleSettings(patch: Partial<StyleSettings>, label = 'Change Style'): boolean {
+    return this.#settingsTransaction(label, (doc) => {
+      setStyleSettings(doc, patch);
+    });
+  }
+
+  /** Replaces the style with a built-in preset. */
+  applyStylePreset(id: string): boolean {
+    const preset = stylePreset(id);
+    if (!preset) {
+      this.notify('error', 'That style does not exist');
+      return false;
+    }
+    return this.updateStyleSettings(preset.settings, 'Apply Style');
+  }
+
+  /** Replaces the style with one saved in the model. */
+  applyInModelStyle(name: string): boolean {
+    const named = this.session.doc.inModelStyles.find((style) => style.name === name);
+    if (!named) {
+      this.notify('error', `There is no style named “${name}” in this model`);
+      return false;
+    }
+    return this.updateStyleSettings(named.settings, 'Apply Style');
+  }
+
+  /** Saves the current style in the model under a new name. */
+  saveInModelStyle(name: string): boolean {
+    const trimmed = name.trim();
+    const styles = this.session.doc.inModelStyles;
+    if (trimmed === '') {
+      this.notify('error', 'A style needs a name');
+      return false;
+    }
+    if (styles.some((style) => style.name === trimmed)) {
+      this.notify('error', `A style named “${trimmed}” already exists; update it instead`);
+      return false;
+    }
+    return this.#settingsTransaction('Save Style', (doc) => {
+      setInModelStyles(doc, [...styles, { name: trimmed, settings: doc.style }]);
+    });
+  }
+
+  /** Asks for a name, then saves the current style in the model. */
+  promptSaveInModelStyle(): void {
+    this.requestInput({
+      title: 'Save Style',
+      label: 'Style name',
+      initial: uniqueStyleName(this.session.doc.inModelStyles),
+      confirmLabel: 'Save',
+      submit: (value) => {
+        this.saveInModelStyle(value);
+      },
+    });
+  }
+
+  /** Overwrites an in-model style with the current style. */
+  updateInModelStyle(name: string): boolean {
+    const styles = this.session.doc.inModelStyles;
+    if (!styles.some((style) => style.name === name)) return false;
+    return this.#settingsTransaction('Update Style', (doc) => {
+      setInModelStyles(
+        doc,
+        styles.map((style) => (style.name === name ? { name, settings: doc.style } : style)),
+      );
+    });
+  }
+
+  deleteInModelStyle(name: string): boolean {
+    const styles = this.session.doc.inModelStyles;
+    if (!styles.some((style) => style.name === name)) return false;
+    return this.#settingsTransaction('Delete Style', (doc) => {
+      setInModelStyles(
+        doc,
+        styles.filter((style) => style.name !== name),
+      );
+    });
+  }
+
+  updateFogSettings(patch: Partial<FogSettings>): boolean {
+    return this.#settingsTransaction('Fog Settings', (doc) => {
+      setFogSettings(doc, patch);
+    });
+  }
+
+  updateEnvironmentSettings(patch: Partial<EnvironmentSettings>): boolean {
+    return this.#settingsTransaction('Environment Settings', (doc) => {
+      setEnvironmentSettings(doc, patch);
+    });
+  }
+
+  /** Name of the environment image loaded in this session, or null. */
+  get environmentImageName(): string | null {
+    return this.session.environmentImage?.name ?? null;
+  }
+
+  /**
+   * Lets the user pick a local Radiance `.hdr` file and uses it as the environment. The image stays in memory for
+   * this session only; the model saves just the choice of a custom environment. Nothing is uploaded.
+   */
+  async loadEnvironmentImage(): Promise<boolean> {
+    const access = this.#environment.fileAccess;
+    if (!access?.openFiles) {
+      this.notify('error', 'Opening files is not available in this browser');
+      return false;
+    }
+    const picked = await access.openFiles(HDR_FILTER);
+    const file = picked?.[0];
+    if (!file) return false;
+    return this.useEnvironmentImage(file.name, file.bytes);
+  }
+
+  /** Uses HDR bytes as the custom environment for this session. Returns false (and notifies) for unusable bytes. */
+  useEnvironmentImage(name: string, bytes: Uint8Array): boolean {
+    if (bytes.byteLength > MAX_ENVIRONMENT_IMAGE_BYTES) {
+      this.notify('error', `${name} is too large; environment images can be at most 64 MB`);
+      return false;
+    }
+    if (!isRadianceHeader(bytes)) {
+      this.notify('error', `${name} is not a Radiance HDR image`);
+      return false;
+    }
+    this.session.setEnvironmentImage({ name, bytes: bytes.slice() });
+    const ok = this.updateEnvironmentSettings({ enabled: true, environmentId: CUSTOM_ENVIRONMENT_ID });
+    if (ok)
+      this.notify(
+        'info',
+        `Using ${name} as the environment for this session; the image is not saved in the model`,
+      );
+    return ok;
+  }
+
   // ---------------------------------------------------------------------------------------------- scenes
 
   /** The scene applied or added most recently; the scene tabs highlight it. */
@@ -1687,6 +1857,8 @@ export class Editor {
         sections: keep('sections', 'activeSections'),
         shadows: keep('shadows', 'shadows'),
         axes: keep('axes', 'axes'),
+        style: keep('style', 'style'),
+        fog: keep('fog', 'fog'),
       });
     });
   }

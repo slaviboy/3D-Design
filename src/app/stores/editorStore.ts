@@ -1,6 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import type { AnnotationId, DefinitionId } from '../../kernel/ids';
 import type { AnnotationKind, SceneData, ShadowSettings } from '../../kernel/model/types';
+import type { EnvironmentSettings, FogSettings, NamedStyle, StyleSettings } from '../../kernel/model/types';
 import type { UnitSettings } from '../../kernel/units/units';
 import type { Preferences } from '../preferences/preferences';
 import { collectAnnotationLabels, type AnnotationLabel } from '../annotations/annotationLabels';
@@ -95,6 +96,13 @@ export interface EditorViewState {
   readonly shadows: ShadowSettings;
   readonly showSectionPlanes: boolean;
   readonly showSectionCuts: boolean;
+  readonly style: StyleSettings;
+  /** Styles saved in the model (replaced whenever they change). */
+  readonly inModelStyles: readonly NamedStyle[];
+  readonly fog: FogSettings;
+  readonly environment: EnvironmentSettings;
+  /** Name of the environment image loaded in this session, or null. */
+  readonly environmentImageName: string | null;
 }
 
 export interface EditorStore extends StoreApi<EditorViewState> {
@@ -199,6 +207,11 @@ export function createEditorStore(editor: Editor): EditorStore {
       shadows: doc.shadows,
       showSectionPlanes: session.showSectionPlanes,
       showSectionCuts: session.showSectionCuts,
+      style: doc.style,
+      inModelStyles: doc.inModelStyles,
+      fog: doc.fog,
+      environment: doc.environment,
+      environmentImageName: session.environmentImage?.name ?? null,
     };
   };
   const store = createStore<EditorViewState>(snapshot);

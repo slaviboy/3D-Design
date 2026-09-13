@@ -4,6 +4,7 @@ import { VIEW_COLORS } from './palette';
 import { SectionOverlay } from './sections/SectionOverlay';
 import { ShadowController } from './shadows/ShadowController';
 import type { ViewSource } from './ViewSource';
+import { BackgroundController } from './styles/BackgroundController';
 
 /** Largest device pixel ratio rendered; higher ratios cost fill rate for little visible gain. */
 const MAX_PIXEL_RATIO = 2;
@@ -61,6 +62,10 @@ export class Viewport {
   readonly #shadows: ShadowController;
   readonly #sections = new SectionOverlay();
   readonly #axes = buildAxes();
+  /** Background color, sky and ground, fog and environment. */
+  readonly #background: BackgroundController;
+  /** Bounding sphere of the model from the last camera update. */
+  #sphere = new THREE.Sphere();
   readonly #resizeObserver: ResizeObserver;
   readonly #unsubscribe: () => void;
   #frame: number | null = null;
@@ -87,6 +92,7 @@ export class Viewport {
     for (const camera of [this.#perspective, this.#orthographic]) camera.up.set(0, 0, 1);
     this.#shadows = new ShadowController(this.#renderer);
     this.#scene.add(...this.#shadows.objects, this.#axes);
+    this.#background = new BackgroundController(this.#renderer, this.#scene);
 
     this.#model = new ModelRenderer(source, () => {
       this.requestRender();
@@ -130,6 +136,7 @@ export class Viewport {
     this.#model.dispose();
     this.#sections.dispose();
     this.#shadows.dispose();
+    this.#background.dispose();
     this.#axes.traverse((object) => {
       if (object instanceof THREE.Line) {
         (object.geometry as THREE.BufferGeometry).dispose();
@@ -156,10 +163,32 @@ export class Viewport {
     if (changed || this.#lightingDirty) {
       this.#sections.update(this.#source, this.#model.root);
       this.#shadows.update(this.#renderer, this.#source.doc.shadows, this.#model.root, this.#model.bounds());
+      this.#background.update(this.#source);
       this.#lightingDirty = false;
     }
     const camera = this.#syncCamera();
+    this.#syncStyleView(camera, this.#renderer.getPixelRatio());
     this.#renderer.render(this.#scene, camera);
+  }
+
+  /** Passes the drawing size, camera and model depth range to the style materials and the sky. */
+  #syncStyleView(camera: THREE.Camera, pixelRatio: number): void {
+    const view = this.#source.camera;
+    const eye = new THREE.Vector3(view.eye.x, view.eye.y, view.eye.z);
+    const forward = new THREE.Vector3(view.target.x, view.target.y, view.target.z).sub(eye).normalize();
+    const center = forward.dot(this.#sphere.center.clone().sub(eye));
+    const radius = Math.max(this.#sphere.radius, 0);
+    this.#model.setStyleView({
+      width: this.#width,
+      height: this.#height,
+      pixelRatio,
+      projection: view.projection,
+      fovDegrees: view.fovDegrees,
+      orthoHalfHeight: view.orthoHalfHeight,
+      depthNear: Math.max(0, center - radius),
+      depthFar: center + radius,
+    });
+    this.#background.beforeRender(camera, view.projection === 'parallel');
   }
 
   #syncCamera(): THREE.Camera {
@@ -167,6 +196,7 @@ export class Viewport {
     const eye = new THREE.Vector3(view.eye.x, view.eye.y, view.eye.z);
     const target = new THREE.Vector3(view.target.x, view.target.y, view.target.z);
     const sphere = this.#model.bounds().getBoundingSphere(new THREE.Sphere());
+    this.#sphere = sphere;
     const reach = sphere.radius > 0 ? eye.distanceTo(sphere.center) + sphere.radius : eye.distanceTo(target);
     const far = Math.max(reach * 2, MIN_FAR);
     const near = Math.max(far * NEAR_TO_FAR_RATIO, MIN_NEAR);
@@ -232,6 +262,8 @@ export class Viewport {
       this.#height = height;
       this.#model.update();
       const camera = this.#syncCamera();
+      this.#background.setHiddenForCapture(options.transparentBackground);
+      this.#syncStyleView(camera, 1);
       if (options.transparentBackground) renderer.setClearColor(0x000000, 0);
       renderer.setRenderTarget(target);
       renderer.render(this.#scene, camera);
@@ -239,6 +271,7 @@ export class Viewport {
     } finally {
       renderer.setRenderTarget(null);
       renderer.setClearColor(previous.color, previousAlpha);
+      this.#background.setHiddenForCapture(false);
       this.#width = previous.width;
       this.#height = previous.height;
       for (const object of hidden) object.visible = true;

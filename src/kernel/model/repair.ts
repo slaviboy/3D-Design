@@ -33,6 +33,23 @@ const MAX_REPAIR_PASSES = 25;
 /** Keys for document settings, which have no entity id. Entity ids are always positive. */
 const AXES_KEY = -1;
 const SHADOWS_KEY = -2;
+const STYLE_KEY = -3;
+const STYLES_KEY = -4;
+const FOG_KEY = -5;
+const ENVIRONMENT_KEY = -6;
+/** Document settings reset to their defaults when invalid, by validation problem code. */
+const SETTINGS_KEYS: ReadonlyMap<
+  string,
+  { readonly key: number; readonly change: string; readonly label: string }
+> = new Map([
+  ['invalid-style', { key: STYLE_KEY, change: 'document.style', label: 'the style settings' }],
+  ['invalid-styles', { key: STYLES_KEY, change: 'document.styles', label: 'the in-model styles' }],
+  ['invalid-fog', { key: FOG_KEY, change: 'document.fog', label: 'the fog settings' }],
+  [
+    'invalid-environment',
+    { key: ENVIRONMENT_KEY, change: 'document.environment', label: 'the environment settings' },
+  ],
+]);
 
 /**
  * Restores a snapshot, repairing what can be repaired safely instead of refusing the whole file:
@@ -129,6 +146,8 @@ function buildLeniently(
 
 function keysToRemove(problem: ValidationProblem): readonly number[] | null {
   if (UNREPAIRABLE_PROBLEMS.has(problem.code)) return null;
+  const setting = SETTINGS_KEYS.get(problem.code);
+  if (setting) return [setting.key];
   switch (problem.code) {
     case 'invalid-axes':
       return [AXES_KEY];
@@ -145,6 +164,7 @@ function keysToRemove(problem: ValidationProblem): readonly number[] | null {
 function changeKey(change: Change): number | null {
   if (change.kind === 'document.axes') return AXES_KEY;
   if (change.kind === 'document.shadows') return SHADOWS_KEY;
+  for (const setting of SETTINGS_KEYS.values()) if (setting.change === change.kind) return setting.key;
   const data = (change as { readonly data?: { readonly id?: unknown } }).data;
   return typeof data?.id === 'number' ? data.id : null;
 }
@@ -152,6 +172,7 @@ function changeKey(change: Change): number | null {
 function entityLabel(change: Change, key: number): string {
   if (key === AXES_KEY) return 'the drawing axes';
   if (key === SHADOWS_KEY) return 'the shadow settings';
+  for (const setting of SETTINGS_KEYS.values()) if (setting.key === key) return setting.label;
   const kind = change.kind.split('.')[0] ?? 'entity';
   const names: Record<string, string> = { section: 'section plane', asset: 'texture image' };
   return `${names[kind] ?? kind} ${String(key)}`;

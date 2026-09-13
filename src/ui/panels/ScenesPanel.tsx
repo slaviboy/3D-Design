@@ -11,6 +11,8 @@ const SAVE_FLAGS: readonly { readonly key: keyof SceneSaves; readonly label: str
   { key: 'activeSections', label: 'Active section planes' },
   { key: 'shadows', label: 'Shadow settings' },
   { key: 'axes', label: 'Axes location' },
+  { key: 'style', label: 'Style' },
+  { key: 'fog', label: 'Fog' },
 ];
 
 /** A multi-line text area that commits when it loses focus. */

@@ -58,6 +58,27 @@ test.describe('with the start screen', () => {
   });
 });
 
+for (const colorScheme of ['light', 'dark'] as const) {
+  test(`the Styles, Fog and Environment panels have no serious violations in the ${colorScheme} theme`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme });
+    await page.goto('/');
+    await expect(page.getByRole('menubar', { name: 'Main menu' })).toBeVisible();
+    await page.evaluate(() => {
+      const editor = window.__planar?.editor;
+      if (!editor) throw new Error('test hook missing: build with --mode e2e');
+      for (const panel of ['entityInfo', 'outliner', 'components', 'tags', 'materials'] as const) {
+        if (editor.isPanelOpen(panel)) editor.togglePanel(panel);
+      }
+      for (const panel of ['styles', 'fog', 'environment'] as const) editor.togglePanel(panel);
+      editor.saveInModelStyle('Study');
+    });
+    await expect(page.getByRole('region', { name: 'Environment', exact: true })).toBeVisible();
+    expect(await seriousViolations(page, '.dock')).toEqual([]);
+  });
+}
+
 test('the dark theme has no serious contrast violations', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.goto('/');

@@ -19,6 +19,7 @@ import { materialProblem, texturePlacementProblem } from './mutations';
 import type { ModelDocument } from './ModelDocument';
 import { parseLocalDateTime } from '../sun/solar';
 import type { ShadowSettings } from './types';
+import { environmentProblem, fogProblem, namedStylesProblem, styleProblem } from './presentation';
 
 export interface ValidationReport {
   readonly ok: boolean;
@@ -437,6 +438,23 @@ function validateDocumentLevel(doc: ModelDocument, report: Reporter): void {
   }
   if (!shadowSettingsValid(doc.shadows)) {
     report('invalid-shadows', 'Shadow settings are out of range or have an invalid date and time', []);
+  }
+  const style = styleProblem(doc.style);
+  if (style !== null) report('invalid-style', `Style settings are invalid: ${style}`, []);
+  const styles = namedStylesProblem(doc.inModelStyles);
+  if (styles !== null) report('invalid-styles', `In-model styles are invalid: ${styles}`, []);
+  const fog = fogProblem(doc.fog);
+  if (fog !== null) report('invalid-fog', `Fog settings are invalid: ${fog}`, []);
+  const environment = environmentProblem(doc.environment);
+  if (environment !== null)
+    report('invalid-environment', `Environment settings are invalid: ${environment}`, []);
+  for (const scene of doc.scenes) {
+    if (
+      (scene.style && styleProblem(scene.style) !== null) ||
+      (scene.fog && fogProblem(scene.fog) !== null)
+    ) {
+      report('invalid-scene', 'Scene has invalid style or fog settings', [scene.id]);
+    }
   }
   // Scenes may refer to tags, contexts and section planes deleted since they were saved; those are skipped on apply.
   for (const scene of doc.scenes) {

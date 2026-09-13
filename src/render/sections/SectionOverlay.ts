@@ -112,7 +112,11 @@ export class SectionOverlay {
       for (const child of node.children) {
         if ((child.userData as { definitionId?: DefinitionId }).definitionId !== undefined)
           visit(child, planes);
-        else if (child instanceof THREE.Mesh || child instanceof THREE.LineSegments)
+        else if (
+          child instanceof THREE.Mesh ||
+          child instanceof THREE.LineSegments ||
+          child instanceof THREE.Points
+        )
           this.#clipping.apply(child, planes);
         else visit(child, planes);
       }

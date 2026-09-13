@@ -35,6 +35,8 @@ function sceneState(name: string, overrides: Partial<SceneState> = {}): SceneSta
     sections: [],
     shadows: DEFAULT_SHADOW_SETTINGS,
     axes: null,
+    style: null,
+    fog: null,
     ...overrides,
   };
 }

@@ -33,6 +33,8 @@ import { ROTATE_TOOL_ID } from '../tools/RotateTool';
 import { SCALE_TOOL_ID } from '../tools/ScaleTool';
 import { registerSolidCommands } from '../solids/solidCommands';
 import { registerExchangeCommands } from '../io/exchangeCommands';
+import type { FaceStyle } from '../../kernel/model/types';
+import { STYLE_PRESETS } from '../styles/stylePresets';
 import type { CommandCategory, CommandDefinition, CommandRegistry } from './CommandRegistry';
 
 type EditorCommand = CommandDefinition<Editor>;
@@ -423,6 +425,7 @@ export function registerDefaultCommands(registry: CommandRegistry<Editor>): void
   registerOrganizationCommands(registry);
   registerExchangeCommands(registry);
   registerPresentationCommands(registry);
+  registerStyleCommands(registry);
 }
 
 /** Section planes, shadows, scenes and animation. */
@@ -654,6 +657,105 @@ function registerOrganizationCommands(registry: CommandRegistry<Editor>): void {
       isChecked: (editor) => editor.isPanelOpen(id),
       run: (editor) => {
         editor.togglePanel(id);
+      },
+    })),
+  );
+}
+
+const FACE_STYLE_COMMANDS: readonly { readonly faceStyle: FaceStyle; readonly label: string }[] = [
+  { faceStyle: 'wireframe', label: 'Wireframe' },
+  { faceStyle: 'hiddenLine', label: 'Hidden Line' },
+  { faceStyle: 'shaded', label: 'Shaded' },
+  { faceStyle: 'shadedWithTextures', label: 'Shaded with Textures' },
+  { faceStyle: 'monochrome', label: 'Monochrome' },
+];
+
+/** Face and edge style toggles, style presets, fog and environment. */
+function registerStyleCommands(registry: CommandRegistry<Editor>): void {
+  const toggle = (
+    id: string,
+    label: string,
+    key: 'xRay' | 'backEdges' | 'showEdges' | 'profiles',
+    description: string,
+    aliases: readonly string[],
+  ): EditorCommand => ({
+    id,
+    label,
+    category: 'View',
+    description,
+    aliases,
+    isChecked: (editor) => editor.styleSettings[key],
+    run: (editor) => {
+      editor.updateStyleSettings({ [key]: !editor.styleSettings[key] }, label);
+    },
+  });
+  registry.register(
+    toggle('view.faceStyle.xRay', 'X-Ray', 'xRay', 'See through faces', ['transparent faces', 'see through']),
+    toggle('view.faceStyle.backEdges', 'Back Edges', 'backEdges', 'Show hidden edges as dashed lines', [
+      'hidden edges',
+      'dashed edges',
+    ]),
+    ...FACE_STYLE_COMMANDS.map(({ faceStyle, label }): EditorCommand => ({
+      id: `view.faceStyle.${faceStyle}`,
+      label,
+      category: 'View',
+      description: `Draw faces as ${label.toLowerCase()}`,
+      aliases: ['face style', 'render mode'],
+      isChecked: (editor) => editor.styleSettings.faceStyle === faceStyle,
+      run: (editor) => {
+        editor.updateStyleSettings({ faceStyle }, 'Face Style');
+      },
+    })),
+    toggle('view.edges', 'Edges', 'showEdges', 'Show or hide edges', ['show edges', 'hide edges']),
+    toggle('view.profiles', 'Profiles', 'profiles', 'Draw outlines thicker', ['outline', 'silhouette']),
+    {
+      id: 'view.fog',
+      label: 'Fog',
+      category: 'View',
+      description: 'Fade distant geometry into a color',
+      aliases: ['haze', 'toggle fog'],
+      isChecked: (editor) => editor.fogSettings.enabled,
+      run: (editor) => {
+        editor.updateFogSettings({ enabled: !editor.fogSettings.enabled });
+      },
+    },
+    {
+      id: 'view.environment',
+      label: 'Environment',
+      category: 'View',
+      description: 'Light and surround the model with an environment',
+      aliases: ['hdr', 'image based lighting', 'reflections'],
+      isChecked: (editor) => editor.environmentSettings.enabled,
+      run: (editor) => {
+        editor.updateEnvironmentSettings({ enabled: !editor.environmentSettings.enabled });
+      },
+    },
+    {
+      id: 'environment.loadImage',
+      label: 'Load Environment Image…',
+      category: 'View',
+      description: 'Use a local .hdr file as the environment for this session',
+      aliases: ['hdr', 'open hdr', 'environment file'],
+      run: (editor) => editor.loadEnvironmentImage(),
+    },
+    {
+      id: 'style.saveInModel',
+      label: 'Save Style…',
+      category: 'View',
+      description: 'Save the current style in the model under a name',
+      aliases: ['new style', 'in-model style'],
+      run: (editor) => {
+        editor.promptSaveInModelStyle();
+      },
+    },
+    ...STYLE_PRESETS.map((preset): EditorCommand => ({
+      id: `style.preset.${preset.id}`,
+      label: `${preset.name} Style`,
+      category: 'View',
+      description: preset.description,
+      aliases: ['style', 'preset', preset.name.toLowerCase()],
+      run: (editor) => {
+        editor.applyStylePreset(preset.id);
       },
     })),
   );

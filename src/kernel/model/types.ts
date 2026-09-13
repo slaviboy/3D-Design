@@ -429,6 +429,8 @@ export interface SceneSaves {
   readonly activeSections: boolean;
   readonly shadows: boolean;
   readonly axes: boolean;
+  readonly style: boolean;
+  readonly fog: boolean;
 }
 
 export const DEFAULT_SCENE_SAVES: SceneSaves = Object.freeze({
@@ -437,6 +439,8 @@ export const DEFAULT_SCENE_SAVES: SceneSaves = Object.freeze({
   activeSections: true,
   shadows: true,
   axes: false,
+  style: false,
+  fog: false,
 });
 
 /** The active section plane of one context when the scene was saved; `plane` is null when none was active. */
@@ -458,8 +462,159 @@ export interface SceneState {
   readonly sections: readonly SceneSectionState[] | null;
   readonly shadows: ShadowSettings | null;
   readonly axes: ModelAxes | null;
+  readonly style: StyleSettings | null;
+  readonly fog: FogSettings | null;
 }
 
 export interface SceneData extends SceneState {
   readonly id: SceneId;
 }
+
+// -------------------------------------------------------------------------------------------------- styles
+
+/** How faces are drawn. */
+export type FaceStyle = 'wireframe' | 'hiddenLine' | 'shaded' | 'shadedWithTextures' | 'monochrome';
+
+export const FACE_STYLES: readonly FaceStyle[] = [
+  'wireframe',
+  'hiddenLine',
+  'shaded',
+  'shadedWithTextures',
+  'monochrome',
+];
+
+/** How edges are colored: one color, the edge's material, or the drawing axis they run along. */
+export type EdgeColorMode = 'allSame' | 'byMaterial' | 'byAxis';
+
+export const EDGE_COLOR_MODES: readonly EdgeColorMode[] = ['allSame', 'byMaterial', 'byAxis'];
+
+/** Limits of the pixel sizes in style settings. */
+export const STYLE_WIDTH_RANGE = Object.freeze({ min: 1, max: 20 });
+export const STYLE_EXTENSION_RANGE = Object.freeze({ min: 0, max: 100 });
+
+/** How the view is drawn: faces, edges and background. Colors are sRGB, each channel 0 to 1. */
+export interface StyleSettings {
+  readonly faceStyle: FaceStyle;
+  /** Faces are see-through, on top of any face style. */
+  readonly xRay: boolean;
+  /** Color of faces with the default material. */
+  readonly frontColor: Rgb;
+  readonly backColor: Rgb;
+  readonly showEdges: boolean;
+  /** Edges hidden behind faces are drawn dashed. */
+  readonly backEdges: boolean;
+  /** Outline edges are drawn thicker. */
+  readonly profiles: boolean;
+  /** Width of profile edges in pixels. */
+  readonly profileWidth: number;
+  /** Nearer edges are drawn thicker. */
+  readonly depthCue: boolean;
+  /** Width of the nearest edges in pixels while depth cue is on. */
+  readonly depthCueWidth: number;
+  /** Edges run on past their ends. */
+  readonly extensions: boolean;
+  /** How far edges run on past their ends, in pixels. */
+  readonly extensionLength: number;
+  /** Edge ends are marked. */
+  readonly endpoints: boolean;
+  readonly edgeColorMode: EdgeColorMode;
+  readonly edgeColor: Rgb;
+  readonly backgroundColor: Rgb;
+  readonly sky: boolean;
+  readonly skyColor: Rgb;
+  readonly ground: boolean;
+  readonly groundColor: Rgb;
+  /** Ground is drawn while the camera is below it. */
+  readonly groundFromBelow: boolean;
+}
+
+/** An sRGB color from a 0xRRGGBB number. */
+export const rgbFromHex = (hex: number): Rgb =>
+  Object.freeze({ r: ((hex >> 16) & 255) / 255, g: ((hex >> 8) & 255) / 255, b: (hex & 255) / 255 });
+
+/**
+ * The style of a new document. Colors reproduce the fixed viewport colors used before styles existed, so documents
+ * without style settings look exactly as they did.
+ */
+export const DEFAULT_STYLE_SETTINGS: StyleSettings = Object.freeze({
+  faceStyle: 'shadedWithTextures',
+  xRay: false,
+  frontColor: rgbFromHex(0xf2f0ea),
+  backColor: rgbFromHex(0x9eafc3),
+  showEdges: true,
+  backEdges: false,
+  profiles: false,
+  profileWidth: 3,
+  depthCue: false,
+  depthCueWidth: 4,
+  extensions: false,
+  extensionLength: 6,
+  endpoints: false,
+  edgeColorMode: 'allSame',
+  edgeColor: rgbFromHex(0x1d232b),
+  backgroundColor: rgbFromHex(0xdfe5eb),
+  sky: false,
+  skyColor: rgbFromHex(0x9cc3e6),
+  ground: false,
+  groundColor: rgbFromHex(0xc9c1b0),
+  groundFromBelow: false,
+});
+
+/** A style saved in the model under a name. Names are unique within a document. */
+export interface NamedStyle {
+  readonly name: string;
+  readonly settings: StyleSettings;
+}
+
+// -------------------------------------------------------------------------------------------------- fog
+
+export interface FogSettings {
+  readonly enabled: boolean;
+  /** Distance from the camera where fog begins, in meters. */
+  readonly start: number;
+  /** Distance from the camera where fog hides everything, in meters; greater than `start`. */
+  readonly end: number;
+  /** Fog takes the style's background color instead of `color`. */
+  readonly useBackgroundColor: boolean;
+  /** sRGB, each channel 0 to 1. */
+  readonly color: Rgb;
+}
+
+export const DEFAULT_FOG_SETTINGS: FogSettings = Object.freeze({
+  enabled: false,
+  start: 10,
+  end: 200,
+  useBackgroundColor: true,
+  color: rgbFromHex(0xdfe5eb),
+});
+
+// -------------------------------------------------------------------------------------------------- environment
+
+/** Environment ids are short lowercase words, for example `studio`; `custom` is an image loaded this session. */
+export const ENVIRONMENT_ID_PATTERN = /^[a-z][a-z0-9-]{0,39}$/;
+
+/** Image-based lighting and backdrop around the model. */
+export interface EnvironmentSettings {
+  readonly enabled: boolean;
+  /** Which environment: a built-in one, or `custom` for an image loaded in this session. */
+  readonly environmentId: string;
+  /** Turn of the environment around the blue axis, degrees in [0, 360). */
+  readonly rotationDegrees: number;
+  /** Brightness multiplier, 0 to 4. */
+  readonly exposure: number;
+  /** The environment replaces the style's background. */
+  readonly showAsBackground: boolean;
+  /** Painted materials reflect and are lit by the environment. */
+  readonly useForReflections: boolean;
+}
+
+export const MAX_ENVIRONMENT_EXPOSURE = 4;
+
+export const DEFAULT_ENVIRONMENT_SETTINGS: EnvironmentSettings = Object.freeze({
+  enabled: false,
+  environmentId: 'studio',
+  rotationDegrees: 0,
+  exposure: 1,
+  showAsBackground: true,
+  useForReflections: true,
+});

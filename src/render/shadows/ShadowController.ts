@@ -20,6 +20,7 @@ interface ShadowFlags {
   castShadows?: boolean;
   receiveShadows?: boolean;
   definitionId?: number;
+  noShadows?: boolean;
 }
 
 /** Where the directional light comes from, and whether the sun is up. */
@@ -101,7 +102,8 @@ export class ShadowController {
       const flags = node.userData as ShadowFlags;
       const nodeCast = cast && flags.castShadows !== false;
       const nodeReceive = receive && flags.receiveShadows !== false;
-      if (node instanceof THREE.Mesh) {
+      // Wide style lines are meshes too, but never cast or receive shadows.
+      if (node instanceof THREE.Mesh && flags.noShadows !== true) {
         node.castShadow = casting && nodeCast;
         node.receiveShadow = casting && settings.onFaces && nodeReceive;
       }
