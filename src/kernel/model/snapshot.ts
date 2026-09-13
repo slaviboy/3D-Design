@@ -52,6 +52,7 @@ import {
   type VertexData,
 } from './types';
 import { validateDocument } from './validate';
+import type { ValidationProblem } from '../errors';
 
 export const SNAPSHOT_FORMAT = 'planar-document';
 export const SNAPSHOT_VERSION = 1;
@@ -862,6 +863,54 @@ export function restoreSnapshot(
   options: DocumentOptions = {},
   textureBytes: TextureBytesSource = () => undefined,
 ): Result<ModelDocument> {
+  const plan = readLoadPlan(input, textureBytes);
+  if (!plan.ok) return err(plan.error);
+  const doc = createLoadedDocument(plan.value, options);
+  try {
+    doc.applyWithoutHistory(plan.value.changes);
+  } catch (error) {
+    return err(`Invalid document: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const report = validateDocument(doc);
+  if (!report.ok) return err(`Invalid document geometry: ${describeProblems(report.problems)}`);
+  return ok(doc);
+}
+
+/** A snapshot whose structure and ids were checked, as the changes that build it. Used by restore and repair. */
+export interface LoadPlan {
+  readonly rootDefinitionId: DefinitionId;
+  readonly rootName: string;
+  readonly nextId: number;
+  /** Changes in dependency order: document settings, assets, materials, tags, then each context's contents. */
+  readonly changes: readonly Change[];
+}
+
+/** An empty document with the plan's root definition and id counter, ready for the plan's changes. */
+export function createLoadedDocument(plan: LoadPlan, options: DocumentOptions = {}): ModelDocument {
+  const doc = new ModelDocument(options, { rootDefinitionId: plan.rootDefinitionId, nextId: plan.nextId });
+  doc.applyWithoutHistory([
+    {
+      kind: 'definition.attributes',
+      id: plan.rootDefinitionId,
+      from: doc.getDefinition(plan.rootDefinitionId).attributes,
+      to: { name: plan.rootName, isGroup: false },
+    },
+  ]);
+  return doc;
+}
+
+export function describeProblems(problems: readonly ValidationProblem[]): string {
+  return problems
+    .slice(0, MAX_REPORTED_ERRORS)
+    .map((problem) => `${problem.code} (${problem.message})`)
+    .join('; ');
+}
+
+/** Reads an untrusted snapshot's structure and checks its ids, without building the document. */
+export function readLoadPlan(
+  input: unknown,
+  textureBytes: TextureBytesSource = () => undefined,
+): Result<LoadPlan> {
   const r = new Reader();
   const root = r.record(input, '$');
   if (root.format !== SNAPSHOT_FORMAT) return err('This is not a Planar document');
@@ -937,15 +986,7 @@ export function restoreSnapshot(
   const rootDefinition = definitions.find((d) => d.id === rootDefinitionId);
   if (!rootDefinition) return err('Invalid document: the root definition is missing');
 
-  const doc = new ModelDocument(options, { rootDefinitionId, nextId });
-  const changes: Change[] = [
-    {
-      kind: 'definition.attributes',
-      id: rootDefinitionId,
-      from: doc.getDefinition(rootDefinitionId).attributes,
-      to: { name: rootDefinition.name, isGroup: false },
-    },
-  ];
+  const changes: Change[] = [];
   for (const d of definitions) {
     if (d.id !== rootDefinitionId)
       changes.push({ kind: 'definition.add', data: { id: d.id, name: d.name, isGroup: d.isGroup } });
@@ -970,18 +1011,5 @@ export function restoreSnapshot(
     for (const data of d.instances) changes.push({ kind: 'instance.add', context: d.id, data });
   }
 
-  try {
-    doc.applyWithoutHistory(changes);
-  } catch (error) {
-    return err(`Invalid document: ${error instanceof Error ? error.message : String(error)}`);
-  }
-  const report = validateDocument(doc);
-  if (!report.ok) {
-    const details = report.problems
-      .slice(0, MAX_REPORTED_ERRORS)
-      .map((problem) => `${problem.code} (${problem.message})`)
-      .join('; ');
-    return err(`Invalid document geometry: ${details}`);
-  }
-  return ok(doc);
+  return ok({ rootDefinitionId, rootName: rootDefinition.name, nextId, changes });
 }

@@ -1,7 +1,9 @@
 import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from 'fflate';
 import { MAX_TEXTURE_BYTES, textureExtension } from '../../kernel/model/assets';
 import type { DocumentOptions, ModelDocument } from '../../kernel/model/ModelDocument';
+import { restoreSnapshotWithRepair } from '../../kernel/model/repair';
 import { createSnapshot, restoreSnapshot, snapshotTextureFiles } from '../../kernel/model/snapshot';
+import { migrateModel } from './migrations';
 import type { TextureMimeType } from '../../kernel/model/types';
 import { err, ok, type Result } from '../../kernel/result';
 
@@ -90,14 +92,31 @@ function readManifest(text: string): Result<PlanarManifest> {
   return ok({ format: PLANAR_FILE_FORMAT, schemaVersion, appVersion, createdAt, modifiedAt });
 }
 
+export interface DecodeOptions {
+  /**
+   * Repair a model that fails the kernel checks where that is safe (see `restoreSnapshotWithRepair`), instead of
+   * refusing it. The repairs made are returned.
+   */
+  readonly repair?: boolean;
+}
+
+export interface DecodedPlanarFile {
+  readonly doc: ModelDocument;
+  readonly manifest: PlanarManifest;
+  /** Fixes made while opening; always empty unless `repair` was requested. */
+  readonly repairs: readonly string[];
+}
+
 /**
- * Reads a .planar file. The archive, the manifest and the model are all validated. Unsafe or oversized entries
- * are refused, and nothing is returned unless the whole model is valid.
+ * Reads a .planar file. The archive, the manifest and the model are all validated, and models saved in an older
+ * format are upgraded first. Unsafe or oversized entries are refused, and nothing is returned unless the whole model
+ * is valid (after repair, when requested).
  */
 export function decodePlanarFile(
   bytes: Uint8Array,
   documentOptions: DocumentOptions = {},
-): Result<{ doc: ModelDocument; manifest: PlanarManifest }> {
+  decodeOptions: DecodeOptions = {},
+): Result<DecodedPlanarFile> {
   if (bytes.byteLength > MAX_PLANAR_FILE_BYTES) return err('the file is too large');
   let entryCount = 0;
   const problems: string[] = [];
@@ -153,7 +172,15 @@ export function decodePlanarFile(
   } catch {
     return err('the model data is not valid JSON');
   }
-  const restored = restoreSnapshot(snapshot, documentOptions, (digest) => textures.get(digest));
+  const migrated = migrateModel(snapshot, manifest.value.schemaVersion, PLANAR_SCHEMA_VERSION);
+  if (!migrated.ok) return err(migrated.error);
+  const lookup = (digest: string) => textures.get(digest);
+  if (decodeOptions.repair === true) {
+    const repaired = restoreSnapshotWithRepair(migrated.value, documentOptions, lookup);
+    if (!repaired.ok) return err(repaired.error);
+    return ok({ doc: repaired.value.doc, manifest: manifest.value, repairs: repaired.value.repairs });
+  }
+  const restored = restoreSnapshot(migrated.value, documentOptions, lookup);
   if (!restored.ok) return err(restored.error);
-  return ok({ doc: restored.value, manifest: manifest.value });
+  return ok({ doc: restored.value, manifest: manifest.value, repairs: [] });
 }

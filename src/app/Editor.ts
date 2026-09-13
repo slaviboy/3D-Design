@@ -1889,26 +1889,39 @@ export class Editor {
       this.#recentFiles?.record(file.name, file.handle);
   }
 
-  /** Replaces the document with the contents of a .planar file. Returns false (and notifies) when it is invalid. */
+  /**
+   * Replaces the document with the contents of a .planar file. A model with problems that can be fixed safely is
+   * repaired and opens with unsaved changes, so the file itself is only rewritten when the user saves. Returns false
+   * (and notifies) when the file can't be opened.
+   */
   loadFile(
     bytes: Uint8Array,
     fileName: string,
     fileHandle: unknown = null,
     options: { dirty?: boolean } = {},
   ): boolean {
-    const result = decodePlanarFile(bytes);
+    const result = decodePlanarFile(bytes, {}, { repair: true });
     if (!result.ok) {
       this.notify('error', `Could not open ${fileName}: ${result.error}`);
       return false;
     }
+    const { doc, repairs } = result.value;
     this.tools.cancel();
-    this.session.replaceDocument(result.value.doc, {
+    this.session.replaceDocument(doc, {
       name: withoutExtension(fileName),
       fileHandle,
-      dirty: options.dirty === true,
+      dirty: options.dirty === true || repairs.length > 0,
     });
+    // After a repair the original bytes stay the last save, so saving in place first backs them up.
     this.#lastSavedBytes = options.dirty === true ? null : bytes;
     this.zoomExtents();
+    if (repairs.length > 0) {
+      const count = `${String(repairs.length)} ${repairs.length === 1 ? 'problem' : 'problems'}`;
+      this.notify(
+        'info',
+        `Repaired ${count} in ${fileName}: ${repairs.slice(0, 3).join('; ')}${repairs.length > 3 ? '; …' : ''}. Save to keep the repaired model.`,
+      );
+    }
     return true;
   }
 

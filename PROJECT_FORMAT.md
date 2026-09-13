@@ -149,10 +149,19 @@ smaller, parses faster, and transfers to workers without copying. The exact fiel
 4. **Structural validation.** A hand-written validator checks types, finite numbers, enum values, array lengths
    (`positions.length === 3 × vertex count`, loop offsets monotonic and in range), and that every id reference
    resolves.
-5. **Build the kernel stores.** Then run the kernel invariant validator (GEOMETRY.md).
-   - Recoverable problems (duplicate vertices, zero-length edges, orphan references) are repaired, and the user sees a
-     report.
-   - Unrecoverable corruption aborts loading with an explicit error. The current model is not touched.
+5. **Build the kernel stores.** Then run the kernel invariant validator (GEOMETRY.md). The editor opens files with
+   repair (`restoreSnapshotWithRepair` in `src/kernel/model/repair.ts`); `decodePlanarFile` without the `repair`
+   option stays strict.
+   - **Repaired:** references to missing materials, tags or texture images are cleared. Entities that can't be built
+     (a face whose edge is missing, an instance of a missing definition) are left out with everything that depends
+     on them. Entities the validator reports as invalid are left out. Invalid drawing axes and shadow settings return
+     to their defaults, and only the first active section plane of a context is kept. The build and validation repeat
+     until the document is valid, for at most 25 passes.
+   - **After a repair** the model opens with unsaved changes and a notice listing the fixes. The file on disk is
+     unchanged until the user saves, and an in-place save backs up the original bytes first.
+   - **Refused:** structural problems (unreadable fields, duplicate ids, ids at or above `nextId`) and problems only
+     topology operations could fix (unwelded vertices, T-junctions, crossing edges, overlapping faces). Loading
+     aborts with an explicit error and the current model is not touched.
 6. **Textures.** Image bytes are verified (size, header, SHA-256) while loading, so a missing or corrupt texture
    refuses the file. The renderer decodes images lazily, on first use. An image that passes validation but can't be
    decoded falls back to the material's color. There is no user-visible warning for that yet.
