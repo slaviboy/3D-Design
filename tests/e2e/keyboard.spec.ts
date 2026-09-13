@@ -156,6 +156,20 @@ test('opens the Instructor panel, which follows the active tool', async ({ page 
       }),
     )
     .toBe(true);
+  // Panels are rendered in dock order, so Tab reaches them in the order the user arranged.
+  await expect(async () => {
+    const { inDom, expected } = await page.evaluate(() => {
+      const editor = window.__planar?.editor;
+      if (!editor) throw new Error('test hook missing: build with --mode e2e');
+      return {
+        inDom: [...document.querySelectorAll<HTMLElement>('.dock [data-panel]')].map(
+          (panel) => panel.dataset.panel,
+        ),
+        expected: editor.dockLayout.order.filter((id) => editor.isPanelOpen(id)),
+      };
+    });
+    expect(inDom).toEqual(expected);
+  }).toPass();
   const header = instructor.getByRole('button', { name: 'Instructor', exact: true });
   await header.focus();
   await page.keyboard.press('Enter');

@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ComponentType } from 'react';
+import { panelOrder } from '../../app/dock/dockLayout';
+import type { PanelId } from '../../app/panels/panels';
 import { isEditableTarget } from '../../app/shortcuts/shortcuts';
 import type { RecentFilesRepository } from '../../io/idb/recent';
 import type { RecoveryRepository, RecoverySnapshot } from '../../io/idb/recovery';
@@ -33,6 +35,22 @@ import { DockSplitter } from '../dock/DockSplitter';
 import { InstructorPanel } from '../panels/InstructorPanel';
 import './app.css';
 
+/** The component for each dock panel, and how its error boundary names it. */
+const DOCK_PANELS: Record<PanelId, { readonly area: string; readonly Component: ComponentType }> = {
+  entityInfo: { area: 'the Entity Info panel', Component: EntityInfoPanel },
+  outliner: { area: 'the Outliner panel', Component: OutlinerPanel },
+  components: { area: 'the Components panel', Component: ComponentsPanel },
+  tags: { area: 'the Tags panel', Component: TagsPanel },
+  soften: { area: 'the Soften Edges panel', Component: SoftenPanel },
+  materials: { area: 'the Materials panel', Component: MaterialsPanel },
+  scenes: { area: 'the Scenes panel', Component: ScenesPanel },
+  shadows: { area: 'the Shadows panel', Component: ShadowsPanel },
+  instructor: { area: 'the Instructor panel', Component: InstructorPanel },
+  styles: { area: 'the Styles panel', Component: StylesPanel },
+  fog: { area: 'the Fog panel', Component: FogPanel },
+  environment: { area: 'the Environment panel', Component: EnvironmentPanel },
+};
+
 export interface RecoveryOptions {
   readonly repository: RecoveryRepository;
   /** This session's id; its own snapshot is never offered for recovery. */
@@ -56,6 +74,7 @@ export function App({
   const preferencesDialogRequests = useEditorState((state) => state.preferencesDialogRequests);
   const preferences = useEditorState((state) => state.preferences);
   const openPanels = useEditorState((state) => state.openPanels);
+  const dockLayout = useEditorState((state) => state.dockLayout);
   const inputRequest = useEditorState((state) => state.inputRequest);
   const exchangeRequest = useEditorState((state) => state.exchangeRequest);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -170,66 +189,17 @@ export function App({
           </ErrorBoundary>
         </main>
         <aside className="dock" aria-label="Panels">
-          {openPanels.includes('entityInfo') && (
-            <ErrorBoundary area="the Entity Info panel">
-              <EntityInfoPanel />
-            </ErrorBoundary>
-          )}
-          {openPanels.includes('outliner') && (
-            <ErrorBoundary area="the Outliner panel">
-              <OutlinerPanel />
-            </ErrorBoundary>
-          )}
-          {openPanels.includes('components') && (
-            <ErrorBoundary area="the Components panel">
-              <ComponentsPanel />
-            </ErrorBoundary>
-          )}
-          {openPanels.includes('tags') && (
-            <ErrorBoundary area="the Tags panel">
-              <TagsPanel />
-            </ErrorBoundary>
-          )}
-          {openPanels.includes('soften') && (
-            <ErrorBoundary area="the Soften Edges panel">
-              <SoftenPanel />
-            </ErrorBoundary>
-          )}
-          {openPanels.includes('materials') && (
-            <ErrorBoundary area="the Materials panel">
-              <MaterialsPanel />
-            </ErrorBoundary>
-          )}
-          {openPanels.includes('scenes') && (
-            <ErrorBoundary area="the Scenes panel">
-              <ScenesPanel />
-            </ErrorBoundary>
-          )}
-          {openPanels.includes('shadows') && (
-            <ErrorBoundary area="the Shadows panel">
-              <ShadowsPanel />
-            </ErrorBoundary>
-          )}
-          {openPanels.includes('instructor') && (
-            <ErrorBoundary area="the Instructor panel">
-              <InstructorPanel />
-            </ErrorBoundary>
-          )}
-          {openPanels.includes('styles') && (
-            <ErrorBoundary area="the Styles panel">
-              <StylesPanel />
-            </ErrorBoundary>
-          )}
-          {openPanels.includes('fog') && (
-            <ErrorBoundary area="the Fog panel">
-              <FogPanel />
-            </ErrorBoundary>
-          )}
-          {openPanels.includes('environment') && (
-            <ErrorBoundary area="the Environment panel">
-              <EnvironmentPanel />
-            </ErrorBoundary>
-          )}
+          {/* Rendered in dock order, so keyboard focus moves through panels in the order the user arranged. */}
+          {panelOrder(dockLayout.order)
+            .filter((id) => openPanels.includes(id))
+            .map((id) => {
+              const { area, Component } = DOCK_PANELS[id];
+              return (
+                <ErrorBoundary key={id} area={area}>
+                  <Component />
+                </ErrorBoundary>
+              );
+            })}
         </aside>
         <DockSplitter />
       </div>
