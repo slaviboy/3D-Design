@@ -19,4 +19,9 @@ export interface FileAccess {
    * (or downloads). Resolves to null when cancelled.
    */
   save(bytes: Uint8Array, suggestedName: string, handle: unknown): Promise<SavedFile | null>;
+  /**
+   * Reads a file again from a handle kept from an earlier open or save, asking for permission if needed. Resolves to
+   * null when the handle can't be used. Only platforms with persistent file handles implement this.
+   */
+  openHandle?(handle: unknown): Promise<OpenedFile | null>;
 }

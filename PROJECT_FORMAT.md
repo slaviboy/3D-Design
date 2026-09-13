@@ -101,7 +101,7 @@ smaller, parses faster, and transfers to workers without copying. The exact fiel
 | Store | Content |
 |---|---|
 | `recovery` | Versioned snapshots `{id, sessionId, kind: autosave \| backup, documentName, savedAt, bytes}`: the 3 newest versions of each kind per session, for the 5 newest sessions. Records written before versions existed read as autosaves whose session is their id |
-| `recent` | Recently opened files: name, time, thumbnail, and a File System Access handle where supported |
+| `recent` | Recently opened and saved files (database version 2): keyed by file name, the newest 10, with the time and a File System Access handle where the browser supports it. Thumbnails are planned |
 | `libraries` | User materials, components, styles, environments |
 | `settings` | Preferences, keyboard shortcuts, panel layout |
 

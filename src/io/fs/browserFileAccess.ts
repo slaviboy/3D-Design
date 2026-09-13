@@ -34,6 +34,19 @@ function isAbort(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError';
 }
 
+interface PermissionedHandle extends WritableFileHandle {
+  queryPermission?(options: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
+  requestPermission?(options: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
+}
+
+function isReadableHandle(handle: unknown): handle is PermissionedHandle {
+  return (
+    typeof handle === 'object' &&
+    handle !== null &&
+    typeof (handle as { getFile?: unknown }).getFile === 'function'
+  );
+}
+
 function isWritableHandle(handle: unknown): handle is WritableFileHandle {
   return (
     typeof handle === 'object' &&
@@ -99,6 +112,22 @@ export function createBrowserFileAccess(win: Window & FileSystemAccessWindow = w
       }
       const file = await pickWithInput(win.document);
       return file ? { name: file.name, bytes: await readFile(file), handle: null } : null;
+    },
+
+    async openHandle(handle: unknown): Promise<OpenedFile | null> {
+      if (!isReadableHandle(handle)) return null;
+      try {
+        const options = { mode: 'readwrite' as const };
+        if (handle.queryPermission && (await handle.queryPermission(options)) !== 'granted') {
+          if (!handle.requestPermission || (await handle.requestPermission(options)) !== 'granted')
+            return null;
+        }
+        const file = await handle.getFile();
+        return { name: file.name, bytes: await readFile(file), handle };
+      } catch {
+        // Moved, deleted or refused: the caller reports that the file couldn't be opened.
+        return null;
+      }
     },
 
     async save(bytes: Uint8Array, suggestedName: string, handle: unknown): Promise<SavedFile | null> {

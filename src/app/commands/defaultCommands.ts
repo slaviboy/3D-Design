@@ -95,6 +95,16 @@ export function registerDefaultCommands(registry: CommandRegistry<Editor>): void
       run: (editor) => editor.saveFileAs(),
     },
     {
+      id: 'file.startScreen',
+      label: 'Start Screen…',
+      category: 'File',
+      description: 'Start a new model from a template, or open a recent file',
+      aliases: ['welcome', 'new from template', 'templates', 'recent files'],
+      run: (editor) => {
+        editor.requestUi('start');
+      },
+    },
+    {
       id: 'file.backups',
       label: 'Restore Backup…',
       category: 'File',

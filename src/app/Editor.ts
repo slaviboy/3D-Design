@@ -50,6 +50,7 @@ import { nextTagColor, uniqueTagName } from './tags/tags';
 import { ComponentPlacementTool, PLACE_COMPONENT_TOOL_ID } from './tools/ComponentPlacementTool';
 import { pick, type PickHit, type PickRequest } from './picking/picker';
 import { createSampleModel, SAMPLE_MODEL_NAME } from './sample/sampleModel';
+import { templateById } from './templates/templates';
 import { boxSelect, type BoxSelectMode, type ScreenRect } from './selection/boxSelect';
 import { WorkerBooleanEngine, type BooleanEngine } from './solids/booleanClient';
 import { allSelectableRefs } from './selection/queries';
@@ -110,7 +111,12 @@ export interface InputRequest {
   readonly submit: (value: string) => void;
 }
 
-export type UiRequest = 'command-palette' | 'backups';
+/** Keeps the list of recently opened and saved files. */
+export interface RecentFilesRecorder {
+  record(name: string, handle: unknown): void;
+}
+
+export type UiRequest = 'command-palette' | 'backups' | 'start';
 
 export type EditorEvent =
   | { readonly kind: 'notifications' }
@@ -195,6 +201,7 @@ export class Editor {
   #backups: { readonly repository: RecoveryRepository; readonly sessionId: string } | null = null;
   /** The bytes last written to or read from the document's file, kept as a backup before it is overwritten. */
   #lastSavedBytes: Uint8Array | null = null;
+  #recentFiles: RecentFilesRecorder | null = null;
   #booleans: BooleanEngine | null = null;
 
   constructor(environment: EditorEnvironment) {
@@ -1005,6 +1012,41 @@ export class Editor {
     return this.#backups !== null;
   }
 
+  setRecentFiles(recorder: RecentFilesRecorder): void {
+    this.#recentFiles = recorder;
+  }
+
+  /** Replaces the model with a new one from a template. Resolves to false when the user keeps unsaved changes. */
+  async newFromTemplate(templateId: string): Promise<boolean> {
+    const template = templateById(templateId);
+    if (!template) throw new Error(`Unknown template "${templateId}"`);
+    if (!(await this.#confirmDiscard())) return false;
+    this.tools.cancel();
+    this.session.replaceDocument(template.create(), { name: UNTITLED_DOCUMENT_NAME });
+    this.#lastSavedBytes = null;
+    if (template.view) this.setStandardView(template.view);
+    else this.session.setCamera(DEFAULT_CAMERA);
+    return true;
+  }
+
+  /** Opens a recently used file again through its saved handle. */
+  async openRecent(name: string, handle: unknown): Promise<boolean> {
+    const access = this.#environment.fileAccess;
+    if (!access?.openHandle) {
+      this.notify('info', `Open ${name} again with File > Open`);
+      return false;
+    }
+    if (!(await this.#confirmDiscard())) return false;
+    const file = await access.openHandle(handle);
+    if (!file) {
+      this.notify('error', `${name} could not be opened. It may have been moved or deleted.`);
+      return false;
+    }
+    const loaded = this.loadFile(file.bytes, file.name, file.handle);
+    if (loaded) this.#recentFiles?.record(file.name, file.handle);
+    return loaded;
+  }
+
   async newDocument(): Promise<void> {
     if (!(await this.#confirmDiscard())) return;
     this.tools.cancel();
@@ -1025,7 +1067,8 @@ export class Editor {
     const access = this.#environment.fileAccess;
     if (!access || !(await this.#confirmDiscard())) return;
     const file = await access.open();
-    if (file) this.loadFile(file.bytes, file.name, file.handle);
+    if (file && this.loadFile(file.bytes, file.name, file.handle))
+      this.#recentFiles?.record(file.name, file.handle);
   }
 
   /** Replaces the document with the contents of a .planar file. Returns false (and notifies) when it is invalid. */
@@ -1078,6 +1121,7 @@ export class Editor {
     if (!result) return false;
     this.#lastSavedBytes = bytes;
     session.markSaved(withoutExtension(result.name), result.handle);
+    this.#recentFiles?.record(result.name, result.handle);
     this.notify('info', `Saved ${result.name}`);
     return true;
   }

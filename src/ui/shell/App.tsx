@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { isEditableTarget } from '../../app/shortcuts/shortcuts';
+import type { RecentFilesRepository } from '../../io/idb/recent';
 import type { RecoveryRepository, RecoverySnapshot } from '../../io/idb/recovery';
 import { ErrorBoundary } from '../common/ErrorBoundary';
 import { Notifications } from '../common/Notifications';
 import { InputDialog } from '../dialogs/InputDialog';
 import { RecoveryDialog } from '../dialogs/RecoveryDialog';
+import { StartScreen, startScreenEnabled } from '../dialogs/StartScreen';
 import { useEditor, useEditorState } from '../EditorContext';
 import { MenuBar } from '../menubar/MenuBar';
 import { CommandPalette } from '../palette/CommandPalette';
@@ -24,17 +26,26 @@ export interface RecoveryOptions {
   readonly sessionId: string;
 }
 
-export function App({ recovery }: { readonly recovery?: RecoveryOptions }) {
+export function App({
+  recovery,
+  recent,
+}: {
+  readonly recovery?: RecoveryOptions;
+  readonly recent?: RecentFilesRepository;
+}) {
   const editor = useEditor();
   const documentName = useEditorState((state) => state.documentName);
   const isDirty = useEditorState((state) => state.isDirty);
   const paletteRequests = useEditorState((state) => state.commandPaletteRequests);
   const backupRequests = useEditorState((state) => state.backupRequests);
+  const startScreenRequests = useEditorState((state) => state.startScreenRequests);
   const openPanels = useEditorState((state) => state.openPanels);
   const inputRequest = useEditorState((state) => state.inputRequest);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [recoverable, setRecoverable] = useState<readonly RecoverySnapshot[]>([]);
   const [backups, setBackups] = useState<readonly RecoverySnapshot[] | null>(null);
+  const [startOpen, setStartOpen] = useState(false);
+  const startupChecked = useRef(false);
 
   useEffect(() => {
     document.title = `${isDirty ? '• ' : ''}${documentName} — Planar`;
@@ -43,6 +54,10 @@ export function App({ recovery }: { readonly recovery?: RecoveryOptions }) {
   useEffect(() => {
     if (paletteRequests > 0) setPaletteOpen(true);
   }, [paletteRequests]);
+
+  useEffect(() => {
+    if (startScreenRequests > 0) setStartOpen(true);
+  }, [startScreenRequests]);
 
   useEffect(() => {
     if (backupRequests === 0 || !recovery) return;
@@ -71,25 +86,34 @@ export function App({ recovery }: { readonly recovery?: RecoveryOptions }) {
     };
   }, [editor]);
 
-  const refreshRecoverable = useCallback(async () => {
-    if (!recovery) return;
+  const refreshRecoverable = useCallback(async (): Promise<readonly RecoverySnapshot[]> => {
+    if (!recovery) return [];
     try {
-      const snapshots = await recovery.repository.list();
-      setRecoverable(
-        snapshots.filter(
-          (snapshot) => snapshot.kind === 'autosave' && snapshot.sessionId !== recovery.sessionId,
-        ),
+      const snapshots = (await recovery.repository.list()).filter(
+        (snapshot) => snapshot.kind === 'autosave' && snapshot.sessionId !== recovery.sessionId,
       );
+      setRecoverable(snapshots);
+      return snapshots;
     } catch (error) {
       editor.notify(
         'error',
         `Recovery storage is unavailable: ${error instanceof Error ? error.message : String(error)}`,
       );
+      return [];
     }
   }, [editor, recovery]);
 
   useEffect(() => {
-    void refreshRecoverable();
+    let cancelled = false;
+    void refreshRecoverable().then((pending) => {
+      // The start screen opens once at startup, and not over work waiting to be recovered.
+      if (cancelled || startupChecked.current) return;
+      startupChecked.current = true;
+      if (pending.length === 0 && startScreenEnabled()) setStartOpen(true);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [refreshRecoverable]);
 
   const discard = async (snapshot: RecoverySnapshot) => {
@@ -138,6 +162,14 @@ export function App({ recovery }: { readonly recovery?: RecoveryOptions }) {
       </div>
       <StatusBar />
       <Notifications />
+      {startOpen && (
+        <StartScreen
+          {...(recent ? { recent } : {})}
+          onClose={() => {
+            setStartOpen(false);
+          }}
+        />
+      )}
       {inputRequest && <InputDialog request={inputRequest} />}
       {paletteOpen && (
         <CommandPalette

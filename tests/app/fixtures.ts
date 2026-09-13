@@ -46,6 +46,11 @@ export class MemoryFileAccess implements FileAccess {
     this.files.set(name, bytes);
     return Promise.resolve({ name, handle: name });
   }
+
+  openHandle(handle: unknown): Promise<OpenedFile | null> {
+    const bytes = typeof handle === 'string' ? this.files.get(handle) : undefined;
+    return Promise.resolve(typeof handle === 'string' && bytes ? { name: handle, bytes, handle } : null);
+  }
 }
 
 export class MemoryRecoveryRepository implements RecoveryRepository {

@@ -7,6 +7,7 @@ import type { Platform } from './app/shortcuts/shortcuts';
 import { vec3 } from './kernel/math/vec3';
 import { createEditorStore } from './app/stores/editorStore';
 import { createBrowserFileAccess } from './io/fs/browserFileAccess';
+import { IndexedDbRecentFilesRepository, type RecentFilesRepository } from './io/idb/recent';
 import { IndexedDbRecoveryRepository, openPlanarDatabase } from './io/idb/recovery';
 import { EditorProvider } from './ui/EditorContext';
 import { App, type RecoveryOptions } from './ui/shell/App';
@@ -54,8 +55,10 @@ async function start(): Promise<void> {
   }
 
   let recovery: RecoveryOptions | undefined;
+  let recent: RecentFilesRepository | undefined;
   try {
-    const repository = new IndexedDbRecoveryRepository(await openPlanarDatabase(indexedDB));
+    const db = await openPlanarDatabase(indexedDB);
+    const repository = new IndexedDbRecoveryRepository(db);
     const autosave = new AutosaveController({
       session: editor.session,
       repository,
@@ -68,6 +71,18 @@ async function start(): Promise<void> {
     autosave.start();
     editor.setBackupRepository(repository, autosave.sessionId);
     recovery = { repository, sessionId: autosave.sessionId };
+    const recentFiles = new IndexedDbRecentFilesRepository(db);
+    editor.setRecentFiles({
+      record: (name, handle) => {
+        recentFiles.add({ name, openedAt: Date.now(), handle }).catch((error: unknown) => {
+          editor.notify(
+            'error',
+            `Could not update recent files: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+      },
+    });
+    recent = recentFiles;
     window.addEventListener('pagehide', () => {
       if (!editor.session.isDirty) void autosave.discard();
     });
@@ -90,7 +105,7 @@ async function start(): Promise<void> {
   createRoot(container).render(
     <StrictMode>
       <EditorProvider editor={editor} store={store}>
-        <App {...(recovery ? { recovery } : {})} />
+        <App {...(recovery ? { recovery } : {})} {...(recent ? { recent } : {})} />
       </EditorProvider>
     </StrictMode>,
   );

@@ -8,6 +8,7 @@ import {
   PLANAR_FILE_FORMAT,
   PLANAR_SCHEMA_VERSION,
 } from '../../src/io/format/planarFile';
+import { IndexedDbRecentFilesRepository, MAX_RECENT_FILES } from '../../src/io/idb/recent';
 import { IndexedDbRecoveryRepository, openPlanarDatabase } from '../../src/io/idb/recovery';
 import { createSnapshot, hashDocument } from '../../src/kernel/model/snapshot';
 import { createSampleModel } from '../../src/app/sample/sampleModel';
@@ -180,5 +181,47 @@ describe('IndexedDB recovery repository', () => {
     );
     const reopened = new IndexedDbRecoveryRepository(await openPlanarDatabase(factory));
     expect(await reopened.list()).toHaveLength(1);
+  });
+});
+
+describe('IndexedDB recent files', () => {
+  it('upgrades a version 1 database without losing snapshots, and keeps the newest files once each', async () => {
+    const factory = new IDBFactory();
+    await new Promise<void>((resolve, reject) => {
+      const request = factory.open('planar', 1);
+      request.onupgradeneeded = () => {
+        request.result.createObjectStore('recovery', { keyPath: 'id' });
+        request.result.createObjectStore('settings');
+      };
+      request.onsuccess = () => {
+        const db = request.result;
+        const transaction = db.transaction('recovery', 'readwrite');
+        transaction
+          .objectStore('recovery')
+          .put({ id: 'old', documentName: 'Old', savedAt: 1, bytes: new Uint8Array([1]) });
+        transaction.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+      };
+      request.onerror = () => {
+        reject(new Error('open failed'));
+      };
+    });
+
+    const db = await openPlanarDatabase(factory);
+    expect(await new IndexedDbRecoveryRepository(db).list()).toHaveLength(1);
+    const recent = new IndexedDbRecentFilesRepository(db);
+    for (let i = 0; i < MAX_RECENT_FILES + 2; i++) {
+      await recent.add({ name: `file-${String(i)}.planar`, openedAt: i, handle: null });
+    }
+    await recent.add({ name: 'file-3.planar', openedAt: 100, handle: null });
+    const names = (await recent.list()).map((file) => file.name);
+    expect(names).toHaveLength(MAX_RECENT_FILES);
+    expect(names[0]).toBe('file-3.planar');
+    expect(new Set(names).size).toBe(names.length);
+
+    await recent.remove('file-3.planar');
+    expect((await recent.list()).map((file) => file.name)).not.toContain('file-3.planar');
   });
 });

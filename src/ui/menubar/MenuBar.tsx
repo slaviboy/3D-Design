@@ -13,6 +13,7 @@ export const MENUS: readonly MenuDefinition[] = [
     label: 'File',
     items: [
       'file.new',
+      'file.startScreen',
       'file.open',
       null,
       'file.save',
