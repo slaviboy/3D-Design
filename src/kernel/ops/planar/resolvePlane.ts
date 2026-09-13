@@ -1,5 +1,5 @@
 import type { DefinitionId, EdgeId, FaceId, VertexId } from '../../ids';
-import { aabbExpand, aabbIsEmpty, aabbUnion, EMPTY_AABB, type Aabb } from '../../math/aabb';
+import { aabbExpand, aabbFromPoints, aabbIsEmpty, aabbUnion, EMPTY_AABB, type Aabb } from '../../math/aabb';
 import { classifyPointInPolygon } from '../../math/geom2d';
 import { isPointOnPlane, planeBasis, planesCoincide, unprojectFrom2D, type Plane } from '../../math/plane';
 import { AXIS_Z, cross, dot, length, type Vec3 } from '../../math/vec3';
@@ -8,7 +8,14 @@ import type { ModelDocument } from '../../model/ModelDocument';
 import { addFace, setFaceLoops } from '../../model/mutations';
 import type { FaceAttributes } from '../../model/types';
 import { EPS_LEN, isParallelBySine } from '../../tolerance';
-import { buildRegions, faceMatchesRegion, faceRings, loopsForRegion, type PlanarRegion } from './regions';
+import {
+  buildRegions,
+  faceMatchesRegion,
+  faceRings,
+  loopsForRegion,
+  type FaceRings,
+  type PlanarRegion,
+} from './regions';
 
 export interface RegionDecision {
   readonly attributes: FaceAttributes;
@@ -61,17 +68,33 @@ export function resolvePlane(
     }
   }
   const sortedCandidates = [...candidateFaces].sort((a, b) => a - b);
-  const ringsByFace = new Map(sortedCandidates.map((id) => [id, faceRings(store, id, basis)] as const));
+  const ringsByFace = new Map<FaceId, FaceRings>();
+  const ringsOf = (faceId: FaceId): FaceRings => {
+    let rings = ringsByFace.get(faceId);
+    if (!rings) {
+      rings = faceRings(store, faceId, basis);
+      ringsByFace.set(faceId, rings);
+    }
+    return rings;
+  };
 
   const regionsByFace = new Map<FaceId, PlanarRegion[]>();
   const uncovered: PlanarRegion[] = [];
   for (const region of regions) {
-    const cover = sortedCandidates.find((faceId) => {
-      const rings = ringsByFace.get(faceId);
-      return (
-        rings !== undefined && classifyPointInPolygon(region.sample, rings.outer, rings.inners) === 'inside'
-      );
-    });
+    /*
+     * A face whose polygon contains the region's sample also has the sample inside its bounds, so the face index
+     * narrows the search to a few faces instead of testing every candidate (which was quadratic on large connected
+     * planes). Faces aren't changed until every region is assigned, so the index is current. Lowest id still wins.
+     */
+    const sample = unprojectFrom2D(basis, plane, region.sample);
+    const cover = store
+      .queryFaces(aabbExpand(aabbFromPoints([sample]), EPS_LEN))
+      .filter((faceId) => candidateFaces.has(faceId))
+      .sort((a, b) => a - b)
+      .find((faceId) => {
+        const rings = ringsOf(faceId);
+        return classifyPointInPolygon(region.sample, rings.outer, rings.inners) === 'inside';
+      });
     if (cover === undefined) {
       uncovered.push(region);
     } else {
