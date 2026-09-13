@@ -32,10 +32,10 @@ export async function parseImportFiles(
         scene = parseStl(file, limits, warnings);
         break;
       case 'dae':
-        scene = parseDae(file, limits, warnings);
+        scene = parseDae(file, resolver, limits, warnings);
         break;
       case '3ds':
-        scene = parse3ds(file, limits, warnings);
+        scene = parse3ds(file, resolver, limits, warnings);
         break;
     }
     validateImportedScene(scene, limits);

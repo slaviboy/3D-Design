@@ -10,7 +10,8 @@ import { normalize, vec3 } from '../../kernel/math/vec3';
 import { rgbFromSrgb } from '../mesh/color';
 import type { ImportedMaterial, ImportedMesh, ImportedNode, ImportedScene } from '../mesh/importedScene';
 import { ImportError, type ImportLimits } from '../mesh/limits';
-import { baseName, isExternalReference, type InputFile } from './fileSet';
+import { baseName, isExternalReference, type FileResolver, type InputFile } from './fileSet';
+import { TextureCollector } from './textures';
 import { child, childrenNamed, parseNumbers, parseXml, type XmlElement } from './xml';
 
 /*
@@ -18,13 +19,19 @@ import { child, childrenNamed, parseNumbers, parseXml, type XmlElement } from '.
  * subset it needs itself: geometry (triangles, polylist, polygons, tristrips, trifans), materials with diffuse color
  * and transparency, the node hierarchy with matrix/translate/rotate/scale transforms, instance_geometry,
  * instance_controller (bind pose) and instance_node (library nodes shared by several nodes), and the asset unit and
- * up axis. Referenced images are recorded by name only.
+ * up axis. Diffuse textures are read from `<image>` elements through the picked files, with each primitive's first
+ * TEXCOORD input as the vertex UVs.
  */
 
 const MAX_XML_ELEMENTS = 5_000_000;
 const MAX_DEPTH = 128;
 
-export function parseDae(main: InputFile, limits: ImportLimits, warnings: string[]): ImportedScene {
+export function parseDae(
+  main: InputFile,
+  resolver: FileResolver,
+  limits: ImportLimits,
+  warnings: string[],
+): ImportedScene {
   const root = parseXml(new TextDecoder().decode(main.bytes), { maxElements: MAX_XML_ELEMENTS });
   if (root.name !== 'COLLADA') throw new ImportError('this is not a COLLADA file');
 
@@ -51,10 +58,11 @@ export function parseDae(main: InputFile, limits: ImportLimits, warnings: string
   // -------------------------------------------------------------------------------- materials
   const materials: ImportedMaterial[] = [];
   const materialIndex = new Map<string, number>();
-  const textures = new Set<string>();
+  const collector = new TextureCollector(resolver, warnings);
 
-  const textureName = (sampler: string): string | null => {
-    let element = ids.get(sampler);
+  const imagePath = (sampler: string): string | null => {
+    // Effects name samplers by sid (a newparam), older exporters by id.
+    let element = findParam(root, sampler) ?? ids.get(sampler);
     // COLLADA 1.4 profile_COMMON: newparam sampler2D → newparam surface → image; without params, the image itself.
     for (let hops = 0; element && element.name !== 'image' && hops < 4; hops++) {
       const source = child(child(element, 'sampler2D'), 'source')?.text.trim();
@@ -65,7 +73,7 @@ export function parseDae(main: InputFile, limits: ImportLimits, warnings: string
     if (element?.name !== 'image') return null;
     const init = child(element, 'init_from');
     const path = (child(init, 'ref')?.text ?? init?.text ?? '').trim();
-    return path === '' ? null : baseName(path);
+    return path === '' ? null : path;
   };
 
   const materialFor = (target: string | undefined): number => {
@@ -85,8 +93,9 @@ export function parseDae(main: InputFile, limits: ImportLimits, warnings: string
       const colorSource = child(shading, 'diffuse') ?? child(shading, 'emission');
       const values = parseNumbers(child(colorSource, 'color')?.text ?? '');
       const texture = child(colorSource, 'texture')?.attributes.texture;
-      const name = texture === undefined ? null : textureName(texture);
-      if (name) textures.add(name);
+      const path = texture === undefined ? null : imagePath(texture);
+      const name = path === null ? null : baseName(path);
+      const image = path === null ? null : collector.fromReference(path);
       const color =
         values.length >= 3 && values.slice(0, 3).every(Number.isFinite)
           ? rgbFromSrgb(values[0] ?? 0, values[1] ?? 0, values[2] ?? 0)
@@ -97,12 +106,14 @@ export function parseDae(main: InputFile, limits: ImportLimits, warnings: string
       if (transparent && Number.isFinite(transparency)) {
         opacity = transparent.attributes.opaque === 'RGB_ZERO' ? 1 - transparency : opacity * transparency;
       }
+      const reference = collector.reference(image);
       index =
         materials.push({
           name: material.attributes.name ?? key,
           color,
           opacity: Math.min(1, Math.max(0, opacity)),
           textureName: name,
+          ...(reference ? { texture: reference } : {}),
         }) - 1;
     }
     materialIndex.set(key, index);
@@ -145,10 +156,47 @@ export function parseDae(main: InputFile, limits: ImportLimits, warnings: string
       const source = floatSource(positionInput?.attributes.source);
       if (!source || source.stride < 3) throw new ImportError('a COLLADA geometry has no usable positions');
       const vertexCount = Math.floor(source.values.length / source.stride);
-      const positions = new Float64Array(vertexCount * 3);
+      const sourcePositions = new Float64Array(vertexCount * 3);
       for (let v = 0; v < vertexCount; v++) {
-        for (let k = 0; k < 3; k++) positions[v * 3 + k] = source.values[v * source.stride + k] ?? Number.NaN;
+        for (let k = 0; k < 3; k++)
+          sourcePositions[v * 3 + k] = source.values[v * source.stride + k] ?? Number.NaN;
       }
+      // With texture coordinates, each distinct (position, UV) pair becomes an output vertex.
+      const textured = mesh.children.some((primitive) =>
+        childrenNamed(primitive, 'input').some((input) => input.attributes.semantic === 'TEXCOORD'),
+      );
+      const outPositions: number[] = [];
+      const outUvs: number[] = [];
+      const cornerIndex = new Map<number, number>();
+      const outputVertex = (
+        vertex: number,
+        uvSource: { values: number[]; stride: number } | null,
+        uv: number | undefined,
+      ): number => {
+        const uvCount = uvSource ? Math.floor(uvSource.values.length / uvSource.stride) : 0;
+        const uvIndex =
+          uvSource && uv !== undefined && Number.isInteger(uv) && uv >= 0 && uv < uvCount ? uv : -1;
+        const key = vertex + (uvIndex + 1) * vertexCount;
+        let index = cornerIndex.get(key);
+        if (index === undefined) {
+          index = outPositions.length / 3;
+          outPositions.push(
+            sourcePositions[vertex * 3] ?? 0,
+            sourcePositions[vertex * 3 + 1] ?? 0,
+            sourcePositions[vertex * 3 + 2] ?? 0,
+          );
+          if (uvSource && uvIndex >= 0) {
+            outUvs.push(
+              uvSource.values[uvIndex * uvSource.stride] ?? Number.NaN,
+              uvSource.values[uvIndex * uvSource.stride + 1] ?? Number.NaN,
+            );
+          } else {
+            outUvs.push(Number.NaN, Number.NaN);
+          }
+          cornerIndex.set(key, index);
+        }
+        return index;
+      };
       const indices: number[] = [];
       const perTriangle: number[] = [];
       const vertexAt = (value: number | undefined): number => {
@@ -168,6 +216,13 @@ export function parseDae(main: InputFile, limits: ImportLimits, warnings: string
         const vertexInput = inputs.find((input) => input.attributes.semantic === 'VERTEX');
         if (!vertexInput) continue;
         const vertexOffset = Number(vertexInput.attributes.offset ?? '0');
+        const texcoordInputs = inputs
+          .filter((input) => input.attributes.semantic === 'TEXCOORD')
+          .sort((a, b) => Number(a.attributes.set ?? '0') - Number(b.attributes.set ?? '0'));
+        const texcoordInput = texcoordInputs[0];
+        const uvOffset = Number(texcoordInput?.attributes.offset ?? '0');
+        const uvSource = texcoordInput ? floatSource(texcoordInput.attributes.source) : null;
+        const usableUvs = uvSource && uvSource.stride >= 2 ? uvSource : null;
         const symbol = primitive.attributes.material;
         const material = materialFor(symbol === undefined ? undefined : (bindings.get(symbol) ?? symbol));
         const pushTriangle = (a: number, b: number, c: number): void => {
@@ -181,7 +236,10 @@ export function parseDae(main: InputFile, limits: ImportLimits, warnings: string
         };
         const corners = (p: readonly number[]): number[] => {
           const out: number[] = [];
-          for (let i = 0; i + stride <= p.length; i += stride) out.push(vertexAt(p[i + vertexOffset]));
+          for (let i = 0; i + stride <= p.length; i += stride) {
+            const vertex = vertexAt(p[i + vertexOffset]);
+            out.push(textured ? outputVertex(vertex, usableUvs, p[i + uvOffset]) : vertex);
+          }
           return out;
         };
         const fan = (loop: readonly number[]): void => {
@@ -218,9 +276,10 @@ export function parseDae(main: InputFile, limits: ImportLimits, warnings: string
         result =
           meshes.push({
             name: geometry.attributes.name ?? geometry.attributes.id ?? '',
-            positions,
+            positions: textured ? Float64Array.from(outPositions) : sourcePositions,
             indices: Uint32Array.from(indices),
             materials: Int32Array.from(perTriangle),
+            ...(textured ? { uvs: Float64Array.from(outUvs) } : {}),
           }) - 1;
       }
     } else {
@@ -307,10 +366,10 @@ export function parseDae(main: InputFile, limits: ImportLimits, warnings: string
       `Skipped ${String(skippedPrimitives)} COLLADA elements that are not triangle geometry (lines, splines)`,
     );
   }
-  if (textures.size > 0)
-    warnings.push(`Textures are not imported; the file refers to ${[...textures].join(', ')}`);
+  const textures = collector.finish();
   return {
     materials,
+    textures,
     meshes,
     nodes,
     roots,

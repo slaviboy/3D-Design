@@ -1,4 +1,4 @@
-import type { Group } from 'three';
+import type { Group, Material, Mesh } from 'three';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import { TDSLoader } from 'three/examples/jsm/loaders/TDSLoader.js';
@@ -6,6 +6,7 @@ import { IDENTITY_TRANSFORM, type ImportedMaterial, type ImportedScene } from '.
 import { ImportError, type ImportLimits } from '../mesh/limits';
 import type { FileResolver, InputFile } from './fileSet';
 import { materialLibraries, parseMtl } from './mtl';
+import { TextureCollector } from './textures';
 import { sceneFromObject3D } from './threeScene';
 
 function arrayBufferOf(bytes: Uint8Array): ArrayBuffer {
@@ -14,7 +15,7 @@ function arrayBufferOf(bytes: Uint8Array): ArrayBuffer {
 
 // ------------------------------------------------------------------------------------------------ OBJ
 
-/** OBJ through three's OBJLoader, with materials from the picked MTL files (colors and opacity only). */
+/** OBJ through three's OBJLoader, with materials (colors, opacity, map_Kd textures) from the picked MTL files. */
 export function parseObj(
   main: InputFile,
   resolver: FileResolver,
@@ -23,11 +24,16 @@ export function parseObj(
 ): ImportedScene {
   const text = new TextDecoder().decode(main.bytes);
   const materials = new Map<string, ImportedMaterial>();
+  const collector = new TextureCollector(resolver, warnings);
   for (const library of materialLibraries(text)) {
     const bytes = resolver.resolve(library, 'material library');
     if (!bytes) continue;
-    for (const [name, material] of parseMtl(new TextDecoder().decode(bytes))) {
-      if (!materials.has(name)) materials.set(name, material);
+    for (const [name, mtl] of parseMtl(new TextDecoder().decode(bytes))) {
+      if (materials.has(name)) continue;
+      const { textureUvTransform, ...material } = mtl;
+      const image = material.textureName === null ? null : collector.fromReference(material.textureName);
+      const texture = collector.reference(image, textureUvTransform);
+      materials.set(name, texture ? { ...material, texture } : material);
     }
   }
   let root: Group;
@@ -38,9 +44,15 @@ export function parseObj(
       `the OBJ file could not be read (${error instanceof Error ? error.message : String(error)})`,
     );
   }
+  const textures = collector.finish();
   return sceneFromObject3D(
     root,
-    { limits, materialByName: (name) => materials.get(name), onlyNamedMaterials: true },
+    {
+      limits,
+      materialByName: (name) => materials.get(name),
+      onlyNamedMaterials: true,
+      textures: () => textures,
+    },
     warnings,
   );
 }
@@ -100,31 +112,53 @@ export function parseStl(main: InputFile, limits: ImportLimits, warnings: string
 
 const TDS_MAGIC = 0x4d4d;
 const TDS_MAP_NAME = 0xa300;
+const TDS_MAP_USCALE = 0xa354;
+const TDS_MAP_VSCALE = 0xa356;
+const TDS_MAP_UOFFSET = 0xa358;
+const TDS_MAP_VOFFSET = 0xa35a;
 
 interface TdsChunk {
   readonly id: number;
   readChunk(): TdsChunk | null | undefined;
   readString(): string;
+  readFloat(): number;
+}
+
+/** What Planar's replacement for TDSLoader.readMap stores as `material.map`: no texture, just its description. */
+interface TdsMap {
+  readonly name: string;
+  readonly uvTransform: readonly number[];
 }
 
 /**
  * 3DS through three's TDSLoader. The loader would load texture maps through the DOM, so map chunks are read for
- * their file names only.
+ * their file name, offset and scale, and the image is looked up among the picked files.
  */
-export function parse3ds(main: InputFile, limits: ImportLimits, warnings: string[]): ImportedScene {
+export function parse3ds(
+  main: InputFile,
+  resolver: FileResolver,
+  limits: ImportLimits,
+  warnings: string[],
+): ImportedScene {
   const bytes = main.bytes;
   if (bytes.byteLength < 6) throw new ImportError('the 3DS file is empty or truncated');
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (view.getUint16(0, true) !== TDS_MAGIC || view.getUint32(2, true) > bytes.byteLength) {
     throw new ImportError('this is not a valid 3DS file');
   }
-  const textureNames: string[] = [];
   const loader = new TDSLoader();
-  (loader as unknown as { readMap: (chunk: TdsChunk) => null }).readMap = (chunk) => {
+  (loader as unknown as { readMap: (chunk: TdsChunk) => TdsMap | null }).readMap = (chunk) => {
+    let name = '';
+    const transform = [1, 0, 0, 1, 0, 0];
     for (let next = chunk.readChunk(); next; next = chunk.readChunk()) {
-      if (next.id === TDS_MAP_NAME) textureNames.push(next.readString());
+      // Same meaning as three's texture repeat and offset: uv' = uv · scale + offset.
+      if (next.id === TDS_MAP_NAME) name = next.readString();
+      else if (next.id === TDS_MAP_USCALE) transform[0] = next.readFloat();
+      else if (next.id === TDS_MAP_VSCALE) transform[3] = next.readFloat();
+      else if (next.id === TDS_MAP_UOFFSET) transform[4] = next.readFloat();
+      else if (next.id === TDS_MAP_VOFFSET) transform[5] = next.readFloat();
     }
-    return null;
+    return name === '' ? null : { name, uvTransform: transform.map((v) => (Number.isFinite(v) ? v : 0)) };
   };
   let root: Group;
   try {
@@ -134,8 +168,20 @@ export function parse3ds(main: InputFile, limits: ImportLimits, warnings: string
       `the 3DS file could not be read (${error instanceof Error ? error.message : String(error)})`,
     );
   }
-  if (textureNames.length > 0) {
-    warnings.push(`Textures are not imported; the file refers to ${[...new Set(textureNames)].join(', ')}`);
-  }
-  return sceneFromObject3D(root, { limits }, warnings);
+  const collector = new TextureCollector(resolver, warnings);
+  const textureOf = new Map<Material, ReturnType<TextureCollector['reference']>>();
+  root.traverse((object) => {
+    const list = (object as Partial<Mesh>).material;
+    for (const material of Array.isArray(list) ? list : list ? [list] : []) {
+      const map = (material as { map?: TdsMap | null }).map;
+      if (!map || textureOf.has(material)) continue;
+      textureOf.set(material, collector.reference(collector.fromReference(map.name), map.uvTransform));
+    }
+  });
+  const textures = collector.finish();
+  return sceneFromObject3D(
+    root,
+    { limits, textureOf: (material) => textureOf.get(material), textures: () => textures },
+    warnings,
+  );
 }

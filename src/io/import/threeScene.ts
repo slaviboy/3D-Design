@@ -1,7 +1,14 @@
 import type { BufferGeometry, Material, Mesh, Object3D } from 'three';
 import { isIdentity } from '../mesh/axes';
 import { clamp01 } from '../mesh/color';
-import type { ImportedMaterial, ImportedMesh, ImportedNode, ImportedScene } from '../mesh/importedScene';
+import type {
+  ImportedMaterial,
+  ImportedMaterialTexture,
+  ImportedMesh,
+  ImportedNode,
+  ImportedScene,
+  ImportedTexture,
+} from '../mesh/importedScene';
 import { ImportError, type ImportLimits } from '../mesh/limits';
 
 /*
@@ -18,6 +25,10 @@ export interface ThreeSceneOptions {
   readonly onlyNamedMaterials?: boolean;
   /** The texture file name a loader material came with, when the loader dropped the texture itself. */
   readonly textureNameOf?: (material: Material) => string | null;
+  /** The usable color texture of a loader material, when it has one. */
+  readonly textureOf?: (material: Material) => ImportedMaterialTexture | undefined;
+  /** Images referenced by the materials' textures. */
+  readonly textures?: () => readonly ImportedTexture[];
   /** The name of the mesh data an object draws, when the loader named the object after its node instead. */
   readonly meshNameOf?: (mesh: Mesh) => string | null;
   /** Whether a child object is one part of its parent's mesh (a glTF primitive), rather than a node of its own. */
@@ -61,7 +72,7 @@ export function sceneFromObject3D(
       return -1;
     }
     const colored = material as ColoredMaterial;
-    const imported: ImportedMaterial = override ?? {
+    let imported: ImportedMaterial = override ?? {
       name: material.name,
       color: colored.color
         ? { r: clamp01(colored.color.r), g: clamp01(colored.color.g), b: clamp01(colored.color.b) }
@@ -69,6 +80,10 @@ export function sceneFromObject3D(
       opacity: material.transparent ? clamp01(material.opacity) : 1,
       textureName: options.textureNameOf?.(material) ?? colored.map?.name ?? null,
     };
+    if (!override && imported.texture === undefined) {
+      const texture = options.textureOf?.(material);
+      if (texture) imported = { ...imported, texture };
+    }
     const index = materials.push(imported) - 1;
     materialIndex.set(material, index);
     return index;
@@ -112,11 +127,21 @@ export function sceneFromObject3D(
     } else {
       perTriangle.fill(indexOfMaterial(materialList[0]));
     }
+    const uv = geometry.getAttribute('uv') as BufferGeometry['attributes'][string] | undefined;
+    let uvs: Float64Array | undefined;
+    if (uv && uv.itemSize >= 2 && uv.count === vertexCount) {
+      uvs = new Float64Array(vertexCount * 2);
+      for (let i = 0; i < vertexCount; i++) {
+        uvs[i * 2] = uv.getX(i);
+        uvs[i * 2 + 1] = uv.getY(i);
+      }
+    }
     const imported = meshes.push({
       name: options.meshNameOf?.(mesh) ?? mesh.name,
       positions,
       indices,
       materials: perTriangle,
+      ...(uvs ? { uvs } : {}),
     });
     meshIndex.set(key, imported - 1);
     return imported - 1;
@@ -179,6 +204,7 @@ export function sceneFromObject3D(
     meshes,
     nodes,
     roots: [rootIndex],
+    ...(options.textures ? { textures: options.textures() } : {}),
     warnings,
     unitMeters: options.unitMeters ?? null,
     upAxis: options.upAxis ?? null,

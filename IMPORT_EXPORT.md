@@ -13,10 +13,10 @@ The dialogs list formats from two registries, so only implemented and tested for
 |---|---|---|---|
 | glTF 2.0 `.glb` | Yes | Yes | Import: three `GLTFLoader` on a rewritten, self-contained GLB. Export: Planar writer |
 | glTF 2.0 `.gltf` | Yes (buffers from data URIs or picked `.bin` files) | Yes (buffer embedded as a data URI) | Same as above |
-| OBJ `.obj` + `.mtl` | Yes (MTL colors and opacity) | Yes (OBJ and MTL files) | Import: three `OBJLoader` plus Planar's MTL reader. Export: Planar writer |
+| OBJ `.obj` + `.mtl` | Yes (MTL colors, opacity and `map_Kd` textures) | Yes (OBJ and MTL files) | Import: three `OBJLoader` plus Planar's MTL reader. Export: Planar writer |
 | STL `.stl` | Yes (binary and ASCII) | Yes (binary and ASCII) | Import: three `STLLoader`. Export: Planar writer |
 | COLLADA `.dae` | Yes | Yes | Planar reader and writer (three's `ColladaLoader` needs `DOMParser`, which workers lack) |
-| 3DS `.3ds` | Yes | No | three `TDSLoader`, with texture maps read for their names only |
+| 3DS `.3ds` | Yes | No | three `TDSLoader`, with texture maps read by Planar (name, scale, offset) instead of loaded through the DOM |
 | PNG `.png` | No (image import needs texture materials; see limitations) | Yes (view capture) | `Viewport.capture` through the `ViewCapturePort` |
 
 A zip holding a model and its companion files (MTL, BIN, textures) can be picked instead of loose files.
@@ -44,6 +44,7 @@ A zip holding a model and its companion files (MTL, BIN, textures) can be picked
    - Degenerate triangles (repeated corners or no area) are dropped and counted.
    - Each mesh goes through `insertTriangleMesh`, which welds vertices and merges coplanar triangles.
    - Materials become Planar materials on both sides of each face. An identical existing material is reused.
+     Textured materials get a texture asset and each textured face a fitted placement (see "Textures").
    - The file becomes one group (or component) at the origin of the open context, placed on the active tag and selected.
    - Nodes become nested groups. A set of meshes drawn by several nodes (glTF meshes, COLLADA library nodes) becomes one
      component with an instance per node.
@@ -52,6 +53,73 @@ A zip holding a model and its companion files (MTL, BIN, textures) can be picked
    non-mesh objects, texture names).
 
 If anything fails, the error is shown and the transaction is rolled back, so the model is unchanged.
+
+## Textures
+
+Imports bring in base color (diffuse) textures as texture assets and textured materials, in the same undoable
+transaction as the geometry.
+
+### Where images come from
+
+| Format | Texture read | UVs |
+|---|---|---|
+| glTF / GLB | `pbrMetallicRoughness.baseColorTexture`: an image in a buffer view (GLB or a resolved buffer), a `data:` URI, or a picked file. `KHR_texture_transform` (offset, rotation, scale) is applied to the UVs. | `TEXCOORD_0`, V flipped (glTF's origin is the top-left) |
+| OBJ + MTL | `map_Kd` from the picked files; the `-o` (offset) and `-s` (scale) options are applied, other options are skipped. File names may contain spaces. | `vt` |
+| COLLADA | The diffuse `<texture>`, followed through `newparam` sampler and surface to `<image><init_from>` (1.4 text or 1.5 `<ref>`) | The first `TEXCOORD` input (lowest `set`) of each primitive |
+| 3DS | The material's texture map name (chunk `0xA300`), with the map's U/V scale and offset | Mesh texture vertices |
+
+- **Never fetched.** References resolve only among the picked files (relative to the model's folder, then by file
+  name) or from `data:` URIs. A `file:` URI is looked up by file name among the picked files. Other external URLs
+  are ignored with the usual "Planar never downloads files" warning.
+- **Formats.** Only PNG and JPEG are imported, identified by their header (not the extension). Other images (WebP,
+  KTX2 / Basis, AVIF, DDS, BMP, TGA, GIF, TIFF, …) are skipped. So are images larger than 32 MB or 8,192 pixels on a
+  side (the kernel's texture limits in `src/kernel/model/assets.ts`), since they aren't scaled down. The material
+  keeps its color. The worker lists all skipped images in one counted warning ("Skipped 2 texture images that
+  Planar can't use: …"), and the main thread checks the bytes again before adding assets.
+- **Deduplication.** One asset per distinct image content (SHA-256 of the bytes), within an import and against
+  assets already in the model. Importing the same file twice reuses the images and the identical materials.
+- **Summary.** The import notification counts textures next to faces and materials.
+
+### From UVs to Planar's placement
+
+Planar maps a face side with one planar projection: the point is projected onto the face's texture axes
+(`textureAxes` in `src/kernel/ops/materials.ts`), then moved by an offset, rotated and scaled per axis, and divided
+by the material's tile size. That is an affine map from the face plane to the image **without shear**. Imported
+meshes instead carry arbitrary UVs per vertex. `src/io/mesh/texturePlacement.ts` bridges the two for every textured
+triangle:
+
+1. The triangle's UVs, after the format's UV transform, are image UVs with the origin at the bottom-left.
+2. A least-squares affine fit maps the corners, projected onto the texture axes of the triangle's normal, to those
+   UVs.
+3. The nearest shear-free map is taken: rows of the form k₀·(cos θ, sin θ) and k₁·(−sin θ, cos θ), with θ the
+   dominant eigenvector angle of the rows' outer products. k₀ is kept positive; a negative k₁ is a mirror.
+4. The translation is refitted by least squares. The error is the largest UV residual divided by the UV extent.
+5. The rotation is θ, the scales are 1/k₀ and 1/k₁, and the offset is solved from the translation.
+
+The fit is computed for a 1 m tile. A material's tile size is the median fitted size of one UV unit over its
+triangles (width and height separately), and each placement's scale is divided by it. So a uniformly mapped model
+gets scales near 1, and painting the material elsewhere shows a sensible tile. Front and back get the same
+placement.
+
+**Merging.** "Merge coplanar faces" still merges adjacent coplanar triangles with the same material, but only when
+their placements give the same texture coordinates within a relative tolerance of 10⁻⁶. `samePlacement` in
+`src/kernel/ops/solids/mesh.ts` compares the linear part and translation of the two maps. A planar-mapped quad
+becomes one face, while halves with different mappings stay separate faces, so textures don't smear.
+
+**Limits.**
+
+- A triangle's three corners always have an affine fit, so only shear is lost. Faithful cases include planar,
+  box-projected and per-face mappings, and cylinders or other unwrapped strips whose facets are mapped without
+  shear, since each facet is its own face.
+- Sheared or non-uniformly skewed mappings (spherical poles, hand-tweaked islands, perspective-corrected quads) get
+  the closest shear-free placement. Triangles whose relative error exceeds 2 % are counted in one warning. So are
+  triangles whose UVs collapse to a point or a line; those use the default projection.
+- Textured triangles without texture coordinates use the default projection and are counted in another warning.
+- UV islands shifted by whole tiles look the same but don't merge, because placements are compared without the
+  tile size. Such models import with more faces than strictly needed.
+- Only one UV set per material (glTF `texCoord` other than 0 is read from the first set, with a warning). Wrap
+  modes, filtering, alpha cutoff and every other texture map (normal, roughness, emissive, …) are ignored.
+- The default import limit `maxTextureSize` is not used for scaling; images over the kernel limits are refused.
 
 ## Export
 
@@ -94,7 +162,7 @@ environment's `importLimits`.
 | Zip entries | 2,000 | Refused |
 | Triangles | 250,000 | Refused with the count and the limit |
 | Nodes (groups) | 50,000 | Refused |
-| Texture edge | 4,096 px | Clamped (`clampImageSize`), for when textures are imported |
+| Texture image | 32 MB, 8,192 px per side (kernel limits) | Skipped with a warning; the material keeps its color |
 | PNG export edge | 8,192 px | Clamped |
 
 Non-finite coordinates or transforms, indices out of range, and node graphs that aren't trees are refused.
@@ -102,8 +170,9 @@ Non-finite coordinates or transforms, indices out of range, and node graphs that
 ## Security
 
 - **No network.** Loaders never fetch. glTF buffers are resolved from data URIs, the GLB binary chunk or the picked
-  files before three's loader sees the file, and images are removed. MTL libraries come only from the picked files.
-  Texture maps in 3DS files are read for their names only. COLLADA references outside the document are not followed.
+  files before three's loader sees the file, and images are read by Planar and then removed. MTL libraries and
+  texture images come only from the picked files or `data:` URIs. COLLADA references outside the document are not
+  followed.
   Each external URL is ignored with a warning, and unit tests assert that `fetch` is never called.
 - **Parsing in a worker**, so a malformed or huge file can't freeze the interface.
 - **COLLADA XML** is parsed by a strict parser that refuses entity declarations and expands only the five
@@ -114,10 +183,11 @@ Non-finite coordinates or transforms, indices out of range, and node graphs that
 
 ## Known limitations
 
-- **Textures are not imported.** Texture file names are recorded on imported materials (`textureName`) and listed
-  in warnings, but only colors and opacity are mapped, because this branch has no texture material API. For the same
-  reason PNG/JPEG image import is not offered.
-- **glTF**: the base color factor and alpha are the only material properties mapped. Draco and meshopt compression
+- **Textures** are imported as one planar placement per face (see "Textures" above for what that can't reproduce).
+  Standalone PNG/JPEG image import is not offered yet.
+- **Texture export**: exporters are unchanged and write materials as flat colors; imported textures stay in the
+  model (and in `.planar` files) but aren't written to glTF, OBJ or COLLADA.
+- **glTF**: base color factor, alpha and the base color texture are the only material properties mapped. Draco and meshopt compression
   are refused. Skins, morph targets, animations and sparse accessors are dropped, so skinned meshes import in bind pose.
 - **OBJ**: faces with `usemtl` names missing from the MTL files get no material. Free-form geometry, lines and
   points are ignored.
