@@ -14,25 +14,26 @@ import type { Vec3 } from '../math/vec3';
 import { err, ok, type Result } from '../result';
 import type { Change } from './changes';
 import { ModelDocument, type DocumentOptions } from './ModelDocument';
-import type {
-  CurveData,
-  CurveParams,
-  EdgeAttributes,
-  EdgeData,
-  FaceAttributes,
-  FaceData,
-  GuideAttributes,
-  GuideData,
-  GuideGeometry,
-  InstanceAttributes,
-  InstanceData,
-  Loop,
-  MaterialData,
-  ModelAxes,
-  TagData,
-  VertexData,
+import {
+  DEFAULT_MODEL_AXES,
+  DEFAULT_TAG_COLOR,
+  type CurveData,
+  type CurveParams,
+  type EdgeAttributes,
+  type EdgeData,
+  type FaceAttributes,
+  type FaceData,
+  type GuideAttributes,
+  type GuideData,
+  type GuideGeometry,
+  type InstanceAttributes,
+  type InstanceData,
+  type Loop,
+  type MaterialData,
+  type ModelAxes,
+  type TagData,
+  type VertexData,
 } from './types';
-import { DEFAULT_MODEL_AXES } from './types';
 import { validateDocument } from './validate';
 
 export const SNAPSHOT_FORMAT = 'planar-document';
@@ -146,7 +147,12 @@ export function createSnapshot(doc: ModelDocument): DocumentSnapshot {
       color: { r: m.color.r, g: m.color.g, b: m.color.b },
       opacity: m.opacity,
     })),
-    tags: [...doc.tags()].sort(byId).map((t) => ({ id: t.id, name: t.name, visible: t.visible })),
+    tags: [...doc.tags()].sort(byId).map((t) => ({
+      id: t.id,
+      name: t.name,
+      visible: t.visible,
+      color: { r: t.color.r, g: t.color.g, b: t.color.b },
+    })),
     definitions: [...doc.definitions()].sort(byId).map((definition) => {
       const store = definition.store;
       return {
@@ -450,10 +456,17 @@ export function restoreSnapshot(input: unknown, options: DocumentOptions = {}): 
   const tags: TagData[] = r.list(root.tags, '$.tags').map((entry, i) => {
     const p = `$.tags[${String(i)}]`;
     const t = r.record(entry, p);
+    // Tag colors were added after the first file version; older files get the default color.
+    const color = t.color === undefined ? DEFAULT_TAG_COLOR : r.record(t.color, `${p}.color`);
     return {
       id: r.id<TagId>(t.id, `${p}.id`),
       name: r.string(t.name, `${p}.name`),
       visible: r.boolean(t.visible, `${p}.visible`),
+      color: {
+        r: r.number(color.r, `${p}.color.r`),
+        g: r.number(color.g, `${p}.color.g`),
+        b: r.number(color.b, `${p}.color.b`),
+      },
     };
   });
   const definitions = r

@@ -34,6 +34,10 @@ export const MENUS: readonly MenuDefinition[] = [
       null,
       'edit.openGroup',
       'edit.closeGroup',
+      null,
+      'edit.makeUnique',
+      'edit.lock',
+      'edit.unlock',
     ],
   },
   {
@@ -91,6 +95,7 @@ export const MENUS: readonly MenuDefinition[] = [
       'tool.zoom',
     ],
   },
+  { label: 'Window', items: ['window.entityInfo', 'window.outliner', 'window.components', 'window.tags'] },
   { label: 'Help', items: ['help.commandPalette'] },
 ];
 

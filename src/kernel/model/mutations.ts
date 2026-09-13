@@ -524,7 +524,7 @@ export function removeTag(doc: ModelDocument, id: TagId): void {
 export function setTagAttributes(doc: ModelDocument, id: TagId, patch: Partial<TagAttributes>): void {
   const tag = doc.tag(id);
   if (!tag) throw new KernelError('missing-entity', `Tag ${String(id)} does not exist`);
-  const from: TagAttributes = { name: tag.name, visible: tag.visible };
+  const from: TagAttributes = { name: tag.name, visible: tag.visible, color: tag.color };
   const to: TagAttributes = { ...from, ...patch };
   if (shallowEqual(from, to)) return;
   doc.apply({ kind: 'tag.attributes', id, from, to });

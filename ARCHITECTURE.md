@@ -147,6 +147,21 @@ Folders are created when they get their first real module. Placeholder files are
   every tool work in the active context's coordinates; tools convert world points with the inverse of the context
   transform.
 
+## Tags, locks and panels
+
+- **Tag visibility.** `kernel/model/visibility.ts` (`isTagVisible`) is the single rule for hidden tags. The renderer,
+  the picker and ray traversal, box selection, Select All and inference all call it, so an entity on a hidden tag is
+  never drawn, picked, selected or snapped to. An instance on a hidden tag hides its whole subtree (the open group on
+  the edit path stays drawn). Hiding a tag deselects what is on it.
+- **Active tag.** A session setting (`EditorSession.activeTagId`), not model data and not undoable. New groups,
+  components and placed components go on it.
+- **Locks.** `app/selection/locking.ts` (`refuseLocked`, `LOCKED_MESSAGE`) is the shared guard. Editor methods
+  (delete, explode, open) and tools (Move, Eraser) call it before editing, and it reports the refusal as an error
+  notification. Attribute edits (for example unlocking in Entity Info) stay allowed.
+- **Panels.** Panel view-models are pure app-layer functions (`buildOutlinerTree`, `listComponentDefinitions`,
+  `listTags`, `describeSelection`). Panels read them from the model revision and change the model only through
+  `Editor` methods, each one undoable transaction. Which panels are shown is editor state exposed in the store.
+
 ## State management
 
 - **Kernel.** The kernel is a mutable, transaction-guarded store. It is not kept in React state.

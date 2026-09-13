@@ -239,11 +239,11 @@ describe('ModelDocument transactions and history', () => {
     doc.subscribe(listener);
     const { material, tag } = doc.transact('Library', () => ({
       material: addMaterial(doc, { name: 'Glass', color: { r: 0.8, g: 0.9, b: 1 }, opacity: 0.4 }),
-      tag: addTag(doc, { name: 'Walls', visible: true }),
+      tag: addTag(doc, { name: 'Walls', visible: true, color: { r: 1, g: 0, b: 0 } }),
     }));
     doc.transact('Edit', () => {
       setMaterialAttributes(doc, material, { opacity: 0.5 });
-      setTagAttributes(doc, tag, { visible: false });
+      setTagAttributes(doc, tag, { visible: false, color: { r: 1, g: 0, b: 0 } });
     });
     expect(doc.material(material)?.opacity).toBe(0.5);
     expect(doc.tag(tag)?.visible).toBe(false);

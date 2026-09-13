@@ -1,5 +1,7 @@
-import type { EdgeId, FaceId, InstanceId, VertexId } from '../../kernel/ids';
+import type { EdgeId, FaceId, InstanceId, TagId, VertexId } from '../../kernel/ids';
 import type { EntityStore } from '../../kernel/model/EntityStore';
+import type { ModelDocument } from '../../kernel/model/ModelDocument';
+import { isTagVisible } from '../../kernel/model/visibility';
 import type { EntityRef } from './Selection';
 
 const faceRef = (id: number): EntityRef => ({ kind: 'face', id });
@@ -22,15 +24,34 @@ export function refExists(store: EntityStore, ref: EntityRef): boolean {
   }
 }
 
-/** Everything visible in a context, as used by Select All. */
-export function allSelectableRefs(store: EntityStore): EntityRef[] {
+/** Everything visible in a context, as used by Select All. With `doc`, entities on hidden tags are left out. */
+export function allSelectableRefs(store: EntityStore, doc?: ModelDocument): EntityRef[] {
+  const shown = (tagId: TagId | null): boolean => !doc || isTagVisible(doc, tagId);
   const refs: EntityRef[] = [];
   for (const instance of store.instances()) {
-    if (!instance.attributes.hidden) refs.push({ kind: 'instance', id: instance.id });
+    if (!instance.attributes.hidden && shown(instance.attributes.tagId)) {
+      refs.push({ kind: 'instance', id: instance.id });
+    }
   }
-  for (const face of store.faces()) if (!face.attributes.hidden) refs.push(faceRef(face.id));
-  for (const edge of store.edges()) if (isEdgeSelectable(store, edge.id)) refs.push(edgeRef(edge.id));
+  for (const face of store.faces()) {
+    if (!face.attributes.hidden && shown(face.attributes.tagId)) refs.push(faceRef(face.id));
+  }
+  for (const edge of store.edges()) {
+    if (isEdgeSelectable(store, edge.id) && shown(edge.attributes.tagId)) refs.push(edgeRef(edge.id));
+  }
   return refs;
+}
+
+/** Whether a selected entity is on a visible tag (or untagged). Missing entities count as visible. */
+export function isRefOnVisibleTag(doc: ModelDocument, store: EntityStore, ref: EntityRef): boolean {
+  switch (ref.kind) {
+    case 'face':
+      return isTagVisible(doc, store.face(ref.id as FaceId)?.attributes.tagId ?? null);
+    case 'edge':
+      return isTagVisible(doc, store.edge(ref.id as EdgeId)?.attributes.tagId ?? null);
+    case 'instance':
+      return isTagVisible(doc, store.instance(ref.id as InstanceId)?.attributes.tagId ?? null);
+  }
 }
 
 /** A face together with its boundary edges (double-click on a face). */

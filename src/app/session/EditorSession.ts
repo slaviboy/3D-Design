@@ -1,12 +1,13 @@
-import type { DefinitionId, InstanceId } from '../../kernel/ids';
+import type { DefinitionId, InstanceId, TagId } from '../../kernel/ids';
 import { IDENTITY, multiply, type Mat4 } from '../../kernel/math/mat4';
 import { ModelDocument, type DocumentEvent } from '../../kernel/model/ModelDocument';
 import { DEFAULT_CAMERA, type CameraState } from '../camera/camera';
-import { refExists } from '../selection/queries';
+import { isRefOnVisibleTag, refExists } from '../selection/queries';
 import { Selection } from '../selection/Selection';
 import type { ToolPreview } from '../tools/Tool';
 
-export type SessionEventKind = 'document' | 'model' | 'selection' | 'camera' | 'file' | 'context' | 'preview';
+export type SessionEventKind =
+  'document' | 'model' | 'selection' | 'camera' | 'file' | 'context' | 'preview' | 'active-tag';
 
 export interface SessionEvent {
   readonly kind: SessionEventKind;
@@ -35,6 +36,7 @@ export class EditorSession {
   #editPath: readonly InstanceId[] = [];
   #selection: Selection = Selection.EMPTY;
   #preview: ToolPreview | null = null;
+  #activeTagId: TagId | null = null;
   #camera: CameraState;
   #revision = 0;
   #savedRevision = 0;
@@ -147,6 +149,18 @@ export class EditorSession {
     this.#emit({ kind: 'selection' });
   }
 
+  /** The tag new groups and components are put on. Session state, not part of the model or its history. */
+  get activeTagId(): TagId | null {
+    return this.#activeTagId;
+  }
+
+  setActiveTag(tagId: TagId | null): void {
+    if (tagId !== null && !this.#doc.tag(tagId)) throw new Error('That tag no longer exists');
+    if (tagId === this.#activeTagId) return;
+    this.#activeTagId = tagId;
+    this.#emit({ kind: 'active-tag' });
+  }
+
   setCamera(camera: CameraState): void {
     if (camera === this.#camera) return;
     this.#camera = camera;
@@ -159,6 +173,7 @@ export class EditorSession {
     this.#attach(doc);
     this.#editPath = [];
     this.#selection = Selection.EMPTY;
+    this.#activeTagId = null;
     this.#documentName = options.name;
     this.#fileHandle = options.fileHandle ?? null;
     this.#revision++;
@@ -183,12 +198,18 @@ export class EditorSession {
   #attach(doc: ModelDocument): void {
     this.#detach = doc.subscribe((modelEvent) => {
       this.#revision++;
-      this.#pruneAfterModelChange();
+      this.#pruneAfterModelChange(modelEvent);
       this.#emit({ kind: 'model', modelEvent });
     });
   }
 
-  #pruneAfterModelChange(): void {
+  #pruneAfterModelChange(modelEvent: DocumentEvent): void {
+    if (this.#activeTagId !== null && !this.#doc.tag(this.#activeTagId)) {
+      this.#activeTagId = null;
+      this.#emit({ kind: 'active-tag' });
+    }
+    // Hiding a tag deselects what is on it, since hidden entities can't be picked again.
+    const tagsChanged = modelEvent.changes.some((change) => change.kind.startsWith('tag.'));
     const validPath: InstanceId[] = [];
     let context = this.#doc.rootDefinitionId;
     for (const instanceId of this.#editPath) {
@@ -202,7 +223,9 @@ export class EditorSession {
       this.#emit({ kind: 'context' });
     }
     const store = this.#doc.store(this.activeContext);
-    const selection = this.#selection.filter((ref) => refExists(store, ref));
+    const selection = this.#selection.filter(
+      (ref) => refExists(store, ref) && (!tagsChanged || isRefOnVisibleTag(this.#doc, store, ref)),
+    );
     if (selection !== this.#selection) {
       this.#selection = selection;
       this.#emit({ kind: 'selection' });

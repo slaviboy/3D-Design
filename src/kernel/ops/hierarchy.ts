@@ -264,6 +264,29 @@ export function deleteInstances(
   });
 }
 
+/**
+ * Deletes definitions that have no instances anywhere (the root excepted), with their contents. Emptying one can
+ * leave definitions nested inside it unused, so this repeats until nothing more can be removed. Returns the deleted
+ * ids in deletion order.
+ */
+export function purgeUnusedDefinitions(doc: ModelDocument): DefinitionId[] {
+  return doc.transact('Purge Unused Components', () => {
+    const removed: DefinitionId[] = [];
+    for (;;) {
+      const unused = [...doc.definitions()]
+        .map((definition) => definition.id)
+        .filter((id) => id !== doc.rootDefinitionId && doc.instancesOf(id).length === 0)
+        .sort(byId);
+      if (unused.length === 0) return removed;
+      for (const id of unused) {
+        clearDefinition(doc, id);
+        removeDefinition(doc, id);
+        removed.push(id);
+      }
+    }
+  });
+}
+
 /** Removes everything inside a definition; nested groups that end up unused are deleted as well. */
 function clearDefinition(doc: ModelDocument, definitionId: DefinitionId): void {
   const store = doc.store(definitionId);

@@ -3,6 +3,7 @@ import { eraseEdges } from '../../kernel/ops/erase';
 import { deleteInstances } from '../../kernel/ops/hierarchy';
 import { setEdgeAttributes, setInstanceAttributes } from '../../kernel/model/mutations';
 import type { Editor } from '../Editor';
+import { refuseLocked } from '../selection/locking';
 import type { EntityRef } from '../selection/Selection';
 import { ERASER_TOOL_ID, PRIMARY_BUTTON, type PointerInput, type Tool, type ToolPreview } from './Tool';
 import { toggleModifier, toggleModifierName } from './toolSupport';
@@ -104,6 +105,7 @@ export class EraserTool implements Tool {
   }
 
   #apply(editor: Editor, refs: readonly EntityRef[]): void {
+    if (refuseLocked(editor, refs)) return;
     const { session } = editor;
     const doc = session.doc;
     const context = session.activeContext;

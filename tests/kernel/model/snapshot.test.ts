@@ -38,7 +38,7 @@ function richDocument(): ModelDocument {
   const component = makeComponent(doc, doc.rootDefinitionId, { instances: [group.instance] }, 'Crate');
   doc.transact('Decorate', () => {
     const material = addMaterial(doc, { name: 'Oak', color: { r: 0.5, g: 0.35, b: 0.2 }, opacity: 1 });
-    const tag = addTag(doc, { name: 'Furniture', visible: true });
+    const tag = addTag(doc, { name: 'Furniture', visible: true, color: { r: 1, g: 0, b: 0 } });
     const firstFace = [...doc.rootStore.faces()][0];
     if (firstFace) setFaceAttributes(doc, doc.rootDefinitionId, firstFace.id, { frontMaterialId: material });
     setInstanceAttributes(doc, doc.rootDefinitionId, component.instance, { tagId: tag, name: 'Crate A' });
@@ -122,12 +122,12 @@ describe('document snapshots', () => {
     });
 
     const collision = mutableSnapshot(doc) as unknown as {
-      tags: { id: number; name: string; visible: boolean }[];
+      tags: { id: number; name: string; visible: boolean; color: { r: number; g: number; b: number } }[];
       definitions: { guides: { id: number }[] }[];
     };
     const collidingGuide = collision.definitions[0]?.guides[0];
     if (!collidingGuide) throw new Error('expected a guide');
-    collision.tags.push({ id: collidingGuide.id, name: 'Clash', visible: true });
+    collision.tags.push({ id: collidingGuide.id, name: 'Clash', visible: true, color: { r: 1, g: 0, b: 0 } });
     expect(restoreSnapshot(collision)).toMatchObject({
       ok: false,
       error: expect.stringContaining('more than once'),

@@ -3,6 +3,7 @@ import type { DefinitionId, EdgeId, FaceId, InstanceId } from '../kernel/ids';
 import { changeContext } from '../kernel/model/changes';
 import type { EntityStore } from '../kernel/model/EntityStore';
 import type { ModelDocument } from '../kernel/model/ModelDocument';
+import { isTagVisible } from '../kernel/model/visibility';
 import { triangulateFace } from '../kernel/ops/triangulate';
 import {
   FADED_OPACITY,
@@ -31,13 +32,14 @@ const PREVIEW_RENDER_ORDER = 10;
 
 /** Writes a face's triangles (positions and flat normals) to the output arrays. Degenerate faces are skipped. */
 function appendFaceTriangles(
+  doc: ModelDocument,
   store: EntityStore,
   faceId: FaceId,
   positions: number[],
   normals: number[],
 ): void {
   const face = store.getFace(faceId);
-  if (face.attributes.hidden || !face.plane) return;
+  if (face.attributes.hidden || !face.plane || !isTagVisible(doc, face.attributes.tagId)) return;
   const { normal } = face.plane;
   const { vertices, indices } = triangulateFace(store, faceId);
   for (const index of indices) {
@@ -49,17 +51,24 @@ function appendFaceTriangles(
   }
 }
 
-function appendEdge(store: EntityStore, edgeId: EdgeId, positions: number[], includeSoft = false): void {
+function appendEdge(
+  doc: ModelDocument,
+  store: EntityStore,
+  edgeId: EdgeId,
+  positions: number[],
+  includeSoft = false,
+): void {
   const edge = store.getEdge(edgeId);
   if (edge.attributes.hidden || (edge.attributes.soft && !includeSoft)) return;
+  if (!isTagVisible(doc, edge.attributes.tagId)) return;
   const a = store.position(edge.v0);
   const b = store.position(edge.v1);
   positions.push(a.x, a.y, a.z, b.x, b.y, b.z);
 }
 
-function appendGuides(store: EntityStore, positions: number[]): void {
+function appendGuides(doc: ModelDocument, store: EntityStore, positions: number[]): void {
   for (const guide of store.guides()) {
-    if (guide.attributes.hidden) continue;
+    if (guide.attributes.hidden || !isTagVisible(doc, guide.attributes.tagId)) continue;
     const { point } = guide.geometry;
     if (guide.geometry.kind === 'line') {
       const { direction } = guide.geometry;
@@ -180,6 +189,7 @@ export class ModelRenderer {
     depthWrite: false,
   });
   readonly #selectionEdgeMaterial = new THREE.LineBasicMaterial({ color: VIEW_COLORS.selection });
+  readonly #lockedEdgeMaterial = new THREE.LineBasicMaterial({ color: VIEW_COLORS.locked });
   readonly #hoverFaceMaterial = new THREE.MeshBasicMaterial({
     color: VIEW_COLORS.hover,
     transparent: true,
@@ -216,6 +226,11 @@ export class ModelRenderer {
         if (modelChange.kind.startsWith('instance.') || modelChange.kind.startsWith('definition.')) {
           this.#structureDirty = true;
         }
+        if (modelChange.kind.startsWith('tag.')) {
+          // Tag visibility can affect any definition's geometry and which instances are drawn.
+          for (const definitionId of this.#geometries.keys()) this.#dirtyDefinitions.add(definitionId);
+          this.#structureDirty = true;
+        }
       }
       this.#selectionDirty = true;
       this.#previewDirty = true;
@@ -237,7 +252,7 @@ export class ModelRenderer {
       const geometry = this.#geometries.get(definitionId);
       if (!geometry) continue;
       if (doc.definition(definitionId)) {
-        this.#fillGeometry(doc.store(definitionId), geometry);
+        this.#fillGeometry(doc, doc.store(definitionId), geometry);
       } else {
         this.#disposeGeometry(geometry);
         this.#geometries.delete(definitionId);
@@ -296,6 +311,7 @@ export class ModelRenderer {
       this.#guideMaterial,
       this.#selectionFaceMaterial,
       this.#selectionEdgeMaterial,
+      this.#lockedEdgeMaterial,
       this.#hoverFaceMaterial,
       this.#hoverEdgeMaterial,
       ...this.#previewMaterials.values(),
@@ -311,20 +327,20 @@ export class ModelRenderer {
         edges: new THREE.BufferGeometry(),
         guides: new THREE.BufferGeometry(),
       };
-      this.#fillGeometry(doc.store(definitionId), geometry);
+      this.#fillGeometry(doc, doc.store(definitionId), geometry);
       this.#geometries.set(definitionId, geometry);
     }
     return geometry;
   }
 
-  #fillGeometry(store: EntityStore, geometry: DefinitionGeometry): void {
+  #fillGeometry(doc: ModelDocument, store: EntityStore, geometry: DefinitionGeometry): void {
     const facePositions: number[] = [];
     const faceNormals: number[] = [];
-    for (const face of store.faces()) appendFaceTriangles(store, face.id, facePositions, faceNormals);
+    for (const face of store.faces()) appendFaceTriangles(doc, store, face.id, facePositions, faceNormals);
     const edgePositions: number[] = [];
-    for (const edge of store.edges()) appendEdge(store, edge.id, edgePositions);
+    for (const edge of store.edges()) appendEdge(doc, store, edge.id, edgePositions);
     const guidePositions: number[] = [];
-    appendGuides(store, guidePositions);
+    appendGuides(doc, store, guidePositions);
     setPositions(geometry.faces, facePositions, faceNormals);
     setPositions(geometry.edges, edgePositions);
     setPositions(geometry.guides, guidePositions);
@@ -398,10 +414,12 @@ export class ModelRenderer {
     const nested = new Set(ancestors).add(definitionId);
     for (const instance of doc.store(definitionId).instances()) {
       if (instance.attributes.hidden) continue;
+      const onPath = pathDepth !== null && editPath[pathDepth] === instance.id;
+      // A hidden tag hides the instance and everything inside it, except an open group being edited.
+      if (!onPath && !isTagVisible(doc, instance.attributes.tagId)) continue;
       let childFaded = faded;
       let childPath: number | null = null;
       if (pathDepth !== null) {
-        const onPath = editPath[pathDepth] === instance.id;
         childFaded = !onPath;
         childPath = onPath && pathDepth + 1 < editPath.length ? pathDepth + 1 : null;
       }
@@ -417,7 +435,14 @@ export class ModelRenderer {
     disposeMeshes(this.overlay);
     const refs = this.#source.selection.refs();
     if (refs.length === 0) return;
-    this.#drawHighlight(doc, this.overlay, refs, this.#selectionFaceMaterial, this.#selectionEdgeMaterial);
+    this.#drawHighlight(
+      doc,
+      this.overlay,
+      refs,
+      this.#selectionFaceMaterial,
+      this.#selectionEdgeMaterial,
+      this.#lockedEdgeMaterial,
+    );
   }
 
   #rebuildPreview(doc: ModelDocument): void {
@@ -471,6 +496,8 @@ export class ModelRenderer {
     refs: readonly ViewEntityRef[],
     faceMaterial: THREE.Material,
     edgeMaterial: THREE.LineBasicMaterial,
+    /** Box outline of locked groups and components. */
+    lockedEdgeMaterial: THREE.LineBasicMaterial = edgeMaterial,
   ): void {
     const context = this.#source.activeContext;
     if (!doc.definition(context)) return;
@@ -483,13 +510,15 @@ export class ModelRenderer {
     const edgePositions: number[] = [];
     for (const ref of refs) {
       if (ref.kind === 'face' && store.face(ref.id as FaceId)) {
-        appendFaceTriangles(store, ref.id as FaceId, facePositions, faceNormals);
+        appendFaceTriangles(doc, store, ref.id as FaceId, facePositions, faceNormals);
       } else if (ref.kind === 'edge' && store.edge(ref.id as EdgeId)) {
-        appendEdge(store, ref.id as EdgeId, edgePositions, true);
+        appendEdge(doc, store, ref.id as EdgeId, edgePositions, true);
       } else if (ref.kind === 'instance') {
         const instance = store.instance(ref.id as InstanceId);
-        if (instance)
-          target.add(this.#instanceBox(doc, instance.definitionId, instance.transform, edgeMaterial));
+        if (instance) {
+          const material = instance.attributes.locked ? lockedEdgeMaterial : edgeMaterial;
+          target.add(this.#instanceBox(doc, instance.definitionId, instance.transform, material));
+        }
       }
     }
     if (facePositions.length > 0) {

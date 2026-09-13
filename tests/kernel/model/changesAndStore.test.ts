@@ -171,13 +171,16 @@ const SAMPLE_CHANGES: Change[] = [
     from: { name: 'Oak', color: { r: 1, g: 1, b: 1 }, opacity: 1 },
     to: { name: 'Oak', color: { r: 1, g: 1, b: 1 }, opacity: 0.5 },
   },
-  { kind: 'tag.add', data: { id: 10 as TagId, name: 'Walls', visible: true } },
-  { kind: 'tag.remove', data: { id: 10 as TagId, name: 'Walls', visible: true } },
+  { kind: 'tag.add', data: { id: 10 as TagId, name: 'Walls', visible: true, color: { r: 1, g: 0, b: 0 } } },
+  {
+    kind: 'tag.remove',
+    data: { id: 10 as TagId, name: 'Walls', visible: true, color: { r: 1, g: 0, b: 0 } },
+  },
   {
     kind: 'tag.attributes',
     id: 10 as TagId,
-    from: { name: 'Walls', visible: true },
-    to: { name: 'Walls', visible: false },
+    from: { name: 'Walls', visible: true, color: { r: 1, g: 0, b: 0 } },
+    to: { name: 'Walls', visible: false, color: { r: 1, g: 0, b: 0 } },
   },
 ];
 
@@ -200,7 +203,10 @@ describe('changes', () => {
   it('reports the definition a change belongs to', () => {
     expect(changeContext(SAMPLE_CHANGES[0] as Change)).toBe(ROOT);
     expect(
-      changeContext({ kind: 'tag.add', data: { id: 10 as TagId, name: 'x', visible: true } }),
+      changeContext({
+        kind: 'tag.add',
+        data: { id: 10 as TagId, name: 'x', visible: true, color: { r: 1, g: 0, b: 0 } },
+      }),
     ).toBeNull();
   });
 });
@@ -503,14 +509,25 @@ describe('entity store and document preconditions', () => {
     [
       'a duplicate tag',
       [
-        { kind: 'tag.add', data: { id: 10 as TagId, name: 'Walls', visible: true } },
-        { kind: 'tag.add', data: { id: 10 as TagId, name: 'Walls', visible: true } },
+        {
+          kind: 'tag.add',
+          data: { id: 10 as TagId, name: 'Walls', visible: true, color: { r: 1, g: 0, b: 0 } },
+        },
+        {
+          kind: 'tag.add',
+          data: { id: 10 as TagId, name: 'Walls', visible: true, color: { r: 1, g: 0, b: 0 } },
+        },
       ],
       'duplicate-entity',
     ],
     [
       'removing a missing tag',
-      [{ kind: 'tag.remove', data: { id: 10 as TagId, name: 'Walls', visible: true } }],
+      [
+        {
+          kind: 'tag.remove',
+          data: { id: 10 as TagId, name: 'Walls', visible: true, color: { r: 1, g: 0, b: 0 } },
+        },
+      ],
       'missing-entity',
     ],
     [
@@ -519,8 +536,8 @@ describe('entity store and document preconditions', () => {
         {
           kind: 'tag.attributes',
           id: 10 as TagId,
-          from: { name: 'a', visible: true },
-          to: { name: 'b', visible: true },
+          from: { name: 'a', visible: true, color: { r: 1, g: 0, b: 0 } },
+          to: { name: 'b', visible: true, color: { r: 1, g: 0, b: 0 } },
         },
       ],
       'missing-entity',

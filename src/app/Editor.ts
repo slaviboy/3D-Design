@@ -1,7 +1,24 @@
-import type { EdgeId, FaceId, InstanceId } from '../kernel/ids';
+import type { DefinitionId, EdgeId, FaceId, InstanceId, TagId } from '../kernel/ids';
 import { ModelDocument } from '../kernel/model/ModelDocument';
+import {
+  addTag as addTagMutation,
+  setDefinitionAttributes,
+  setEdgeAttributes,
+  setFaceAttributes,
+  setInstanceAttributes,
+  setTagAttributes,
+} from '../kernel/model/mutations';
+import type { EdgeAttributes, InstanceAttributes, Rgb } from '../kernel/model/types';
 import { deleteFaces, eraseEdges } from '../kernel/ops/erase';
-import { deleteInstances, explodeInstance, makeComponent, makeGroup } from '../kernel/ops/hierarchy';
+import {
+  deleteInstances,
+  explodeInstance,
+  makeComponent,
+  makeGroup,
+  makeUnique,
+  purgeUnusedDefinitions,
+} from '../kernel/ops/hierarchy';
+import { deleteTag as deleteTagOp, purgeUnusedTags as purgeUnusedTagsOp } from '../kernel/ops/tags';
 import { transformEntities } from '../kernel/ops/transform';
 import { vec3 } from '../kernel/math/vec3';
 import { METRIC_UNIT_SETTINGS, type UnitSettings } from '../kernel/units/units';
@@ -24,7 +41,12 @@ import {
 } from './camera/camera';
 import { CommandRegistry } from './commands/CommandRegistry';
 import { registerDefaultCommands } from './commands/defaultCommands';
+import { listComponentDefinitions, type ComponentRow } from './components/componentList';
 import { definitionBounds } from './geometry/bounds';
+import { PANEL_IDS, type PanelId } from './panels/panels';
+import { hasLockedInstance, isInstanceLocked, LOCKED_MESSAGE } from './selection/locking';
+import { nextTagColor, uniqueTagName } from './tags/tags';
+import { ComponentPlacementTool, PLACE_COMPONENT_TOOL_ID } from './tools/ComponentPlacementTool';
 import { pick, type PickHit, type PickRequest } from './picking/picker';
 import { createSampleModel, SAMPLE_MODEL_NAME } from './sample/sampleModel';
 import { boxSelect, type BoxSelectMode, type ScreenRect } from './selection/boxSelect';
@@ -74,7 +96,39 @@ export type UiRequest = 'command-palette';
 export type EditorEvent =
   | { readonly kind: 'notifications' }
   | { readonly kind: 'measurement' }
-  | { readonly kind: 'ui-request'; readonly request: UiRequest };
+  | { readonly kind: 'ui-request'; readonly request: UiRequest }
+  | { readonly kind: 'panels' };
+
+/** Attributes Entity Info and commands can change on the selection. Each applies to the kinds that have it. */
+export interface SelectionAttributePatch {
+  /** Instances, faces and edges. */
+  readonly tagId?: TagId | null;
+  /** Instances, faces and edges. */
+  readonly hidden?: boolean;
+  /** Instances. */
+  readonly locked?: boolean;
+  /** Edges. */
+  readonly soft?: boolean;
+  /** Edges. */
+  readonly smooth?: boolean;
+}
+
+export type InstanceAttributePatch = Partial<
+  Pick<InstanceAttributes, 'name' | 'tagId' | 'hidden' | 'locked'>
+>;
+
+/** History label for an attribute change. */
+function attributeLabel(patch: SelectionAttributePatch & { readonly name?: string }): string {
+  if (patch.name !== undefined) return 'Rename';
+  if (patch.tagId !== undefined) return 'Assign Tag';
+  if (patch.locked !== undefined) return patch.locked ? 'Lock' : 'Unlock';
+  if (patch.hidden !== undefined) return patch.hidden ? 'Hide' : 'Unhide';
+  if (patch.soft !== undefined) return patch.soft ? 'Soften' : 'Unsoften';
+  if (patch.smooth !== undefined) return patch.smooth ? 'Smooth' : 'Unsmooth';
+  return 'Change Attributes';
+}
+
+const countOf = (count: number, noun: string): string => `${String(count)} ${noun}${count === 1 ? '' : 's'}`;
 
 export interface EditorEnvironment {
   readonly platform: Platform;
@@ -113,6 +167,8 @@ export class Editor {
   #notifications: readonly EditorNotification[] = [];
   #nextNotificationId = 1;
   #measurementText = '';
+  readonly #placementTool = new ComponentPlacementTool();
+  #openPanels: readonly PanelId[] = PANEL_IDS;
 
   constructor(environment: EditorEnvironment) {
     this.#environment = environment;
@@ -145,6 +201,7 @@ export class Editor {
         new RotatedRectangleTool(),
         new ProtractorTool(),
         new AxesTool(),
+        this.#placementTool,
       ],
       SELECT_TOOL_ID,
     );
@@ -362,7 +419,9 @@ export class Editor {
 
   selectAll(): void {
     const { session } = this;
-    session.setSelection(Selection.of(allSelectableRefs(session.doc.store(session.activeContext))));
+    session.setSelection(
+      Selection.of(allSelectableRefs(session.doc.store(session.activeContext), session.doc)),
+    );
   }
 
   clearSelection(): void {
@@ -376,6 +435,10 @@ export class Editor {
     if (selection.isEmpty) return;
     const doc = session.doc;
     const context = session.activeContext;
+    if (hasLockedInstance(doc, context, selection.refs())) {
+      this.notify('error', LOCKED_MESSAGE);
+      return;
+    }
     doc.transact('Delete', () => {
       deleteInstances(doc, context, selection.ids('instance') as InstanceId[]);
       deleteFaces(doc, context, selection.ids('face') as FaceId[]);
@@ -410,10 +473,18 @@ export class Editor {
     if (selection.isEmpty) return;
     this.tools.cancel();
     const make = kind === 'group' ? makeGroup : makeComponent;
-    const created = make(session.doc, session.activeContext, {
-      faces: selection.ids('face') as FaceId[],
-      edges: selection.ids('edge') as EdgeId[],
-      instances: selection.ids('instance') as InstanceId[],
+    const doc = session.doc;
+    const context = session.activeContext;
+    const tagId = session.activeTagId;
+    const created = doc.transact(kind === 'group' ? 'Make Group' : 'Make Component', () => {
+      const made = make(doc, context, {
+        faces: selection.ids('face') as FaceId[],
+        edges: selection.ids('edge') as EdgeId[],
+        instances: selection.ids('instance') as InstanceId[],
+      });
+      // New groups and components go on the active tag.
+      if (tagId !== null) setInstanceAttributes(doc, context, made.instance, { tagId });
+      return made;
     });
     session.setSelection(Selection.of([{ kind: 'instance', id: created.instance }]));
   }
@@ -423,6 +494,10 @@ export class Editor {
     const { session } = this;
     const instances = session.selection.ids('instance') as InstanceId[];
     if (instances.length === 0) return;
+    if (hasLockedInstance(session.doc, session.activeContext, session.selection.refs())) {
+      this.notify('error', LOCKED_MESSAGE);
+      return;
+    }
     this.tools.cancel();
     const doc = session.doc;
     doc.transact('Explode', () => {
@@ -433,6 +508,10 @@ export class Editor {
 
   /** Opens a group or component for editing; the rest of the model fades. */
   openGroup(instanceId: InstanceId): void {
+    if (isInstanceLocked(this.session.doc, this.session.activeContext, instanceId)) {
+      this.notify('error', LOCKED_MESSAGE);
+      return;
+    }
     this.tools.cancel();
     this.session.enterInstance(instanceId);
   }
@@ -441,6 +520,291 @@ export class Editor {
   closeGroup(): boolean {
     this.tools.cancel();
     return this.session.exitContext();
+  }
+
+  /** The selected instance when exactly one component instance (not a group) is selected. */
+  selectedComponentInstance(): InstanceId | null {
+    const { session } = this;
+    const [id] = session.selection.ids('instance');
+    if (id === undefined || session.selection.size !== 1) return null;
+    const instance = session.doc.store(session.activeContext).instance(id as InstanceId);
+    return instance && !session.doc.getDefinition(instance.definitionId).attributes.isGroup
+      ? instance.id
+      : null;
+  }
+
+  /** Gives the selected component instance its own copy of its definition. */
+  makeUniqueSelection(): void {
+    const id = this.selectedComponentInstance();
+    if (id === null) return;
+    this.tools.cancel();
+    makeUnique(this.session.doc, this.session.activeContext, id);
+  }
+
+  // ---------------------------------------------------------------------------------------------- attributes
+
+  /** Changes attributes of the selected entities in one undoable step. Attributes that don't apply are skipped. */
+  updateSelectionAttributes(patch: SelectionAttributePatch): void {
+    const { session } = this;
+    const selection = session.selection;
+    if (selection.isEmpty) return;
+    const doc = session.doc;
+    const context = session.activeContext;
+    if (patch.tagId !== undefined && patch.tagId !== null && !doc.tag(patch.tagId)) {
+      this.notify('error', 'That tag no longer exists');
+      return;
+    }
+    const common = {
+      ...(patch.tagId !== undefined ? { tagId: patch.tagId } : {}),
+      ...(patch.hidden !== undefined ? { hidden: patch.hidden } : {}),
+    };
+    const instancePatch: Partial<InstanceAttributes> = {
+      ...common,
+      ...(patch.locked !== undefined ? { locked: patch.locked } : {}),
+    };
+    const edgePatch: Partial<EdgeAttributes> = {
+      ...common,
+      ...(patch.soft !== undefined ? { soft: patch.soft } : {}),
+      ...(patch.smooth !== undefined ? { smooth: patch.smooth } : {}),
+    };
+    doc.transact(attributeLabel(patch), () => {
+      for (const id of selection.ids('instance')) {
+        setInstanceAttributes(doc, context, id as InstanceId, instancePatch);
+      }
+      for (const id of selection.ids('face')) setFaceAttributes(doc, context, id as FaceId, common);
+      for (const id of selection.ids('edge')) setEdgeAttributes(doc, context, id as EdgeId, edgePatch);
+    });
+  }
+
+  /** The definition reached by opening `path` from the model root, or null when the path is no longer valid. */
+  contextOfPath(path: readonly InstanceId[]): DefinitionId | null {
+    const doc = this.session.doc;
+    let context = doc.rootDefinitionId;
+    for (const id of path) {
+      const instance = doc.store(context).instance(id);
+      if (!instance) return null;
+      context = instance.definitionId;
+    }
+    return context;
+  }
+
+  /** Changes a group or component anywhere in the hierarchy (the Outliner's rename, eye and lock). */
+  updateInstanceAt(
+    parentPath: readonly InstanceId[],
+    instanceId: InstanceId,
+    patch: InstanceAttributePatch,
+  ): void {
+    const doc = this.session.doc;
+    const context = this.contextOfPath(parentPath);
+    if (context === null || !doc.store(context).instance(instanceId)) {
+      this.notify('error', 'That group or component no longer exists');
+      return;
+    }
+    const applied = patch.name === undefined ? patch : { ...patch, name: patch.name.trim() };
+    doc.transact(attributeLabel(patch), () => {
+      setInstanceAttributes(doc, context, instanceId, applied);
+    });
+  }
+
+  /** Renames a component (or group) definition. Returns false when the name is empty. */
+  renameDefinition(definitionId: DefinitionId, name: string): boolean {
+    const doc = this.session.doc;
+    const trimmed = name.trim();
+    if (trimmed === '') {
+      this.notify('error', 'A definition needs a name');
+      return false;
+    }
+    if (definitionId === doc.rootDefinitionId || !doc.definition(definitionId)) return false;
+    doc.transact('Rename Definition', () => {
+      setDefinitionAttributes(doc, definitionId, { name: trimmed });
+    });
+    return true;
+  }
+
+  // ---------------------------------------------------------------------------------------------- outliner
+
+  /**
+   * Selects a group or component anywhere in the hierarchy, opening the instances that contain it first so the
+   * selection is in the active context. A locked container can't be opened, so it is selected instead.
+   * Returns false when the path no longer exists.
+   */
+  selectInstanceAtPath(parentPath: readonly InstanceId[], instanceId: InstanceId): boolean {
+    const doc = this.session.doc;
+    if (this.contextOfPath([...parentPath, instanceId]) === null) return false;
+    let path: readonly InstanceId[] = parentPath;
+    let target = instanceId;
+    let context = doc.rootDefinitionId;
+    for (const [index, id] of parentPath.entries()) {
+      const instance = doc.store(context).getInstance(id);
+      if (instance.attributes.locked) {
+        path = parentPath.slice(0, index);
+        target = id;
+        break;
+      }
+      context = instance.definitionId;
+    }
+    this.tools.cancel();
+    this.#setEditPath(path);
+    this.session.setSelection(Selection.of([{ kind: 'instance', id: target }]));
+    return true;
+  }
+
+  /** Opens a group or component anywhere in the hierarchy for editing. */
+  openInstanceAtPath(parentPath: readonly InstanceId[], instanceId: InstanceId): void {
+    if (!this.selectInstanceAtPath(parentPath, instanceId)) return;
+    if (this.session.selection.has({ kind: 'instance', id: instanceId })) this.openGroup(instanceId);
+    else this.notify('error', LOCKED_MESSAGE);
+  }
+
+  #setEditPath(path: readonly InstanceId[]): void {
+    const { session } = this;
+    let common = 0;
+    while (
+      common < path.length &&
+      common < session.editPath.length &&
+      session.editPath[common] === path[common]
+    ) {
+      common++;
+    }
+    while (session.editPath.length > common) session.exitContext();
+    for (const id of path.slice(common)) session.enterInstance(id);
+  }
+
+  // ---------------------------------------------------------------------------------------------- tags
+
+  /** Adds a visible tag with a fresh color. Without a name, it is called `Tag n`. */
+  addTag(name?: string): TagId {
+    const doc = this.session.doc;
+    const trimmed = name?.trim() ?? '';
+    return doc.transact('Add Tag', () =>
+      addTagMutation(doc, {
+        name: trimmed === '' ? uniqueTagName(doc) : trimmed,
+        visible: true,
+        color: nextTagColor(doc),
+      }),
+    );
+  }
+
+  /** Returns false (and notifies) when the name is empty. */
+  renameTag(tagId: TagId, name: string): boolean {
+    const trimmed = name.trim();
+    if (trimmed === '') {
+      this.notify('error', 'A tag needs a name');
+      return false;
+    }
+    const doc = this.session.doc;
+    doc.transact('Rename Tag', () => {
+      setTagAttributes(doc, tagId, { name: trimmed });
+    });
+    return true;
+  }
+
+  /** Deletes a tag; everything on it becomes untagged. */
+  deleteTag(tagId: TagId): void {
+    this.tools.cancel();
+    deleteTagOp(this.session.doc, tagId);
+  }
+
+  /** Deletes tags that nothing uses. Returns how many were deleted. */
+  purgeUnusedTags(): number {
+    this.tools.cancel();
+    const removed = purgeUnusedTagsOp(this.session.doc).length;
+    this.notify(
+      'info',
+      removed === 0 ? 'There are no unused tags' : `Purged ${countOf(removed, 'unused tag')}`,
+    );
+    return removed;
+  }
+
+  setTagVisible(tagId: TagId, visible: boolean): void {
+    this.tools.cancel();
+    const doc = this.session.doc;
+    doc.transact(visible ? 'Show Tag' : 'Hide Tag', () => {
+      setTagAttributes(doc, tagId, { visible });
+    });
+  }
+
+  setTagColor(tagId: TagId, color: Rgb): void {
+    const doc = this.session.doc;
+    doc.transact('Change Tag Color', () => {
+      setTagAttributes(doc, tagId, { color });
+    });
+  }
+
+  /** New groups and components go on the active tag. Not undoable. */
+  setActiveTag(tagId: TagId | null): void {
+    this.session.setActiveTag(tagId);
+  }
+
+  assignSelectionToTag(tagId: TagId | null): void {
+    this.updateSelectionAttributes({ tagId });
+  }
+
+  // ---------------------------------------------------------------------------------------------- components
+
+  componentDefinitions(): ComponentRow[] {
+    return listComponentDefinitions(this.session.doc);
+  }
+
+  /** The definition the Place Component tool is placing, if it is active. */
+  get placementDefinition(): DefinitionId | null {
+    return this.#placementTool.definitionId;
+  }
+
+  /** Activates the Place Component tool for a component definition. */
+  placeComponent(definitionId: DefinitionId): void {
+    const doc = this.session.doc;
+    const definition = doc.definition(definitionId);
+    if (!definition || definition.attributes.isGroup || definitionId === doc.rootDefinitionId) {
+      this.notify('error', 'Choose a component to place');
+      return;
+    }
+    this.activateTool(PLACE_COMPONENT_TOOL_ID);
+    this.#placementTool.setDefinition(definitionId);
+    this.tools.refresh();
+  }
+
+  /** Selects every instance of a definition in the active context. Returns how many were selected. */
+  selectInstancesOf(definitionId: DefinitionId): number {
+    const { session } = this;
+    const refs = [...session.doc.store(session.activeContext).instances()]
+      .filter((instance) => instance.definitionId === definitionId)
+      .map((instance) => ({ kind: 'instance' as const, id: instance.id }));
+    session.setSelection(Selection.of(refs));
+    if (refs.length === 0) this.notify('info', 'There are no instances of that component here');
+    return refs.length;
+  }
+
+  /** Deletes component definitions that have no instances. Returns how many were deleted. */
+  purgeUnusedComponents(): number {
+    this.tools.cancel();
+    const removed = purgeUnusedDefinitions(this.session.doc).length;
+    this.notify(
+      'info',
+      removed === 0 ? 'There are no unused components' : `Purged ${countOf(removed, 'unused component')}`,
+    );
+    return removed;
+  }
+
+  // ---------------------------------------------------------------------------------------------- panels
+
+  get openPanels(): readonly PanelId[] {
+    return this.#openPanels;
+  }
+
+  isPanelOpen(panel: PanelId): boolean {
+    return this.#openPanels.includes(panel);
+  }
+
+  setPanelOpen(panel: PanelId, open: boolean): void {
+    if (this.isPanelOpen(panel) === open) return;
+    const current = this.#openPanels;
+    this.#openPanels = PANEL_IDS.filter((id) => (id === panel ? open : current.includes(id)));
+    this.#emit({ kind: 'panels' });
+  }
+
+  togglePanel(panel: PanelId): void {
+    this.setPanelOpen(panel, !this.isPanelOpen(panel));
   }
 
   // ---------------------------------------------------------------------------------------------- files

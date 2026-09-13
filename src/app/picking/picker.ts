@@ -6,6 +6,7 @@ import { closestPointsOnSegments } from '../../kernel/math/segment';
 import { add, distance, dot, length, scale, sub, type Vec3 } from '../../kernel/math/vec3';
 import type { ModelDocument } from '../../kernel/model/ModelDocument';
 import type { Loop } from '../../kernel/model/types';
+import { isTagVisible } from '../../kernel/model/visibility';
 import {
   rayThroughScreen,
   worldUnitsPerPixel,
@@ -67,8 +68,8 @@ export function pick(
     worldRay,
     tolerancePx,
     (visit) => {
-      pickFaces(visit, candidates);
-      pickEdges(visit, request, tolerancePx, worldRay, candidates);
+      pickFaces(doc, visit, candidates);
+      pickEdges(doc, visit, request, tolerancePx, worldRay, candidates);
     },
   );
   let best: Candidate | null = null;
@@ -78,11 +79,11 @@ export function pick(
   return best ? { ref: best.ref, distance: best.distance, point: best.point } : null;
 }
 
-function pickFaces(visit: RayVisit, candidates: Candidate[]): void {
+function pickFaces(doc: ModelDocument, visit: RayVisit, candidates: Candidate[]): void {
   const { store, origin, direction, toWorld, topLevel } = visit;
   for (const faceId of store.queryFaces(visit.box)) {
     const face = store.getFace(faceId);
-    if (face.attributes.hidden || !face.plane) continue;
+    if (face.attributes.hidden || !face.plane || !isTagVisible(doc, face.attributes.tagId)) continue;
     const denominator = dot(face.plane.normal, direction);
     if (Math.abs(denominator) < GRAZING_COSINE * length(direction)) continue;
     const t = (face.plane.offset - dot(face.plane.normal, origin)) / denominator;
@@ -106,6 +107,7 @@ function pickFaces(visit: RayVisit, candidates: Candidate[]): void {
 }
 
 function pickEdges(
+  doc: ModelDocument,
   visit: RayVisit,
   request: PickRequest,
   tolerancePx: number,
@@ -116,6 +118,7 @@ function pickEdges(
   for (const edgeId of store.queryEdges(visit.box)) {
     const edge = store.getEdge(edgeId);
     if (edge.attributes.hidden || (edge.attributes.soft && request.includeSoftEdges !== true)) continue;
+    if (!isTagVisible(doc, edge.attributes.tagId)) continue;
     const closest = closestPointsOnSegments(
       visit.start,
       visit.end,
