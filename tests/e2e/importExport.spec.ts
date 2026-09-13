@@ -1,5 +1,6 @@
 import { statSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { crc32, deflateSync } from 'node:zlib';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 
@@ -86,6 +87,90 @@ test('imports an OBJ with its MTL, then exports the model as STL', async ({ page
   const path = testInfo.outputPath('cube.stl');
   await download.saveAs(path);
   expect(statSync(path).size).toBe(84 + 12 * 50);
+});
+
+/** A real, decodable RGBA PNG (a 2 × 2 checker), so the renderer can decode it without errors. */
+function checkerPng(): Buffer {
+  const chunk = (type: string, data: Buffer): Buffer => {
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([length, body, crc]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(2, 0);
+  header.writeUInt32BE(2, 4);
+  header.set([8, 6, 0, 0, 0], 8);
+  const rows = Buffer.from([
+    0, 200, 60, 40, 255, 240, 240, 240, 255, 0, 240, 240, 240, 255, 200, 60, 40, 255,
+  ]);
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', header),
+    chunk('IDAT', deflateSync(rows)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+test('imports an OBJ with a textured MTL material and its PNG', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('menubar', { name: 'Main menu' })).toBeVisible();
+
+  const obj = [
+    'mtllib panel.mtl',
+    'v 0 0 0',
+    'v 2 0 0',
+    'v 2 1 0',
+    'v 0 1 0',
+    'vt 0 0',
+    'vt 2 0',
+    'vt 2 1',
+    'vt 0 1',
+    'usemtl checker',
+    'f 1/1 2/2 3/3 4/4',
+    '',
+  ].join('\n');
+  const mtl = 'newmtl checker\nKd 1 1 1\nmap_Kd checker.png\n';
+
+  const chooserPromise = page.waitForEvent('filechooser');
+  await page.getByRole('menuitem', { name: 'File', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Import…' }).click();
+  const chooser = await chooserPromise;
+  await chooser.setFiles([
+    { name: 'panel.obj', mimeType: 'text/plain', buffer: Buffer.from(obj) },
+    { name: 'panel.mtl', mimeType: 'text/plain', buffer: Buffer.from(mtl) },
+    { name: 'checker.png', mimeType: 'image/png', buffer: checkerPng() },
+  ]);
+  const options = page.getByRole('dialog', { name: 'Import Options' });
+  await expect(options).toContainText('Import panel.obj');
+  await options.getByRole('button', { name: 'Import' }).click();
+  await expect(options).toBeHidden();
+
+  const textureState = () =>
+    page.evaluate(() => {
+      const editor = window.__planar?.editor;
+      if (!editor) throw new Error('test hook missing: build with --mode e2e');
+      const { doc } = editor.session;
+      return {
+        assets: [...doc.assets()].map((asset) => ({
+          name: asset.name,
+          mimeType: asset.mimeType,
+          width: asset.width,
+          height: asset.height,
+        })),
+        materials: [...doc.materials()].map((material) => ({
+          name: material.name,
+          textured: material.texture !== null && doc.asset(material.texture.assetId) !== undefined,
+          width: material.texture?.width ?? null,
+        })),
+      };
+    });
+  await expect.poll(textureState).toEqual({
+    assets: [{ name: 'checker.png', mimeType: 'image/png', width: 2, height: 2 }],
+    materials: [{ name: 'checker', textured: true, width: 1 }],
+  });
 });
 
 test('exports the current view as a PNG', async ({ page }, testInfo) => {

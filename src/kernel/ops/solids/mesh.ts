@@ -13,7 +13,12 @@ import { distancePointToLine } from '../../math/segment';
 import { add, cross, dot, length, normalize, scale, sub, vec3, type Vec3 } from '../../math/vec3';
 import type { EntityStore } from '../../model/EntityStore';
 import type { ModelDocument } from '../../model/ModelDocument';
-import { DEFAULT_FACE_ATTRIBUTES, type FaceAttributes } from '../../model/types';
+import {
+  DEFAULT_FACE_ATTRIBUTES,
+  DEFAULT_TEXTURE_PLACEMENT,
+  type FaceAttributes,
+  type TexturePlacement,
+} from '../../model/types';
 import { EPS_AREA, EPS_LEN, EPS_MESH_SNAP, WELD_GRID_CELL_SIZE } from '../../tolerance';
 import { insertSegments, type SegmentInput } from '../insertSegments';
 import { settleRegion } from '../planar/settle';
@@ -251,11 +256,39 @@ interface MeshTriangle {
   readonly fromSource: boolean;
 }
 
+/** Relative tolerance under which two texture placements map a plane to the same texture coordinates. */
+const PLACEMENT_TOLERANCE = 1e-6;
+
+/**
+ * Whether two placements give the same texture coordinates on a shared plane: the linear parts agree relative to
+ * their size, and so do the translations (compared as the texture coordinates of the plane origin).
+ */
+function samePlacement(a: TexturePlacement | null, b: TexturePlacement | null): boolean {
+  if (a === b) return true;
+  const linear = (p: TexturePlacement): number[] => {
+    const cos = Math.cos(p.rotation);
+    const sin = Math.sin(p.rotation);
+    const m = [cos / p.scaleX, sin / p.scaleX, -sin / p.scaleY, cos / p.scaleY];
+    const [m0 = 0, m1 = 0, m2 = 0, m3 = 0] = m;
+    return [...m, -(m0 * p.offsetX + m1 * p.offsetY), -(m2 * p.offsetX + m3 * p.offsetY)];
+  };
+  const ma = linear(a ?? DEFAULT_TEXTURE_PLACEMENT);
+  const mb = linear(b ?? DEFAULT_TEXTURE_PLACEMENT);
+  const size = Math.max(...ma.slice(0, 4).map(Math.abs), ...mb.slice(0, 4).map(Math.abs));
+  return ma.every((value, index) => {
+    const other = mb[index] ?? 0;
+    const reference = index < 4 ? size : Math.max(size, Math.abs(value), Math.abs(other));
+    return Math.abs(value - other) <= PLACEMENT_TOLERANCE * reference;
+  });
+}
+
 const sameAttributes = (a: FaceAttributes, b: FaceAttributes): boolean =>
   a.frontMaterialId === b.frontMaterialId &&
   a.backMaterialId === b.backMaterialId &&
   a.tagId === b.tagId &&
-  a.hidden === b.hidden;
+  a.hidden === b.hidden &&
+  samePlacement(a.frontTexturePlacement, b.frontTexturePlacement) &&
+  samePlacement(a.backTexturePlacement, b.backTexturePlacement);
 
 /**
  * Rebuilds faces from a triangle mesh. Adjacent coplanar triangles with the same attributes are regrouped into one

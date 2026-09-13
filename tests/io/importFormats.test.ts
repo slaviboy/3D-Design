@@ -8,6 +8,7 @@ import { parseImportFiles } from '../../src/io/import/parseImport';
 import { parseXml } from '../../src/io/import/xml';
 import type { ImportedScene } from '../../src/io/mesh/importedScene';
 import { DEFAULT_IMPORT_LIMITS, ImportError, type ImportLimits } from '../../src/io/mesh/limits';
+import { pngBytes } from '../kernel/imageBytes';
 import {
   binaryStl,
   cubeTriangles,
@@ -75,13 +76,15 @@ describe('OBJ import', () => {
     expect(summary).toMatchObject({ faces: 6, materials: 0 });
   });
 
-  it('reads OBJ and MTL files from a zip', async () => {
+  it('reads OBJ, MTL and texture files from a zip', async () => {
     const zip = zipSync({
       'model/cube.obj': fixture('cube.obj').bytes,
       'model/cube.mtl': fixture('cube.mtl').bytes,
+      'model/bricks.png': pngBytes(4, 4),
     });
     const scene = await parseImportFiles([{ name: 'cube.zip', bytes: zip }], limits());
     expect(scene.materials).toHaveLength(2);
+    expect(scene.textures).toHaveLength(1);
     expect(scene.warnings).toEqual([]);
   });
 

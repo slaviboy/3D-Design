@@ -257,6 +257,7 @@ export class ModelExchange {
       if (summary.groups > 0) parts.push(plural(summary.groups, 'group'));
       if (summary.components > 0) parts.push(plural(summary.components, 'component'));
       if (summary.materials > 0) parts.push(plural(summary.materials, 'material'));
+      if (summary.textures > 0) parts.push(plural(summary.textures, 'texture'));
       let message = `Imported ${fileName}: ${parts.join(', ')}`;
       if (summary.degenerateTriangles > 0) {
         message += `. Dropped ${plural(summary.degenerateTriangles, 'degenerate triangle')}`;

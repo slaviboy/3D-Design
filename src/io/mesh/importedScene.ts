@@ -12,9 +12,31 @@ export interface ImportedMaterial {
   readonly color: Rgb;
   /** 0 = fully transparent, 1 = opaque. */
   readonly opacity: number;
-  /** File name of the material's color texture, if it has one. Textures are recorded but not imported. */
+  /** File name of the material's color texture, if it has one. */
   readonly textureName: string | null;
+  /** The color texture, when its image was found among the picked files (or embedded) and is a usable PNG or JPEG. */
+  readonly texture?: ImportedMaterialTexture;
 }
+
+/** A material's reference to one of {@link ImportedScene.textures}. */
+export interface ImportedMaterialTexture {
+  /** Index into {@link ImportedScene.textures}. */
+  readonly image: number;
+  /**
+   * Maps mesh UVs to image UVs with the origin at the bottom-left of the image, as the 2×3 affine
+   * [a, b, c, d, e, f]: u' = a·u + c·v + e, v' = b·u + d·v + f. Covers flipped V axes (glTF) and texture
+   * transforms declared by the file (MTL -o/-s, 3DS map offset and scale, KHR_texture_transform).
+   */
+  readonly uvTransform: readonly number[];
+}
+
+/** An encoded PNG or JPEG image, deduplicated by content. */
+export interface ImportedTexture {
+  readonly name: string;
+  readonly bytes: Uint8Array;
+}
+
+export const IDENTITY_UV_TRANSFORM: readonly number[] = Object.freeze([1, 0, 0, 1, 0, 0]);
 
 export interface ImportedMesh {
   readonly name: string;
@@ -24,6 +46,8 @@ export interface ImportedMesh {
   readonly indices: Uint32Array;
   /** Per triangle, an index into {@link ImportedScene.materials}, or -1 for no material. */
   readonly materials: Int32Array;
+  /** u, v per vertex, as stored in the file; NaN where a vertex has no texture coordinates. */
+  readonly uvs?: Float64Array;
 }
 
 export interface ImportedNode {
@@ -40,6 +64,8 @@ export interface ImportedScene {
   readonly meshes: readonly ImportedMesh[];
   readonly nodes: readonly ImportedNode[];
   readonly roots: readonly number[];
+  /** Images referenced by materials. */
+  readonly textures?: readonly ImportedTexture[];
   /** Things the user should know about: skipped external references, ignored entities, … */
   readonly warnings: readonly string[];
   /** Meters per file unit, when the file declares its unit (COLLADA). */
@@ -56,9 +82,12 @@ export const IDENTITY_TRANSFORM: readonly number[] = Object.freeze([
 export function sceneTransferables(scene: ImportedScene): ArrayBuffer[] {
   const buffers = new Set<ArrayBuffer>();
   for (const mesh of scene.meshes) {
-    for (const array of [mesh.positions, mesh.indices, mesh.materials]) {
-      if (array.buffer instanceof ArrayBuffer) buffers.add(array.buffer);
+    for (const array of [mesh.positions, mesh.indices, mesh.materials, mesh.uvs]) {
+      if (array?.buffer instanceof ArrayBuffer) buffers.add(array.buffer);
     }
+  }
+  for (const texture of scene.textures ?? []) {
+    if (texture.bytes.buffer instanceof ArrayBuffer) buffers.add(texture.bytes.buffer);
   }
   return [...buffers];
 }
@@ -84,11 +113,29 @@ export function validateImportedScene(
   scene: ImportedScene,
   limits: Pick<ImportLimits, 'maxTriangles'>,
 ): void {
-  const lists: unknown[] = [scene.materials, scene.meshes, scene.nodes, scene.roots];
+  const lists: unknown[] = [scene.materials, scene.meshes, scene.nodes, scene.roots, scene.textures ?? []];
   if (!lists.every((list) => Array.isArray(list))) {
     fail('the file could not be read');
   }
+  const textures = scene.textures ?? [];
+  for (const texture of textures) {
+    if (typeof texture.name !== 'string' || !(texture.bytes instanceof Uint8Array)) {
+      fail('a texture has invalid data');
+    }
+  }
   scene.materials.forEach((material) => {
+    const { texture } = material;
+    if (
+      texture !== undefined &&
+      (!Number.isInteger(texture.image) ||
+        texture.image < 0 ||
+        texture.image >= textures.length ||
+        !Array.isArray(texture.uvTransform) ||
+        texture.uvTransform.length !== 6 ||
+        !texture.uvTransform.every(isFiniteNumber))
+    ) {
+      fail('a material refers to a texture that does not exist');
+    }
     const { color } = material;
     if (
       typeof material.name !== 'string' ||
@@ -116,6 +163,12 @@ export function validateImportedScene(
     }
     if (mesh.positions.length % 3 !== 0 || mesh.indices.length % 3 !== 0) fail('a mesh has invalid data');
     if (mesh.materials.length !== mesh.indices.length / 3) fail('a mesh has invalid material data');
+    if (
+      mesh.uvs !== undefined &&
+      (!(mesh.uvs instanceof Float64Array) || mesh.uvs.length !== (mesh.positions.length / 3) * 2)
+    ) {
+      fail('a mesh has invalid texture coordinates');
+    }
     for (const value of mesh.positions) {
       if (!Number.isFinite(value))
         fail('a mesh has coordinates that are not finite numbers (NaN or Infinity)');
