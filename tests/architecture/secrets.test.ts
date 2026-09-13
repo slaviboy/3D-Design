@@ -29,6 +29,7 @@ const SKIPPED_DIRECTORIES = new Set([
   'test-results',
   '.git',
   '.claude',
+  '.idea'
 ]);
 const BINARY_EXTENSIONS = new Set(['stl', 'png', 'jpg', 'jpeg', 'glb', 'wasm', 'hdr', 'exr', 'ico']);
 
