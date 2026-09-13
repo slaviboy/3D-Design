@@ -1,4 +1,11 @@
 import { KernelError } from '../errors';
+import type { AnnotationId } from '../ids';
+import {
+  DEFAULT_ANNOTATION_ATTRIBUTES,
+  type AnnotationAttributes,
+  type AnnotationGeometry,
+  type AnnotationState,
+} from './types';
 import type {
   CurveId,
   DefinitionId,
@@ -528,4 +535,59 @@ export function setTagAttributes(doc: ModelDocument, id: TagId, patch: Partial<T
   const to: TagAttributes = { ...from, ...patch };
   if (shallowEqual(from, to)) return;
   doc.apply({ kind: 'tag.attributes', id, from, to });
+}
+
+// -------------------------------------------------------------------------------------------------- annotations
+
+function assertValidAnnotation(geometry: AnnotationGeometry): void {
+  const finite = (...values: Vec3[]): boolean => values.every(isFiniteVec3);
+  const valid =
+    geometry.kind === 'linear-dimension'
+      ? finite(geometry.start.point, geometry.end.point, geometry.offset)
+      : geometry.kind === 'radial-dimension'
+        ? finite(geometry.labelPoint)
+        : geometry.kind === 'leader-text'
+          ? finite(geometry.target.point, geometry.offset)
+          : [geometry.x, geometry.y].every((value) => Number.isFinite(value) && value >= 0 && value <= 1);
+  if (!valid)
+    throw new KernelError('invalid-geometry', 'Annotation coordinates must be finite and on screen');
+}
+
+export function addAnnotation(
+  doc: ModelDocument,
+  context: DefinitionId,
+  geometry: AnnotationGeometry,
+  attributes: AnnotationAttributes = DEFAULT_ANNOTATION_ATTRIBUTES,
+): AnnotationId {
+  assertValidAnnotation(geometry);
+  const id = doc.ids.allocate() as AnnotationId;
+  doc.apply({ kind: 'annotation.add', context, data: { id, geometry, attributes } });
+  return id;
+}
+
+export function removeAnnotation(doc: ModelDocument, context: DefinitionId, id: AnnotationId): void {
+  const annotation = doc.store(context).getAnnotation(id);
+  doc.apply({
+    kind: 'annotation.remove',
+    context,
+    data: { id, geometry: annotation.geometry, attributes: annotation.attributes },
+  });
+}
+
+/** Moves an annotation or changes its text, visibility or tag. */
+export function updateAnnotation(
+  doc: ModelDocument,
+  context: DefinitionId,
+  id: AnnotationId,
+  patch: { readonly geometry?: AnnotationGeometry; readonly attributes?: Partial<AnnotationAttributes> },
+): void {
+  const annotation = doc.store(context).getAnnotation(id);
+  const from: AnnotationState = { geometry: annotation.geometry, attributes: annotation.attributes };
+  const to: AnnotationState = {
+    geometry: patch.geometry ?? annotation.geometry,
+    attributes: { ...annotation.attributes, ...patch.attributes },
+  };
+  if (patch.geometry) assertValidAnnotation(patch.geometry);
+  if (to.geometry === from.geometry && shallowEqual(from.attributes, to.attributes)) return;
+  doc.apply({ kind: 'annotation.update', context, id, from, to });
 }

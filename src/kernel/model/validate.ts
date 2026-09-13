@@ -189,6 +189,28 @@ function validateStore(doc: ModelDocument, store: EntityStore, report: Reporter)
       report('missing-reference', 'Guide references a missing tag', [guide.id]);
   }
 
+  // Annotations. Anchors may refer to vertices or curves that no longer exist; they then keep their stored points.
+  for (const annotation of store.annotations()) {
+    const { geometry } = annotation;
+    const points =
+      geometry.kind === 'linear-dimension'
+        ? [geometry.start.point, geometry.end.point, geometry.offset]
+        : geometry.kind === 'radial-dimension'
+          ? [geometry.labelPoint]
+          : geometry.kind === 'leader-text'
+            ? [geometry.target.point, geometry.offset]
+            : [];
+    const onScreen =
+      geometry.kind !== 'screen-text' ||
+      [geometry.x, geometry.y].every((value) => Number.isFinite(value) && value >= 0 && value <= 1);
+    if (!points.every(isFiniteVec3) || !onScreen) {
+      report('invalid-annotation', 'Annotation has invalid coordinates', [annotation.id]);
+    }
+    const { tagId } = annotation.attributes;
+    if (tagId !== null && !doc.tag(tagId))
+      report('missing-reference', 'Annotation references a missing tag', [annotation.id]);
+  }
+
   validateWelding(store, report);
   validateEdgeIntersections(store, report);
   validateCoplanarFaces(store, report);

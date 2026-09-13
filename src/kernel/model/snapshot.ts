@@ -1,3 +1,5 @@
+import type { AnnotationId } from '../ids';
+import type { AnnotationAnchor, AnnotationData, AnnotationGeometry } from './types';
 import type {
   CurveId,
   DefinitionId,
@@ -50,6 +52,8 @@ export interface DefinitionSnapshot {
   readonly curves: readonly CurveData[];
   readonly instances: readonly InstanceData[];
   readonly guides: readonly GuideData[];
+  /** Present only when the definition has annotations. */
+  readonly annotations?: readonly AnnotationData[];
 }
 
 /** Plain-JSON form of a document's contents. History is not included. */
@@ -92,6 +96,30 @@ const instanceAttributes = (a: InstanceAttributes): InstanceAttributes => ({
   receiveShadows: a.receiveShadows,
 });
 const guideAttributes = (a: GuideAttributes): GuideAttributes => ({ hidden: a.hidden, tagId: a.tagId });
+
+function annotationGeometryCopy(geometry: AnnotationGeometry): AnnotationGeometry {
+  const anchor = (a: AnnotationAnchor): AnnotationAnchor => ({ point: vec(a.point), vertex: a.vertex });
+  switch (geometry.kind) {
+    case 'linear-dimension':
+      return {
+        kind: geometry.kind,
+        start: anchor(geometry.start),
+        end: anchor(geometry.end),
+        offset: vec(geometry.offset),
+      };
+    case 'radial-dimension':
+      return {
+        kind: geometry.kind,
+        curve: geometry.curve,
+        diameter: geometry.diameter,
+        labelPoint: vec(geometry.labelPoint),
+      };
+    case 'leader-text':
+      return { kind: geometry.kind, target: anchor(geometry.target), offset: vec(geometry.offset) };
+    case 'screen-text':
+      return { kind: geometry.kind, x: geometry.x, y: geometry.y };
+  }
+}
 
 function guideGeometryCopy(geometry: GuideGeometry): GuideGeometry {
   return geometry.kind === 'line'
@@ -183,6 +211,19 @@ export function createSnapshot(doc: ModelDocument): DocumentSnapshot {
           geometry: guideGeometryCopy(g.geometry),
           attributes: guideAttributes(g.attributes),
         })),
+        ...(store.annotationCount === 0
+          ? {}
+          : {
+              annotations: [...store.annotations()].sort(byId).map((a) => ({
+                id: a.id,
+                geometry: annotationGeometryCopy(a.geometry),
+                attributes: {
+                  text: a.attributes.text,
+                  hidden: a.attributes.hidden,
+                  tagId: a.attributes.tagId,
+                },
+              })),
+            }),
       };
     }),
     ...(isDefaultAxes(doc.axes)
@@ -332,6 +373,45 @@ function readGuideGeometry(r: Reader, value: unknown, path: string): GuideGeomet
   }
 }
 
+function readAnchor(r: Reader, value: unknown, path: string): AnnotationAnchor {
+  const a = r.record(value, path);
+  return {
+    point: r.vec3(a.point, `${path}.point`),
+    vertex: r.nullableId<VertexId>(a.vertex, `${path}.vertex`),
+  };
+}
+
+function readAnnotationGeometry(r: Reader, value: unknown, path: string): AnnotationGeometry {
+  const g = r.record(value, path);
+  switch (g.kind) {
+    case 'linear-dimension':
+      return {
+        kind: 'linear-dimension',
+        start: readAnchor(r, g.start, `${path}.start`),
+        end: readAnchor(r, g.end, `${path}.end`),
+        offset: r.vec3(g.offset, `${path}.offset`),
+      };
+    case 'radial-dimension':
+      return {
+        kind: 'radial-dimension',
+        curve: r.id<CurveId>(g.curve, `${path}.curve`),
+        diameter: r.boolean(g.diameter, `${path}.diameter`),
+        labelPoint: r.vec3(g.labelPoint, `${path}.labelPoint`),
+      };
+    case 'leader-text':
+      return {
+        kind: 'leader-text',
+        target: readAnchor(r, g.target, `${path}.target`),
+        offset: r.vec3(g.offset, `${path}.offset`),
+      };
+    case 'screen-text':
+      return { kind: 'screen-text', x: r.number(g.x, `${path}.x`), y: r.number(g.y, `${path}.y`) };
+    default:
+      r.fail(`${path}.kind`, 'unknown annotation kind');
+      return { kind: 'screen-text', x: 0, y: 0 };
+  }
+}
+
 function readDefinition(r: Reader, value: unknown, path: string): DefinitionSnapshot {
   const d = r.record(value, path);
   const at = (key: string, index: number): string => `${path}.${key}[${String(index)}]`;
@@ -422,6 +502,22 @@ function readDefinition(r: Reader, value: unknown, path: string): DefinitionSnap
         },
       };
     }),
+    annotations: (d.annotations === undefined ? [] : r.list(d.annotations, `${path}.annotations`)).map(
+      (entry, i) => {
+        const p = at('annotations', i);
+        const n = r.record(entry, p);
+        const a = r.record(n.attributes, `${p}.attributes`);
+        return {
+          id: r.id<AnnotationId>(n.id, `${p}.id`),
+          geometry: readAnnotationGeometry(r, n.geometry, `${p}.geometry`),
+          attributes: {
+            text: a.text === null ? null : r.string(a.text, `${p}.attributes.text`),
+            hidden: r.boolean(a.hidden, `${p}.attributes.hidden`),
+            tagId: r.nullableId<TagId>(a.tagId, `${p}.attributes.tagId`),
+          },
+        };
+      },
+    ),
   };
 }
 
@@ -493,6 +589,7 @@ export function restoreSnapshot(input: unknown, options: DocumentOptions = {}): 
       ...d.curves.map((c) => c.id),
       ...d.instances.map((instance) => instance.id),
       ...d.guides.map((g) => g.id),
+      ...(d.annotations ?? []).map((a) => a.id),
     ]),
   ];
   const seen = new Set<number>();
@@ -527,6 +624,7 @@ export function restoreSnapshot(input: unknown, options: DocumentOptions = {}): 
     for (const data of d.faces) changes.push({ kind: 'face.add', context, data });
     for (const data of d.curves) changes.push({ kind: 'curve.add', context, data });
     for (const data of d.guides) changes.push({ kind: 'guide.add', context, data });
+    for (const data of d.annotations ?? []) changes.push({ kind: 'annotation.add', context, data });
   }
   for (const d of definitions) {
     for (const data of d.instances) changes.push({ kind: 'instance.add', context: d.id, data });

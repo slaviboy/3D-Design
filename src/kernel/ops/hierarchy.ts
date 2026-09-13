@@ -16,6 +16,8 @@ import {
   removeInstance,
   removeVertex,
   reverseLoop,
+  removeAnnotation,
+  removeGuide,
 } from '../model/mutations';
 import type { DefinitionAttributes, Loop } from '../model/types';
 import { splitCurveChains, transformCurveParams } from './curves';
@@ -295,6 +297,8 @@ function clearDefinition(doc: ModelDocument, definitionId: DefinitionId): void {
     definitionId,
     [...store.instances()].map((instance) => instance.id),
   );
+  for (const annotation of [...store.annotations()]) removeAnnotation(doc, definitionId, annotation.id);
+  for (const guide of [...store.guides()]) removeGuide(doc, definitionId, guide.id);
   for (const face of [...store.faces()]) removeFace(doc, definitionId, face.id);
   for (const curve of [...store.curves()]) removeCurve(doc, definitionId, curve.id);
   for (const edge of [...store.edges()]) removeEdge(doc, definitionId, edge.id);

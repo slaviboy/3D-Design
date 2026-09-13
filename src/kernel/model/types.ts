@@ -8,6 +8,7 @@ import type {
   MaterialId,
   TagId,
   VertexId,
+  AnnotationId,
 } from '../ids';
 import type { Mat4 } from '../math/mat4';
 import type { Vec3 } from '../math/vec3';
@@ -215,3 +216,62 @@ export const DEFAULT_MODEL_AXES: ModelAxes = Object.freeze({
   xAxis: Object.freeze({ x: 1, y: 0, z: 0 }),
   yAxis: Object.freeze({ x: 0, y: 1, z: 0 }),
 });
+
+/** A point an annotation refers to. While `vertex` exists in the same context, the annotation follows it. */
+export interface AnnotationAnchor {
+  readonly point: Vec3;
+  readonly vertex: VertexId | null;
+}
+
+export type AnnotationGeometry =
+  | {
+      readonly kind: 'linear-dimension';
+      readonly start: AnnotationAnchor;
+      readonly end: AnnotationAnchor;
+      /** From the measured points to the dimension line. */
+      readonly offset: Vec3;
+    }
+  | {
+      readonly kind: 'radial-dimension';
+      readonly curve: CurveId;
+      /** Measure the diameter instead of the radius. */
+      readonly diameter: boolean;
+      readonly labelPoint: Vec3;
+    }
+  | {
+      readonly kind: 'leader-text';
+      readonly target: AnnotationAnchor;
+      /** From the target to the label. */
+      readonly offset: Vec3;
+    }
+  | {
+      readonly kind: 'screen-text';
+      /** Position in the view as fractions of its width and height, 0 to 1. */
+      readonly x: number;
+      readonly y: number;
+    };
+
+export type AnnotationKind = AnnotationGeometry['kind'];
+
+export interface AnnotationAttributes {
+  /** Text to show. For dimensions, null shows the measured value, which updates as the model changes. */
+  readonly text: string | null;
+  readonly hidden: boolean;
+  readonly tagId: TagId | null;
+}
+
+export const DEFAULT_ANNOTATION_ATTRIBUTES: AnnotationAttributes = Object.freeze({
+  text: null,
+  hidden: false,
+  tagId: null,
+});
+
+export interface AnnotationState {
+  readonly geometry: AnnotationGeometry;
+  readonly attributes: AnnotationAttributes;
+}
+
+/** A dimension or a text label. Annotations describe the model but never take part in topology. */
+export interface AnnotationData extends AnnotationState {
+  readonly id: AnnotationId;
+}

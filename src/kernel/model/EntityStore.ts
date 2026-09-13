@@ -1,5 +1,14 @@
 import { KernelError } from '../errors';
-import type { CurveId, DefinitionId, EdgeId, FaceId, GuideId, InstanceId, VertexId } from '../ids';
+import type {
+  AnnotationId,
+  CurveId,
+  DefinitionId,
+  EdgeId,
+  FaceId,
+  GuideId,
+  InstanceId,
+  VertexId,
+} from '../ids';
 import { aabbFromPoints, type Aabb } from '../math/aabb';
 import type { Mat4 } from '../math/mat4';
 import { planeFromPolygon, type Plane } from '../math/plane';
@@ -14,6 +23,10 @@ import type {
   FaceAttributes,
   FaceData,
   FaceLoops,
+  AnnotationAttributes,
+  AnnotationData,
+  AnnotationGeometry,
+  AnnotationState,
   GuideAttributes,
   GuideData,
   GuideGeometry,
@@ -70,6 +83,12 @@ export interface GuideView {
   readonly attributes: GuideAttributes;
 }
 
+export interface AnnotationView {
+  readonly id: AnnotationId;
+  readonly geometry: AnnotationGeometry;
+  readonly attributes: AnnotationAttributes;
+}
+
 interface VertexRecord extends VertexView {
   position: Vec3;
   readonly edges: EdgeId[];
@@ -102,6 +121,11 @@ interface GuideRecord extends GuideView {
   attributes: GuideAttributes;
 }
 
+interface AnnotationRecord extends AnnotationView {
+  geometry: AnnotationGeometry;
+  attributes: AnnotationAttributes;
+}
+
 function removeValue<T>(list: T[], value: T): void {
   for (let i = list.length - 1; i >= 0; i--) {
     if (list[i] === value) list.splice(i, 1);
@@ -125,6 +149,7 @@ export class EntityStore {
   readonly #curves = new Map<CurveId, CurveRecord>();
   readonly #instances = new Map<InstanceId, InstanceRecord>();
   readonly #guides = new Map<GuideId, GuideRecord>();
+  readonly #annotations = new Map<AnnotationId, AnnotationRecord>();
 
   readonly #vertexGrid = new VertexHashGrid();
   readonly #edgeTree = new AabbTree();
@@ -160,6 +185,10 @@ export class EntityStore {
     return this.#guides.size;
   }
 
+  get annotationCount(): number {
+    return this.#annotations.size;
+  }
+
   get isEmpty(): boolean {
     return (
       this.#vertices.size === 0 &&
@@ -167,7 +196,8 @@ export class EntityStore {
       this.#faces.size === 0 &&
       this.#curves.size === 0 &&
       this.#instances.size === 0 &&
-      this.#guides.size === 0
+      this.#guides.size === 0 &&
+      this.#annotations.size === 0
     );
   }
 
@@ -193,6 +223,20 @@ export class EntityStore {
 
   guide(id: GuideId): GuideView | undefined {
     return this.#guides.get(id);
+  }
+
+  annotation(id: AnnotationId): AnnotationView | undefined {
+    return this.#annotations.get(id);
+  }
+
+  getAnnotation(id: AnnotationId): AnnotationView {
+    const record = this.#annotations.get(id);
+    if (!record) throw this.#missing('Annotation', id);
+    return record;
+  }
+
+  annotations(): IterableIterator<AnnotationView> {
+    return this.#annotations.values();
   }
 
   getVertex(id: VertexId): VertexView {
@@ -513,6 +557,22 @@ export class EntityStore {
     const record = this.#guides.get(id);
     if (!record) throw this.#missing('Guide', id);
     record.attributes = attributes;
+  }
+
+  applyAddAnnotation(data: AnnotationData): void {
+    if (this.#annotations.has(data.id)) throw this.#duplicate('Annotation', data.id);
+    this.#annotations.set(data.id, { ...data });
+  }
+
+  applyRemoveAnnotation(id: AnnotationId): void {
+    if (!this.#annotations.delete(id)) throw this.#missing('Annotation', id);
+  }
+
+  applyUpdateAnnotation(id: AnnotationId, state: AnnotationState): void {
+    const record = this.#annotations.get(id);
+    if (!record) throw this.#missing('Annotation', id);
+    record.geometry = state.geometry;
+    record.attributes = state.attributes;
   }
 
   // ---------------------------------------------------------------------------------------------- internals

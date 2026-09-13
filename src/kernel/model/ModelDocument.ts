@@ -402,6 +402,15 @@ export class ModelDocument {
       case 'guide.attributes':
         this.store(change.context).applySetGuideAttributes(change.id, change.to);
         return;
+      case 'annotation.add':
+        this.store(change.context).applyAddAnnotation(change.data);
+        return;
+      case 'annotation.remove':
+        this.store(change.context).applyRemoveAnnotation(change.data.id);
+        return;
+      case 'annotation.update':
+        this.store(change.context).applyUpdateAnnotation(change.id, change.to);
+        return;
       case 'definition.add':
         if (this.#definitions.has(change.data.id)) {
           throw new KernelError('duplicate-entity', `Definition ${String(change.data.id)} already exists`);

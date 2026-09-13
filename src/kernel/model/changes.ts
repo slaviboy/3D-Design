@@ -1,4 +1,5 @@
 import type {
+  AnnotationId,
   CurveId,
   DefinitionId,
   EdgeId,
@@ -12,6 +13,8 @@ import type {
 import type { Mat4 } from '../math/mat4';
 import type { Vec3 } from '../math/vec3';
 import type {
+  AnnotationData,
+  AnnotationState,
   CurveData,
   CurveParams,
   DefinitionAttributes,
@@ -112,6 +115,18 @@ export type Change =
     }
   | { readonly kind: 'guide.add' | 'guide.remove'; readonly context: DefinitionId; readonly data: GuideData }
   | {
+      readonly kind: 'annotation.add' | 'annotation.remove';
+      readonly context: DefinitionId;
+      readonly data: AnnotationData;
+    }
+  | {
+      readonly kind: 'annotation.update';
+      readonly context: DefinitionId;
+      readonly id: AnnotationId;
+      readonly from: AnnotationState;
+      readonly to: AnnotationState;
+    }
+  | {
       readonly kind: 'guide.attributes';
       readonly context: DefinitionId;
       readonly id: GuideId;
@@ -170,6 +185,10 @@ export function invertChange(change: Change): Change {
       return { ...change, kind: 'guide.remove' };
     case 'guide.remove':
       return { ...change, kind: 'guide.add' };
+    case 'annotation.add':
+      return { ...change, kind: 'annotation.remove' };
+    case 'annotation.remove':
+      return { ...change, kind: 'annotation.add' };
     case 'definition.add':
       return { ...change, kind: 'definition.remove' };
     case 'definition.remove':
@@ -191,6 +210,7 @@ export function invertChange(change: Change): Change {
     case 'instance.transform':
     case 'instance.attributes':
     case 'guide.attributes':
+    case 'annotation.update':
     case 'definition.attributes':
     case 'material.attributes':
     case 'tag.attributes':
