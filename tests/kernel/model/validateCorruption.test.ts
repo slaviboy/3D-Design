@@ -227,7 +227,15 @@ describe('validator detects corrupt geometry', () => {
       [
         {
           kind: 'material.add',
-          data: { id: 60 as MaterialId, name: 'Bad', color: { r: 2, g: 0, b: 0 }, opacity: 1 },
+          data: {
+            id: 60 as MaterialId,
+            name: 'Bad',
+            color: { r: 2, g: 0, b: 0 },
+            opacity: 1,
+            metalness: 0,
+            roughness: 1,
+            texture: null,
+          },
         },
       ],
     ],

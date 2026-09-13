@@ -47,6 +47,7 @@ const PATHS: Readonly<Record<string, string>> = {
   'tools.trim': 'M7 3a5 5 0 1 0 0 10 5 5 0 0 1 5-5 5 5 0 0 0-5-5z',
   'tools.intersect': 'M10 7.6a5 5 0 0 1 0 4.8 5 5 0 0 1 0-4.8zM7 3a5 5 0 1 0 0 10M13 7a5 5 0 1 1 0 10',
   'tools.split': 'M7 3a5 5 0 1 0 0 10M13 7a5 5 0 1 1 0 10M10 2v16',
+  'tool.paint': 'M3 9l6-6 7 7-6 6zM3 9h13M16 12c1.5 2 2 3 2 4a2 2 0 0 1-4 0c0-1 .5-2 2-4z',
 };
 
 export function hasIcon(commandId: string): boolean {

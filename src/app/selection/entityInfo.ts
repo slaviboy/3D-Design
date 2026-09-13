@@ -1,5 +1,6 @@
-import type { DefinitionId, EdgeId, FaceId, InstanceId, TagId } from '../../kernel/ids';
+import type { DefinitionId, EdgeId, FaceId, InstanceId, MaterialId, TagId } from '../../kernel/ids';
 import { linearDeterminant } from '../../kernel/math/mat4';
+import type { FaceAttributes, TexturePlacement } from '../../kernel/model/types';
 import { distance } from '../../kernel/math/vec3';
 import type { ModelDocument } from '../../kernel/model/ModelDocument';
 import type { CurveKind } from '../../kernel/model/types';
@@ -30,6 +31,18 @@ export interface EntityInfoFields {
   readonly name?: string;
   /** Exactly one component instance is selected. */
   readonly definition?: { readonly id: DefinitionId; readonly name: string };
+  /** Only faces are selected: the material on their fronts (null for the default material). */
+  readonly frontMaterial?: MaterialId | null | 'mixed';
+  /** Only faces are selected: the material on their backs. */
+  readonly backMaterial?: MaterialId | null | 'mixed';
+  /** Only groups and components are selected: the material their default faces show. */
+  readonly instanceMaterial?: MaterialId | null | 'mixed';
+  /** Exactly one face is selected: its texture placements, for sides whose material has a texture. */
+  readonly texturePlacement?: {
+    readonly faceId: FaceId;
+    readonly front?: TexturePlacement | null;
+    readonly back?: TexturePlacement | null;
+  };
 }
 
 export interface EntityInfo {
@@ -97,6 +110,42 @@ export function selectionFields(
     ...(single ? { name: single.attributes.name } : {}),
     ...(definition && !definition.attributes.isGroup
       ? { definition: { id: definition.id, name: definition.attributes.name } }
+      : {}),
+    ...materialFields(doc, instances, faces, edges.length),
+  };
+}
+
+function materialFields(
+  doc: ModelDocument,
+  instances: readonly { readonly attributes: { readonly materialId: MaterialId | null } }[],
+  faces: readonly { readonly id: FaceId; readonly attributes: FaceAttributes }[],
+  edgeCount: number,
+): Pick<EntityInfoFields, 'frontMaterial' | 'backMaterial' | 'instanceMaterial' | 'texturePlacement'> {
+  if (edgeCount > 0) return {};
+  if (faces.length === 0 && instances.length > 0) {
+    return { instanceMaterial: combine(instances.map((instance) => instance.attributes.materialId)) };
+  }
+  if (instances.length > 0 || faces.length === 0) return {};
+  const [single] = faces;
+  const textured = (id: MaterialId | null): boolean =>
+    id !== null && (doc.material(id)?.texture ?? null) !== null;
+  return {
+    frontMaterial: combine(faces.map((face) => face.attributes.frontMaterialId)),
+    backMaterial: combine(faces.map((face) => face.attributes.backMaterialId)),
+    ...(single &&
+    faces.length === 1 &&
+    (textured(single.attributes.frontMaterialId) || textured(single.attributes.backMaterialId))
+      ? {
+          texturePlacement: {
+            faceId: single.id,
+            ...(textured(single.attributes.frontMaterialId)
+              ? { front: single.attributes.frontTexturePlacement }
+              : {}),
+            ...(textured(single.attributes.backMaterialId)
+              ? { back: single.attributes.backTexturePlacement }
+              : {}),
+          },
+        }
       : {}),
   };
 }

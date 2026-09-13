@@ -1118,3 +1118,103 @@
   align-items: center;
   gap: 6px;
 }
+
+/* Materials ------------------------------------------------------------------------------------------ */
+
+.material-row {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 22px;
+  padding: 0 2px;
+  font: inherit;
+  color: var(--fg);
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+}
+
+.material-row--button:hover,
+.material-row--button:focus-visible {
+  background: var(--hover-bg);
+}
+
+.material-row__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.material-swatch {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 3px;
+}
+
+.material-swatch--default {
+  background: linear-gradient(135deg, #f2f0ea 50%, #9eafc3 50%);
+}
+
+.material-swatch--texture {
+  background-image: repeating-linear-gradient(45deg, rgb(0 0 0 / 25%) 0 2px, transparent 2px 5px);
+}
+
+.material-editor {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--chrome-border);
+}
+
+.material-editor__color {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.material-editor__color .field__control {
+  flex: 1;
+}
+
+.material-editor__texture {
+  display: grid;
+  gap: 4px;
+}
+
+.material-library {
+  margin-top: 8px;
+}
+
+.material-library summary {
+  cursor: pointer;
+  color: var(--muted-fg);
+}
+
+.material-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.material-field__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.material-placement {
+  display: grid;
+  gap: 4px;
+}

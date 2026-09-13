@@ -1,6 +1,8 @@
-import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
+import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from 'fflate';
+import { MAX_TEXTURE_BYTES, textureExtension } from '../../kernel/model/assets';
 import type { DocumentOptions, ModelDocument } from '../../kernel/model/ModelDocument';
-import { createSnapshot, restoreSnapshot } from '../../kernel/model/snapshot';
+import { createSnapshot, restoreSnapshot, snapshotTextureFiles } from '../../kernel/model/snapshot';
+import type { TextureMimeType } from '../../kernel/model/types';
 import { err, ok, type Result } from '../../kernel/result';
 
 export const PLANAR_FILE_FORMAT = 'planar-model';
@@ -17,6 +19,8 @@ const COMPRESSION_LEVEL = 6;
 
 const MANIFEST_ENTRY = 'manifest.json';
 const MODEL_ENTRY = 'model.json';
+const TEXTURE_DIRECTORY = 'assets/textures/';
+const TEXTURE_ENTRY = /^assets\/textures\/([0-9a-f]{64})\.(?:png|jpg)$/;
 
 export interface PlanarManifest {
   readonly format: typeof PLANAR_FILE_FORMAT;
@@ -41,13 +45,20 @@ export function encodePlanarFile(doc: ModelDocument, options: EncodeOptions): Ui
     createdAt: options.createdAt ?? options.now.toISOString(),
     modifiedAt: options.now.toISOString(),
   };
-  return zipSync(
-    {
-      [MANIFEST_ENTRY]: strToU8(JSON.stringify(manifest, null, 2)),
-      [MODEL_ENTRY]: strToU8(JSON.stringify(createSnapshot(doc))),
-    },
-    { level: COMPRESSION_LEVEL },
-  );
+  const entries: Zippable = {
+    [MANIFEST_ENTRY]: strToU8(JSON.stringify(manifest, null, 2)),
+    [MODEL_ENTRY]: strToU8(JSON.stringify(createSnapshot(doc))),
+  };
+  // PNG and JPEG data is already compressed, so textures are stored without recompressing them.
+  for (const [digest, file] of snapshotTextureFiles(doc)) {
+    entries[textureEntryName(digest, file.mimeType)] = [file.bytes, { level: 0 }];
+  }
+  return zipSync(entries, { level: COMPRESSION_LEVEL });
+}
+
+/** Archive path of a texture image: `assets/textures/<sha256>.<png|jpg>`. */
+export function textureEntryName(digest: string, mimeType: TextureMimeType): string {
+  return `${TEXTURE_DIRECTORY}${digest}.${textureExtension(mimeType)}`;
 }
 
 /** Rejects absolute paths, parent-directory segments, drive letters and backslashes. */
@@ -107,6 +118,13 @@ export function decodePlanarFile(
           problems.push(`the entry ${file.name} is too large`);
           return false;
         }
+        if (TEXTURE_ENTRY.test(file.name)) {
+          if (file.originalSize > MAX_TEXTURE_BYTES) {
+            problems.push(`the texture ${file.name} is too large`);
+            return false;
+          }
+          return true;
+        }
         return file.name === MANIFEST_ENTRY || file.name === MODEL_ENTRY;
       },
     });
@@ -114,6 +132,14 @@ export function decodePlanarFile(
     return err('the file is not a valid Planar archive');
   }
   if (problems.length > 0) return err(problems.join('; '));
+  const textures = new Map<string, Uint8Array>();
+  for (const [name, entryBytes] of Object.entries(entries)) {
+    const match = TEXTURE_ENTRY.exec(name);
+    if (!match?.[1]) continue;
+    // The decompressed size is checked too, since an archive can misstate it.
+    if (entryBytes.byteLength > MAX_TEXTURE_BYTES) return err(`the texture ${name} is too large`);
+    textures.set(match[1], entryBytes);
+  }
 
   const manifestBytes = entries[MANIFEST_ENTRY];
   const modelBytes = entries[MODEL_ENTRY];
@@ -127,7 +153,7 @@ export function decodePlanarFile(
   } catch {
     return err('the model data is not valid JSON');
   }
-  const restored = restoreSnapshot(snapshot, documentOptions);
+  const restored = restoreSnapshot(snapshot, documentOptions, (digest) => textures.get(digest));
   if (!restored.ok) return err(restored.error);
   return ok({ doc: restored.value, manifest: manifest.value });
 }

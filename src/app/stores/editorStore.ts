@@ -79,6 +79,8 @@ export interface EditorViewState {
   readonly inputRequest: InputRequest | null;
   /** Dimension and text labels in viewport pixels. */
   readonly annotationLabels: readonly ScreenAnnotationLabel[];
+  /** The material the Paint Bucket applies; null for the default material. */
+  readonly activeMaterialId: number | null;
 }
 
 export interface EditorStore extends StoreApi<EditorViewState> {
@@ -172,6 +174,7 @@ export function createEditorStore(editor: Editor): EditorStore {
       openPanels: editor.openPanels,
       inputRequest: editor.inputRequest,
       annotationLabels: screenLabels(),
+      activeMaterialId: session.activeMaterialId,
     };
   };
   const store = createStore<EditorViewState>(snapshot);

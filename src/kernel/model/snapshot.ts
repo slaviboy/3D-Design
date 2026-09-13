@@ -16,7 +16,14 @@ import type { Vec3 } from '../math/vec3';
 import { err, ok, type Result } from '../result';
 import type { Change } from './changes';
 import { ModelDocument, type DocumentOptions } from './ModelDocument';
+import type { AssetId } from '../ids';
+import { isTextureMimeType, MAX_TEXTURE_BYTES, sha256Hex } from './assets';
 import {
+  DEFAULT_MATERIAL_METALNESS,
+  DEFAULT_MATERIAL_ROUGHNESS,
+  type TexturePlacement,
+  type TextureAssetData,
+  type TextureMimeType,
   DEFAULT_MODEL_AXES,
   DEFAULT_TAG_COLOR,
   type CurveData,
@@ -42,13 +49,39 @@ export const SNAPSHOT_FORMAT = 'planar-document';
 export const SNAPSHOT_VERSION = 1;
 const MAX_REPORTED_ERRORS = 10;
 
+/** Face attributes as stored: texture placements are written only when set. */
+export type FaceAttributesSnapshot = Omit<FaceAttributes, 'frontTexturePlacement' | 'backTexturePlacement'> &
+  Partial<Pick<FaceAttributes, 'frontTexturePlacement' | 'backTexturePlacement'>>;
+
+export interface FaceSnapshot extends Omit<FaceData, 'attributes'> {
+  readonly attributes: FaceAttributesSnapshot;
+}
+
+/** A material as stored: metalness and roughness are written only when not the default, the texture only when set. */
+export type MaterialSnapshot = Pick<MaterialData, 'id' | 'name' | 'color' | 'opacity'> &
+  Partial<Pick<MaterialData, 'metalness' | 'roughness' | 'texture'>>;
+
+/** A texture asset as stored. The bytes live outside the snapshot, found by their SHA-256 digest. */
+export interface TextureAssetSnapshot {
+  readonly id: AssetId;
+  readonly name: string;
+  readonly mimeType: TextureMimeType;
+  readonly width: number;
+  readonly height: number;
+  readonly byteLength: number;
+  readonly sha256: string;
+}
+
+/** Supplies texture bytes for {@link restoreSnapshot}, by SHA-256 digest (lowercase hex). */
+export type TextureBytesSource = (sha256: string) => Uint8Array | undefined;
+
 export interface DefinitionSnapshot {
   readonly id: DefinitionId;
   readonly name: string;
   readonly isGroup: boolean;
   readonly vertices: readonly VertexData[];
   readonly edges: readonly EdgeData[];
-  readonly faces: readonly FaceData[];
+  readonly faces: readonly FaceSnapshot[];
   readonly curves: readonly CurveData[];
   readonly instances: readonly InstanceData[];
   readonly guides: readonly GuideData[];
@@ -62,11 +95,24 @@ export interface DocumentSnapshot {
   readonly version: typeof SNAPSHOT_VERSION;
   readonly nextId: number;
   readonly rootDefinitionId: DefinitionId;
-  readonly materials: readonly MaterialData[];
+  readonly materials: readonly MaterialSnapshot[];
   readonly tags: readonly TagData[];
   readonly definitions: readonly DefinitionSnapshot[];
   /** Present only when the drawing axes differ from the default. */
   readonly axes?: ModelAxes;
+  /** Present only when the document stores texture images. */
+  readonly textures?: readonly TextureAssetSnapshot[];
+}
+
+/** The encoded image of every texture asset, keyed by SHA-256 digest, for storing next to a snapshot. */
+export function snapshotTextureFiles(
+  doc: ModelDocument,
+): Map<string, { readonly mimeType: TextureMimeType; readonly bytes: Uint8Array }> {
+  const files = new Map<string, { mimeType: TextureMimeType; bytes: Uint8Array }>();
+  for (const asset of [...doc.assets()].sort(byId)) {
+    files.set(sha256Hex(asset.bytes), { mimeType: asset.mimeType, bytes: asset.bytes });
+  }
+  return files;
 }
 
 // -------------------------------------------------------------------------------------------------- writing
@@ -80,11 +126,31 @@ const edgeAttributes = (a: EdgeAttributes): EdgeAttributes => ({
   materialId: a.materialId,
   tagId: a.tagId,
 });
-const faceAttributes = (a: FaceAttributes): FaceAttributes => ({
+const placementCopy = (p: TexturePlacement): TexturePlacement => ({
+  offsetX: p.offsetX,
+  offsetY: p.offsetY,
+  rotation: p.rotation,
+  scaleX: p.scaleX,
+  scaleY: p.scaleY,
+});
+const faceAttributes = (a: FaceAttributes): FaceAttributesSnapshot => ({
   frontMaterialId: a.frontMaterialId,
   backMaterialId: a.backMaterialId,
   tagId: a.tagId,
   hidden: a.hidden,
+  ...(a.frontTexturePlacement ? { frontTexturePlacement: placementCopy(a.frontTexturePlacement) } : {}),
+  ...(a.backTexturePlacement ? { backTexturePlacement: placementCopy(a.backTexturePlacement) } : {}),
+});
+const materialSnapshot = (m: MaterialData): MaterialSnapshot => ({
+  id: m.id,
+  name: m.name,
+  color: { r: m.color.r, g: m.color.g, b: m.color.b },
+  opacity: m.opacity,
+  ...(m.metalness !== DEFAULT_MATERIAL_METALNESS ? { metalness: m.metalness } : {}),
+  ...(m.roughness !== DEFAULT_MATERIAL_ROUGHNESS ? { roughness: m.roughness } : {}),
+  ...(m.texture
+    ? { texture: { assetId: m.texture.assetId, width: m.texture.width, height: m.texture.height } }
+    : {}),
 });
 const instanceAttributes = (a: InstanceAttributes): InstanceAttributes => ({
   name: a.name,
@@ -169,12 +235,7 @@ export function createSnapshot(doc: ModelDocument): DocumentSnapshot {
     version: SNAPSHOT_VERSION,
     nextId: doc.ids.next,
     rootDefinitionId: doc.rootDefinitionId,
-    materials: [...doc.materials()].sort(byId).map((m) => ({
-      id: m.id,
-      name: m.name,
-      color: { r: m.color.r, g: m.color.g, b: m.color.b },
-      opacity: m.opacity,
-    })),
+    materials: [...doc.materials()].sort(byId).map(materialSnapshot),
     tags: [...doc.tags()].sort(byId).map((t) => ({
       id: t.id,
       name: t.name,
@@ -229,6 +290,19 @@ export function createSnapshot(doc: ModelDocument): DocumentSnapshot {
     ...(isDefaultAxes(doc.axes)
       ? {}
       : { axes: { origin: vec(doc.axes.origin), xAxis: vec(doc.axes.xAxis), yAxis: vec(doc.axes.yAxis) } }),
+    ...([...doc.assets()].length === 0
+      ? {}
+      : {
+          textures: [...doc.assets()].sort(byId).map((asset) => ({
+            id: asset.id,
+            name: asset.name,
+            mimeType: asset.mimeType,
+            width: asset.width,
+            height: asset.height,
+            byteLength: asset.bytes.byteLength,
+            sha256: sha256Hex(asset.bytes),
+          })),
+        }),
   };
 }
 
@@ -412,7 +486,84 @@ function readAnnotationGeometry(r: Reader, value: unknown, path: string): Annota
   }
 }
 
-function readDefinition(r: Reader, value: unknown, path: string): DefinitionSnapshot {
+function readPlacement(r: Reader, value: unknown, path: string): TexturePlacement | null {
+  if (value === undefined || value === null) return null;
+  const p = r.record(value, path);
+  return {
+    offsetX: r.number(p.offsetX, `${path}.offsetX`),
+    offsetY: r.number(p.offsetY, `${path}.offsetY`),
+    rotation: r.number(p.rotation, `${path}.rotation`),
+    scaleX: r.number(p.scaleX, `${path}.scaleX`),
+    scaleY: r.number(p.scaleY, `${path}.scaleY`),
+  };
+}
+
+function readMaterial(r: Reader, value: unknown, path: string): MaterialData {
+  const m = r.record(value, path);
+  const color = r.record(m.color, `${path}.color`);
+  const texture =
+    m.texture === undefined || m.texture === null ? null : r.record(m.texture, `${path}.texture`);
+  return {
+    id: r.id<MaterialId>(m.id, `${path}.id`),
+    name: r.string(m.name, `${path}.name`),
+    color: {
+      r: r.number(color.r, `${path}.color.r`),
+      g: r.number(color.g, `${path}.color.g`),
+      b: r.number(color.b, `${path}.color.b`),
+    },
+    opacity: r.number(m.opacity, `${path}.opacity`),
+    // Physical attributes and textures were added later; older files get the defaults.
+    metalness:
+      m.metalness === undefined ? DEFAULT_MATERIAL_METALNESS : r.number(m.metalness, `${path}.metalness`),
+    roughness:
+      m.roughness === undefined ? DEFAULT_MATERIAL_ROUGHNESS : r.number(m.roughness, `${path}.roughness`),
+    texture: texture
+      ? {
+          assetId: r.id<AssetId>(texture.assetId, `${path}.texture.assetId`),
+          width: r.number(texture.width, `${path}.texture.width`),
+          height: r.number(texture.height, `${path}.texture.height`),
+        }
+      : null,
+  };
+}
+
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
+function readTextureAsset(
+  r: Reader,
+  value: unknown,
+  path: string,
+  textureBytes: TextureBytesSource,
+): TextureAssetData {
+  const t = r.record(value, path);
+  const id = r.id<AssetId>(t.id, `${path}.id`);
+  const name = r.string(t.name, `${path}.name`);
+  const mimeType = isTextureMimeType(t.mimeType) ? t.mimeType : 'image/png';
+  if (!isTextureMimeType(t.mimeType)) r.fail(`${path}.mimeType`, 'expected image/png or image/jpeg');
+  const width = r.number(t.width, `${path}.width`);
+  const height = r.number(t.height, `${path}.height`);
+  const byteLength = r.number(t.byteLength, `${path}.byteLength`);
+  const digest = r.string(t.sha256, `${path}.sha256`);
+  let bytes: Uint8Array = new Uint8Array(0);
+  if (!SHA256_HEX.test(digest)) {
+    r.fail(`${path}.sha256`, 'expected a SHA-256 digest');
+  } else if (byteLength > MAX_TEXTURE_BYTES) {
+    r.fail(`${path}.byteLength`, 'the texture is too large');
+  } else {
+    const found = textureBytes(digest);
+    if (!found) r.fail(path, 'the texture image is missing');
+    else if (found.byteLength !== byteLength || sha256Hex(found) !== digest) {
+      r.fail(path, 'the texture image is corrupt');
+    } else bytes = found;
+  }
+  return { id, name, mimeType, width, height, bytes };
+}
+
+function readDefinition(
+  r: Reader,
+  value: unknown,
+  path: string,
+): DefinitionSnapshot & { readonly faces: readonly FaceData[] } {
   const d = r.record(value, path);
   const at = (key: string, index: number): string => `${path}.${key}[${String(index)}]`;
   return {
@@ -456,6 +607,17 @@ function readDefinition(r: Reader, value: unknown, path: string): DefinitionSnap
           backMaterialId: r.nullableId<MaterialId>(a.backMaterialId, `${p}.attributes.backMaterialId`),
           tagId: r.nullableId<TagId>(a.tagId, `${p}.attributes.tagId`),
           hidden: r.boolean(a.hidden, `${p}.attributes.hidden`),
+          // Texture placements are optional; files without them use the default projection.
+          frontTexturePlacement: readPlacement(
+            r,
+            a.frontTexturePlacement,
+            `${p}.attributes.frontTexturePlacement`,
+          ),
+          backTexturePlacement: readPlacement(
+            r,
+            a.backTexturePlacement,
+            `${p}.attributes.backTexturePlacement`,
+          ),
         },
       };
     }),
@@ -525,7 +687,11 @@ function readDefinition(r: Reader, value: unknown, path: string): DefinitionSnap
  * Builds a document from an untrusted snapshot. Structure, id uniqueness and every kernel invariant are checked,
  * and nothing partial is ever returned.
  */
-export function restoreSnapshot(input: unknown, options: DocumentOptions = {}): Result<ModelDocument> {
+export function restoreSnapshot(
+  input: unknown,
+  options: DocumentOptions = {},
+  textureBytes: TextureBytesSource = () => undefined,
+): Result<ModelDocument> {
   const r = new Reader();
   const root = r.record(input, '$');
   if (root.format !== SNAPSHOT_FORMAT) return err('This is not a Planar document');
@@ -534,21 +700,12 @@ export function restoreSnapshot(input: unknown, options: DocumentOptions = {}): 
   }
   const nextId = r.id(root.nextId, '$.nextId');
   const rootDefinitionId = r.id<DefinitionId>(root.rootDefinitionId, '$.rootDefinitionId');
-  const materials: MaterialData[] = r.list(root.materials, '$.materials').map((entry, i) => {
-    const p = `$.materials[${String(i)}]`;
-    const m = r.record(entry, p);
-    const color = r.record(m.color, `${p}.color`);
-    return {
-      id: r.id<MaterialId>(m.id, `${p}.id`),
-      name: r.string(m.name, `${p}.name`),
-      color: {
-        r: r.number(color.r, `${p}.color.r`),
-        g: r.number(color.g, `${p}.color.g`),
-        b: r.number(color.b, `${p}.color.b`),
-      },
-      opacity: r.number(m.opacity, `${p}.opacity`),
-    };
-  });
+  const materials: MaterialData[] = r
+    .list(root.materials, '$.materials')
+    .map((entry, i) => readMaterial(r, entry, `$.materials[${String(i)}]`));
+  const textures: TextureAssetData[] = (
+    root.textures === undefined ? [] : r.list(root.textures, '$.textures')
+  ).map((entry, i) => readTextureAsset(r, entry, `$.textures[${String(i)}]`, textureBytes));
   const tags: TagData[] = r.list(root.tags, '$.tags').map((entry, i) => {
     const p = `$.tags[${String(i)}]`;
     const t = r.record(entry, p);
@@ -579,6 +736,7 @@ export function restoreSnapshot(input: unknown, options: DocumentOptions = {}): 
   if (r.errors.length > 0) return err(`Invalid document structure: ${r.errors.join('; ')}`);
 
   const allIds = [
+    ...textures.map((t) => t.id),
     ...materials.map((m) => m.id),
     ...tags.map((t) => t.id),
     ...definitions.flatMap((d) => [
@@ -615,6 +773,7 @@ export function restoreSnapshot(input: unknown, options: DocumentOptions = {}): 
       changes.push({ kind: 'definition.add', data: { id: d.id, name: d.name, isGroup: d.isGroup } });
   }
   if (axes) changes.push({ kind: 'document.axes', from: DEFAULT_MODEL_AXES, to: axes });
+  for (const data of textures) changes.push({ kind: 'asset.add', data });
   for (const data of materials) changes.push({ kind: 'material.add', data });
   for (const data of tags) changes.push({ kind: 'tag.add', data });
   for (const d of definitions) {

@@ -1,5 +1,5 @@
 /** Panels in the dock, in display order. */
-export type PanelId = 'entityInfo' | 'outliner' | 'components' | 'tags' | 'soften';
+export type PanelId = 'entityInfo' | 'outliner' | 'components' | 'tags' | 'soften' | 'materials';
 
 export interface PanelDescriptor {
   readonly id: PanelId;
@@ -14,9 +14,16 @@ export const PANELS: readonly PanelDescriptor[] = [
   { id: 'components', label: 'Components', aliases: ['definitions', 'blocks', 'library'] },
   { id: 'tags', label: 'Tags', aliases: ['layers', 'visibility'] },
   { id: 'soften', label: 'Soften Edges', aliases: ['smooth', 'soften', 'hide edges by angle'] },
+  { id: 'materials', label: 'Materials', aliases: ['colors', 'textures', 'paint', 'swatches'] },
 ];
 
 export const PANEL_IDS: readonly PanelId[] = PANELS.map((panel) => panel.id);
 
 /** Panels shown when the app starts. */
-export const DEFAULT_OPEN_PANELS: readonly PanelId[] = ['entityInfo', 'outliner', 'components', 'tags'];
+export const DEFAULT_OPEN_PANELS: readonly PanelId[] = [
+  'entityInfo',
+  'outliner',
+  'components',
+  'tags',
+  'materials',
+];

@@ -40,6 +40,7 @@ const TOOL_PALETTE: readonly string[] = [
   'tool.protractor',
   'tool.dimension',
   'tool.text',
+  'tool.paint',
   'tool.orbit',
   'tool.pan',
   'tool.zoom',

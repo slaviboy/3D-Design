@@ -12,7 +12,14 @@ async function buildOverlappingBoxes(page: Page): Promise<void> {
     const doc = editor.session.doc;
     const root = doc.rootDefinitionId;
     const edgeAttributes = { soft: false, smooth: false, hidden: false, materialId: null, tagId: null };
-    const faceAttributes = { frontMaterialId: null, backMaterialId: null, tagId: null, hidden: false };
+    const faceAttributes = {
+      frontMaterialId: null,
+      backMaterialId: null,
+      tagId: null,
+      hidden: false,
+      frontTexturePlacement: null,
+      backTexturePlacement: null,
+    };
     const instanceAttributes = {
       name: '',
       tagId: null,

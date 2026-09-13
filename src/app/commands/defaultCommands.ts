@@ -5,6 +5,7 @@ import { AXES_TOOL_ID } from '../tools/AxesTool';
 import { OFFSET_TOOL_ID } from '../tools/OffsetTool';
 import { DIMENSION_TOOL_ID } from '../tools/DimensionTool';
 import { TEXT_TOOL_ID } from '../tools/TextTool';
+import { PAINT_TOOL_ID } from '../tools/PaintBucketTool';
 import type { StandardView } from '../camera/camera';
 import type { Editor } from '../Editor';
 import { PANELS } from '../panels/panels';
@@ -282,6 +283,27 @@ export function registerDefaultCommands(registry: CommandRegistry<Editor>): void
     toolCommand(OFFSET_TOOL_ID, 'Offset', 'F', ['inset', 'outline', 'parallel copy', 'wall thickness']),
     toolCommand(DIMENSION_TOOL_ID, 'Dimension', null, ['measure', 'dimension', 'length label']),
     toolCommand(TEXT_TOOL_ID, 'Text', null, ['label', 'leader', 'note', 'annotation']),
+    toolCommand(PAINT_TOOL_ID, 'Paint Bucket', 'B', ['paint', 'material', 'color', 'texture', 'sample']),
+    {
+      id: 'materials.purgeUnused',
+      label: 'Purge Unused Materials',
+      category: 'Edit',
+      aliases: ['clean up materials', 'remove unused materials', 'textures'],
+      run: (editor) => {
+        editor.purgeUnusedMaterials();
+      },
+    },
+    {
+      id: 'materials.paintSelection',
+      label: 'Paint Selection',
+      category: 'Edit',
+      description: 'Apply the active material to the selected faces, groups and components',
+      aliases: ['apply material', 'paint'],
+      isEnabled: hasSelection,
+      run: (editor) => {
+        editor.paintSelection();
+      },
+    },
     {
       id: 'edit.divide',
       label: 'Divide…',

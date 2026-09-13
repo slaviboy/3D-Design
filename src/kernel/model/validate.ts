@@ -13,7 +13,9 @@ import { isPointOnPlane, planeBasis, planesCoincide, projectTo2D, type PlaneBasi
 import { closestPointsOnSegments, distancePointToSegment } from '../math/segment';
 import { distance, isFiniteVec3, length } from '../math/vec3';
 import { EPS_AREA, EPS_LEN, EPS_UNIT_LENGTH } from '../tolerance';
+import { isTextureMimeType, readImageHeader, textureBytesProblem } from './assets';
 import type { EntityStore, FaceView } from './EntityStore';
+import { materialProblem, texturePlacementProblem } from './mutations';
 import type { ModelDocument } from './ModelDocument';
 
 export interface ValidationReport {
@@ -119,6 +121,10 @@ function validateStore(doc: ModelDocument, store: EntityStore, report: Reporter)
     }
     if (tagId !== null && !doc.tag(tagId))
       report('missing-reference', 'Face references a missing tag', [face.id]);
+    for (const placement of [face.attributes.frontTexturePlacement, face.attributes.backTexturePlacement]) {
+      const problem = placement ? texturePlacementProblem(placement) : null;
+      if (problem !== null) report('invalid-texture-placement', problem, [face.id]);
+    }
   }
 
   for (const edge of store.edges()) {
@@ -401,11 +407,22 @@ function validateDocumentLevel(doc: ModelDocument, report: Reporter): void {
   ) {
     report('invalid-axes', 'Drawing axes must have a finite origin and perpendicular unit directions', []);
   }
-  const inUnitRange = (value: number): boolean => Number.isFinite(value) && value >= 0 && value <= 1;
   for (const material of doc.materials()) {
-    const { r, g, b } = material.color;
-    if (![r, g, b, material.opacity].every(inUnitRange)) {
-      report('invalid-material', 'Material color or opacity is outside [0, 1]', [material.id]);
+    const problem = materialProblem(doc, material);
+    if (problem !== null) {
+      const code =
+        material.texture && !doc.asset(material.texture.assetId) ? 'missing-reference' : 'invalid-material';
+      report(code, problem, [material.id]);
     }
+  }
+  for (const asset of doc.assets()) {
+    const header = readImageHeader(asset.bytes);
+    const problem = !isTextureMimeType(asset.mimeType)
+      ? 'unsupported image type'
+      : (textureBytesProblem(asset.bytes) ??
+        (header?.mimeType !== asset.mimeType || header.width !== asset.width || header.height !== asset.height
+          ? 'the stored type or size does not match the image'
+          : null));
+    if (problem !== null) report('invalid-asset', `Texture asset is invalid: ${problem}`, [asset.id]);
   }
 }

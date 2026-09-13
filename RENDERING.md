@@ -21,7 +21,8 @@ and its dirty sets, and never stores model data of its own.
 - **Triangulation cache.** Triangulation is cached per face id. Editing a face re-triangulates only that face and
   rebuilds only its chunk.
 - **Materials.** Each face is drawn with its front and back materials. A face with no material uses the style's
-  front or back color, and inherits an instance's material override when inside one.
+  front or back color, and inherits an instance's material override when inside one. See "Materials (Phase 7)"
+  below for what is implemented.
 
 ## Edges
 
@@ -125,7 +126,8 @@ form. These are the known differences from the target design, each scheduled for
 | Instanced screen-space edge quads with profiles and styles | 1 px `LineSegments`; soft and hidden edges skipped | Visualization phase |
 | Selection state in a `DataTexture` | A separate overlay mesh for selected faces and edges, plus box outlines for instances | Performance phase, if measurements show a need |
 | Chunk-relative positions against float32 jitter | World positions in float32 buffers | Performance phase |
-| Styles, shadows, environments, sections | Fixed front and back colors, ambient plus one directional light | Visualization phase |
+| Styles, shadows, environments, sections | Default faces use fixed front and back colors; ambient plus one directional light | Visualization phase |
+| Material chunks with a per-face state texture | One merged geometry per (side, material) per definition; any edit to a definition rebuilds all of its buckets and the scene tree | Performance phase |
 | Overlay sprites for inference markers and dimensions | Tool previews are world-space `LineSegments` without depth test; inference markers and tooltips are DOM elements positioned over the canvas | Visualization phase |
 | Dashed guides clipped to the view | Solid guide lines drawn 1 km to each side of their anchor, excluded from the bounds that set the clipping planes | Visualization phase |
 
@@ -135,3 +137,55 @@ instances of a definition, and invalidation driven by the kernel's change events
 While a group or component is open, geometry outside it is drawn with transparent materials (30 % opacity). The
 open context and everything inside it keep the normal materials. The face or edges a tool would act on are tinted
 with the hover color, separately from the selection overlay.
+
+## Materials (Phase 7)
+
+Implemented in `src/render/ModelRenderer.ts`, with pure helpers in `src/kernel/ops/materials.ts` (projection) and
+`src/kernel/ops/shading.ts` (smooth normals).
+
+- **Buckets.** A definition's visible faces are split into one merged `BufferGeometry` per side (front or back) and
+  material. The default material is its own bucket. Each vertex carries `position`, `normal` and `uv`. Front buckets
+  are drawn with `FrontSide` and back buckets with `BackSide`.
+- **Material resolution.** A bucket with a material uses it. A default bucket uses the material of the innermost
+  painted group or component it is drawn inside, found while walking the instance tree, so one shared geometry can
+  show different inherited materials per instance. Otherwise it uses the style's front or back color.
+- **three.js materials.**
+  - Model materials become `MeshStandardMaterial` with color, opacity, metalness and roughness.
+  - Default faces keep `MeshLambertMaterial`, so unpainted models look exactly as before.
+  - With only ambient and directional light, roughness 1 and metalness 0 shade close to the Lambert look. Metallic
+    materials look dark until environments exist.
+  - Materials are cached per (material, side, faded) and disposed when their material or its texture asset changes,
+    when the document is replaced, and when the renderer is disposed.
+- **Transparency.** A material with opacity below 1 is `transparent` with `depthWrite` off. three.js draws
+  transparent objects after opaque ones, sorted back to front by object. Sorting is per bucket, not per triangle, so
+  intersecting transparent surfaces in one bucket can still blend in the wrong order. Faded contexts multiply opacity
+  by 30 % and keep writing depth, as before.
+- **Textures.**
+  - Asset bytes are decoded with `createImageBitmap(new Blob([bytes], { type }), { imageOrientation: 'flipY' })`.
+    That needs no object URL, no `img` element and no network. The CSP would allow `blob:` images, but they are not
+    needed.
+  - Each asset gets one `THREE.Texture` (sRGB, repeat wrapping). Each material clones it, which shares the uploaded
+    image, and sets `repeat = (1 / tile width, 1 / tile height)`. The material color is then white, so the image is
+    not tinted.
+  - Decoding is asynchronous. The material shows its color until the image is ready, then the renderer rebuilds the
+    affected materials and asks the viewport for a frame.
+  - Removed assets close their `ImageBitmap` and dispose their texture.
+- **UVs.** Texture coordinates are in meters, from the planar projection in `textureAxes`.
+  - Horizontal faces project along the red and green axes.
+  - Other faces use a horizontal `u` and an upward `v`, so wall textures stand upright.
+  - The side's placement (offset, rotation, scale) is applied before writing the UV. Dividing by the tile size is
+    left to the texture's repeat, so resizing a texture never rebuilds geometry.
+- **Smooth shading.** Faces joined by edges that are both soft and smooth form a surface (union-find over those
+  edges). At each vertex, a face in such a surface gets the normalized sum of the normals of the surface's faces that
+  touch the vertex. Every other face keeps its flat normal. Soft edges that are not smooth still hide the edge but
+  shade flat.
+- **Selection, hover, fading and hidden tags** are unchanged. Overlays use their own flat meshes, hidden faces and
+  hidden tags are skipped while buckets are built, and fading applies per node as before.
+
+**Known limitations**
+
+- Textures are not clamped to the GPU's maximum texture size (the file limit is 8192 px).
+- Mipmaps are generated only for the three.js defaults.
+- There is no texture-only style mode yet.
+- Edges don't show edge materials.
+- Back sides show textures mirrored, because both sides share one projection.

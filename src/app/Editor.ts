@@ -19,6 +19,28 @@ import {
   purgeUnusedDefinitions,
 } from '../kernel/ops/hierarchy';
 import { deleteTag as deleteTagOp, purgeUnusedTags as purgeUnusedTagsOp } from '../kernel/ops/tags';
+import type { MaterialId } from '../kernel/ids';
+import {
+  addMaterial as addMaterialMutation,
+  addTextureAsset,
+  setMaterialAttributes,
+} from '../kernel/model/mutations';
+import type { MaterialAttributes, TexturePlacement } from '../kernel/model/types';
+import {
+  deleteMaterial as deleteMaterialOp,
+  paintSidePatch,
+  purgeUnusedMaterials as purgeUnusedMaterialsOp,
+  removeUnusedTextureAssets,
+  type FaceSide,
+} from '../kernel/ops/materials';
+import {
+  libraryColor,
+  listMaterials,
+  uniqueMaterialName,
+  type LibraryMaterial,
+  type MaterialRow,
+} from './materials/materials';
+import { PaintBucketTool } from './tools/PaintBucketTool';
 import { transformEntities } from '../kernel/ops/transform';
 import { vec3 } from '../kernel/math/vec3';
 import { type UnitSettings } from '../kernel/units/units';
@@ -261,6 +283,7 @@ export class Editor {
         new OffsetTool(),
         new DimensionTool(),
         new TextTool(),
+        new PaintBucketTool(),
         this.#placementTool,
         new FollowMeTool(),
       ],
@@ -1082,6 +1105,224 @@ export class Editor {
 
   assignSelectionToTag(tagId: TagId | null): void {
     this.updateSelectionAttributes({ tagId });
+  }
+
+  // ---------------------------------------------------------------------------------------------- materials
+
+  /** The material the Paint Bucket applies; null is the default material. */
+  get activeMaterialId(): MaterialId | null {
+    return this.session.activeMaterialId;
+  }
+
+  /** Not undoable. */
+  setActiveMaterial(materialId: MaterialId | null): void {
+    this.session.setActiveMaterial(materialId);
+  }
+
+  materialRows(): MaterialRow[] {
+    return listMaterials(this.session.doc);
+  }
+
+  /** Adds a material and makes it active. Without a name it is called `Material n`. */
+  addMaterial(
+    options: { readonly name?: string; readonly color?: MaterialAttributes['color'] } = {},
+  ): MaterialId {
+    const doc = this.session.doc;
+    const trimmed = options.name?.trim() ?? '';
+    const id = doc.transact('Add Material', () =>
+      addMaterialMutation(doc, {
+        name: trimmed === '' ? uniqueMaterialName(doc) : trimmed,
+        color: options.color ?? { r: 0.8, g: 0.8, b: 0.8 },
+      }),
+    );
+    this.session.setActiveMaterial(id);
+    return id;
+  }
+
+  /** Copies a bundled library material into the model and makes it active. */
+  addLibraryMaterial(entry: LibraryMaterial): MaterialId {
+    const doc = this.session.doc;
+    const id = doc.transact('Add Material', () =>
+      addMaterialMutation(doc, {
+        name: uniqueMaterialName(doc, entry.name),
+        color: libraryColor(entry),
+        ...(entry.opacity !== undefined ? { opacity: entry.opacity } : {}),
+        ...(entry.metalness !== undefined ? { metalness: entry.metalness } : {}),
+        ...(entry.roughness !== undefined ? { roughness: entry.roughness } : {}),
+      }),
+    );
+    this.session.setActiveMaterial(id);
+    return id;
+  }
+
+  /** Returns false (and notifies) when the name is empty. */
+  renameMaterial(materialId: MaterialId, name: string): boolean {
+    const trimmed = name.trim();
+    if (trimmed === '') {
+      this.notify('error', 'A material needs a name');
+      return false;
+    }
+    return this.#editMaterial('Rename Material', materialId, { name: trimmed });
+  }
+
+  /** Changes color, opacity, metalness or roughness in one undoable step. Returns false (and notifies) on failure. */
+  updateMaterial(
+    materialId: MaterialId,
+    patch: Partial<Pick<MaterialAttributes, 'color' | 'opacity' | 'metalness' | 'roughness'>>,
+  ): boolean {
+    return this.#editMaterial('Edit Material', materialId, patch);
+  }
+
+  /**
+   * Gives a material a texture image (PNG or JPEG bytes). Without a tile size, the tile is 1 m wide and as tall as
+   * the image's aspect ratio makes it. Returns false (and notifies) when the image can't be used.
+   */
+  importMaterialTexture(
+    materialId: MaterialId,
+    name: string,
+    bytes: Uint8Array,
+    tile?: { readonly width: number; readonly height: number },
+  ): boolean {
+    const doc = this.session.doc;
+    try {
+      doc.transact('Import Texture', () => {
+        const assetId = addTextureAsset(doc, name, bytes);
+        const asset = doc.asset(assetId);
+        const aspect = asset ? asset.height / asset.width : 1;
+        setMaterialAttributes(doc, materialId, {
+          texture: { assetId, width: tile?.width ?? 1, height: tile?.height ?? aspect },
+        });
+        removeUnusedTextureAssets(doc);
+      });
+      return true;
+    } catch (error) {
+      this.notify('error', `Could not import ${name}: ${errorMessage(error)}`);
+      return false;
+    }
+  }
+
+  /** Sets the size of one texture tile in meters. Returns false (and notifies) when it isn't valid. */
+  setMaterialTextureSize(materialId: MaterialId, width: number, height: number): boolean {
+    const texture = this.session.doc.material(materialId)?.texture;
+    if (!texture) return false;
+    return this.#editMaterial('Resize Texture', materialId, { texture: { ...texture, width, height } });
+  }
+
+  /** Removes a material's texture, and its image when no other material uses it. */
+  removeMaterialTexture(materialId: MaterialId): void {
+    const doc = this.session.doc;
+    if (!doc.material(materialId)?.texture) return;
+    doc.transact('Remove Texture', () => {
+      setMaterialAttributes(doc, materialId, { texture: null });
+      removeUnusedTextureAssets(doc);
+    });
+  }
+
+  /** Deletes a material; whatever used it goes back to the default material. */
+  deleteMaterial(materialId: MaterialId): void {
+    this.tools.cancel();
+    deleteMaterialOp(this.session.doc, materialId);
+  }
+
+  /** Deletes materials nothing uses. Returns how many were deleted. */
+  purgeUnusedMaterials(): number {
+    this.tools.cancel();
+    const removed = purgeUnusedMaterialsOp(this.session.doc).length;
+    this.notify(
+      'info',
+      removed === 0 ? 'There are no unused materials' : `Purged ${countOf(removed, 'unused material')}`,
+    );
+    return removed;
+  }
+
+  /** Selects the faces of the open context that use a material on either side. Returns how many. */
+  selectFacesWithMaterial(materialId: MaterialId): number {
+    const { session } = this;
+    const refs = [...session.doc.store(session.activeContext).faces()]
+      .filter(
+        (face) =>
+          face.attributes.frontMaterialId === materialId || face.attributes.backMaterialId === materialId,
+      )
+      .map((face): EntityRef => ({ kind: 'face', id: face.id }));
+    session.setSelection(Selection.of(refs));
+    if (refs.length === 0) this.notify('info', 'No faces here use that material');
+    return refs.length;
+  }
+
+  /**
+   * Paints the selection with a material: `front` or `back` sides of selected faces, or the default material of
+   * selected groups and components (`instance`). Locked groups and components are refused.
+   */
+  setSelectionMaterial(target: FaceSide | 'instance', materialId: MaterialId | null): void {
+    const { session } = this;
+    const selection = session.selection;
+    const doc = session.doc;
+    const context = session.activeContext;
+    if (materialId !== null && !doc.material(materialId)) {
+      this.notify('error', 'That material no longer exists');
+      return;
+    }
+    if (target === 'instance' && hasLockedInstance(doc, context, selection.refs())) {
+      this.notify('error', LOCKED_MESSAGE);
+      return;
+    }
+    doc.transact('Paint', () => {
+      if (target === 'instance') {
+        for (const id of selection.ids('instance')) {
+          setInstanceAttributes(doc, context, id as InstanceId, { materialId });
+        }
+      } else {
+        for (const id of selection.ids('face')) {
+          setFaceAttributes(doc, context, id as FaceId, paintSidePatch(target, materialId));
+        }
+      }
+    });
+  }
+
+  /** Paints the selected faces' fronts and the selected groups and components with the active material. */
+  paintSelection(): void {
+    const { session } = this;
+    if (session.selection.isEmpty) return;
+    const doc = session.doc;
+    doc.transact('Paint', () => {
+      if (session.selection.count('instance') > 0)
+        this.setSelectionMaterial('instance', session.activeMaterialId);
+      if (session.selection.count('face') > 0) this.setSelectionMaterial('front', session.activeMaterialId);
+    });
+  }
+
+  /** Moves, rotates or scales the texture on one side of a face of the open context; null resets it. */
+  setFaceTexturePlacement(faceId: FaceId, side: FaceSide, placement: TexturePlacement | null): boolean {
+    const { session } = this;
+    const doc = session.doc;
+    if (!doc.store(session.activeContext).face(faceId)) return false;
+    try {
+      doc.transact('Position Texture', () => {
+        setFaceAttributes(
+          doc,
+          session.activeContext,
+          faceId,
+          side === 'front' ? { frontTexturePlacement: placement } : { backTexturePlacement: placement },
+        );
+      });
+      return true;
+    } catch (error) {
+      this.notify('error', errorMessage(error));
+      return false;
+    }
+  }
+
+  #editMaterial(label: string, materialId: MaterialId, patch: Partial<MaterialAttributes>): boolean {
+    const doc = this.session.doc;
+    try {
+      doc.transact(label, () => {
+        setMaterialAttributes(doc, materialId, patch);
+      });
+      return true;
+    } catch (error) {
+      this.notify('error', errorMessage(error));
+      return false;
+    }
   }
 
   // ---------------------------------------------------------------------------------------------- components
