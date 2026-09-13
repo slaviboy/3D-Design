@@ -114,18 +114,24 @@ The overlay layer draws:
 | Selection change | < 16 ms |
 | Single-face edit | < 8 ms including chunk rebuild |
 
-## Current implementation (Phase 3)
+## Current implementation (Phase 4)
 
 The foundation renderer (`src/render/Viewport.ts`, `ModelRenderer.ts`) follows the structure above in a simpler
 form. These are the known differences from the target design, each scheduled for a later phase:
 
-| Target design | Phase 3 implementation | Planned |
+| Target design | Current implementation | Planned |
 |---|---|---|
 | Spatial chunks of ~16k triangles per material | One merged geometry per definition, rebuilt when that definition changes | Performance phase |
 | Instanced screen-space edge quads with profiles and styles | 1 px `LineSegments`; soft and hidden edges skipped | Visualization phase |
 | Selection state in a `DataTexture` | A separate overlay mesh for selected faces and edges, plus box outlines for instances | Performance phase, if measurements show a need |
 | Chunk-relative positions against float32 jitter | World positions in float32 buffers | Performance phase |
 | Styles, shadows, environments, sections | Fixed front and back colors, ambient plus one directional light | Visualization phase |
+| Overlay sprites for inference markers and dimensions | Tool previews are world-space `LineSegments` without depth test; inference markers and tooltips are DOM elements positioned over the canvas | Visualization phase |
+| Dashed guides clipped to the view | Solid guide lines drawn 1 km to each side of their anchor, excluded from the bounds that set the clipping planes | Visualization phase |
 
 What is already in place: render on demand, near and far planes from model bounds, shared geometry for all
 instances of a definition, and invalidation driven by the kernel's change events.
+
+While a group or component is open, geometry outside it is drawn with transparent materials (30 % opacity). The
+open context and everything inside it keep the normal materials. The face or edges a tool would act on are tinted
+with the hover color, separately from the selection overlay.

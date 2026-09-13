@@ -8,3 +8,5 @@ bench/results/*.tmp.json
 *.log
 .DS_Store
 .vite/
+.claude/worktrees/
+*.tsbuildinfo

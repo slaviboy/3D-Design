@@ -1,4 +1,4 @@
-import type { EdgeId, FaceId } from '../../kernel/ids';
+import type { EdgeId, FaceId, InstanceId } from '../../kernel/ids';
 import type { EntityStore } from '../../kernel/model/EntityStore';
 import type { Editor } from '../Editor';
 import { rectFromCorners } from '../selection/boxSelect';
@@ -88,7 +88,14 @@ export class SelectTool implements Tool {
     }
     const hit = editor.pickAt(press);
     if (!hit) {
-      if (press.mode === 'replace') session.setSelection(Selection.EMPTY);
+      if (press.mode !== 'replace') return;
+      // Clicking outside an open group closes it.
+      if (session.editPath.length > 0) editor.closeGroup();
+      else session.setSelection(Selection.EMPTY);
+      return;
+    }
+    if (hit.ref.kind === 'instance' && press.detail === 2 && press.mode === 'replace') {
+      editor.openGroup(hit.ref.id as InstanceId);
       return;
     }
     const refs = refsForClick(session.doc.store(session.activeContext), hit.ref, press.detail);
@@ -98,7 +105,8 @@ export class SelectTool implements Tool {
   keyDown(chord: string, editor: Editor): boolean {
     if (chord !== 'Escape') return false;
     if (this.#press) this.cancel();
-    else editor.session.setSelection(Selection.EMPTY);
+    else if (!editor.session.selection.isEmpty) editor.session.setSelection(Selection.EMPTY);
+    else editor.closeGroup();
     return true;
   }
 
@@ -122,6 +130,10 @@ export class SelectTool implements Tool {
 
   statusHint(editor: Editor): string {
     const add = editor.platform === 'mac' ? 'Option' : 'Ctrl';
-    return `Click or drag to select. ${add} adds, Shift toggles, Shift+${add} subtracts. Drag right for window, left for crossing.`;
+    const open =
+      editor.session.editPath.length > 0
+        ? ' Click outside or press Esc to close the group.'
+        : ' Double-click a group to edit it.';
+    return `Click or drag to select. ${add} adds, Shift toggles, Shift+${add} subtracts. Drag right for window, left for crossing.${open}`;
   }
 }

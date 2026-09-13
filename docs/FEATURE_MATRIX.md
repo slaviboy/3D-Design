@@ -34,7 +34,7 @@ Doc titles are shown in *italics* and map to entries in `help.sketchup.com/index
 | Divide | *Dividing, Splitting…* | Preview division points, segment count by cursor or typed length; not on edges of curved surfaces | Core | S | kernel | Planned (P5) | Equal segments |
 | Soft / smooth / hidden edges, surfaces | *Softening, Smoothing, and Hiding Geometry* | Soft hides edge + forms surface; smooth shades; hidden = invisible without merging; Soften Edges panel (angle slider, smooth normals, soften coplanar) | Core | M | kernel, renderer | Planned (P5) | Flag ops, surface derivation |
 | Face orientation / Reverse Faces / Orient Faces | *3D Printing a Model*, *Entity Context Menus* | Front/back sides; reverse; orient consistently across connected faces; ground faces start back-side-up | Core | M | kernel | Planned (P4–P5) | Orientation propagation |
-| Groups | *Grouping Geometry* | Isolated context; make, edit (dbl-click/Enter), close, explode, lock, empty group | MVP | L | contexts | Kernel done (P2); UI P4 | Isolation, explode merge, undo |
+| Groups | *Grouping Geometry* | Isolated context; make, edit (dbl-click/Enter), close, explode, lock, empty group | MVP | L | contexts | Partly done (P4): make, edit (double-click), close, explode; lock P5 | Isolation, explode merge, undo |
 | Components | *Components*, *Making Components*, *Editing All Instances*, *Changing a Single Instance*, *Component Axes* | Definition + instances; edit updates all; Make Unique; Change Axes; Reset Scale/Skew; Scale Definition; Flip Along; glue-to / cut opening / always face camera / shadows face sun (data P5, behavior P6+) | MVP→Core | L | contexts, instancing | Kernel core done (P2): make, edit all, make unique, explode; UI and glue/cut P5 | Edit propagation, make unique, nested transforms |
 | Intersect Faces (model / selected / context) | *Modeling Complex 3D Shapes with the Solid Tools* | Creates intersection edges in the active context; shapes don't need to be solids | Adv | L | kernel | Planned (P6) | Box–box, box–cylinder |
 | Solid detection | *Solid Tools* | Group or component with closed volume, each edge exactly 2 faces; shown in Entity Info | Adv | M | kernel | Planned (P6) | Leak cases |
@@ -67,24 +67,24 @@ Doc titles are shown in *italics* and map to entries in `help.sketchup.com/index
 | Select All / None | same | Ctrl+A; Ctrl+T (Win) / Shift+Cmd+A (Mac) | MVP | S | commands | Done (P3) | Commands |
 | Context Select submenu | *Entity Context Menus* | Connected faces, all connected, same tag, same material, bounding edges, invert | Core | S | kernel | Planned (P9) | Sets |
 | Lasso | *Selecting Geometry* | Freehand or clicked polygon; clockwise = touching, counter-clockwise = inside (reversible in preferences) | Core | M | screen polygon tests | Planned (P5) | Winding |
-| Hierarchy-aware selection | *Grouping Geometry* | Outside a context, clicks pick the top-level instance; inside, pick entities; locked shown in locked color | MVP | M | contexts | Planned (P4) | Context paths |
+| Hierarchy-aware selection | *Grouping Geometry* | Outside a context, clicks pick the top-level instance; inside, pick entities; locked shown in locked color | MVP | M | contexts | Partly done (P4): top-level picking, open-context editing with the rest faded; locked color P5 | Context paths |
 | Highlighting | *Customizing Modeling Settings* | Selection color, hover pre-highlight, locked color | MVP | M | selection texture | Partly done (P3): selection highlight; hover pre-highlight P4 | Visual |
 
 ## 4. Inference & precision
 
 | Feature | Reference | Required behavior | Pri | Cx | Dependencies | Status | Tests required |
 |---|---|---|---|---|---|---|---|
-| Point inferences | *Introducing Drawing Basics and Concepts* | Endpoint, midpoint, arc midpoint, intersection, on edge, on face, center, origin, component origin, guide point, on guide, on section; "in group/component" variant | MVP | XL | spatial index | Planned (P4) | Priority table, pixel tolerance |
-| Linear inferences | same | On red/green/blue axis, from point, parallel, perpendicular, extend edge, perpendicular to face, tangent at vertex | MVP→Core | L | solver | Planned (P4 axis/from-point, P5 rest) | Solver |
+| Point inferences | *Introducing Drawing Basics and Concepts* | Endpoint, midpoint, arc midpoint, intersection, on edge, on face, center, origin, component origin, guide point, on guide, on section; "in group/component" variant | MVP | XL | spatial index | Partly done (P4): endpoint, midpoint, on edge, on face, center, origin, guide point, on guide; intersection P5 | Priority table, pixel tolerance |
+| Linear inferences | same | On red/green/blue axis, from point, parallel, perpendicular, extend edge, perpendicular to face, tangent at vertex | MVP→Core | L | solver | Partly done (P4): on red/green/blue axis from the start point; the rest P5 | Solver |
 | Shape inferences | *Drawing Basic Shapes*, *Drawing Arcs* | Square, golden section, half/quarter/three-quarter circle | Core | S | tools | Planned (P5) | Tool tests |
-| Locks | *Drawing Basics* | Shift locks current inference; ↑ blue · → red · ← green · ↓ parallel/perpendicular; Shift+Alt locks to plane; Line tool Alt cycles all / off / parallel-perp | MVP | M | input | Planned (P4) | Lock state machine |
+| Locks | *Drawing Basics* | Shift locks current inference; ↑ blue · → red · ← green · ↓ parallel/perpendicular; Shift+Alt locks to plane; Line tool Alt cycles all / off / parallel-perp | MVP | M | input | Partly done (P4): arrow-key axis locks, Shift direction lock in Line; plane lock and Alt cycling P5 | Lock state machine |
 | Visual indicators | same, *Accessibility* | Marker shape + tooltip text + color (never color-only); dotted guide lines; configurable axis and inference colors | MVP | M | overlays | Planned (P4) | Visual + a11y |
-| Measurements box (VCB) | *Using the Measurements Box* | Type during or after an op until the next op; retyping modifies the last op; tool-specific label | MVP | M | history rollback | Planned (P4) | Re-entry integration |
+| Measurements box (VCB) | *Using the Measurements Box* | Type during or after an op until the next op; retyping modifies the last op; tool-specific label | MVP | M | history rollback | Done (P4) | Re-entry integration |
 | VCB grammar | same + tool pages | Lengths with units, `3' 6"`, fractions, `L,W`, `,W`, `L,`, negatives, `3x` / `3*` / `3/`, `[x,y,z]`, `<x,y,z>`, `10s`, `20c`, `24r`, degrees, slope `8:12`, per-axis scale `a,b,c` | MVP | M | units | Parser done (P2); UI P4 | Exhaustive parser table |
 | Units | *Managing Units of Measurement* | Architectural / Decimal / Engineering / Fractional; length, area and volume units; precision; length and angle snapping; unit symbol toggle; force 0" | MVP | M | — | Library done (P2); UI P9 | Round-trips |
-| Tape Measure (T) | *Measuring Distance*, *Using Guides* | Measure / guide line / guide point (Ctrl cycles); offset guide by typed distance; rescale model or group by typed length with confirmation | Core | M | inference | Planned (P4 measure + guides, P5 rescale) | Integration |
+| Tape Measure (T) | *Measuring Distance*, *Using Guides* | Measure / guide line / guide point (Ctrl cycles); offset guide by typed distance; rescale model or group by typed length with confirmation | Core | M | inference | Partly done (P4): measure, parallel guide line, guide point, typed distance; rescale P5 | Integration |
 | Protractor | *Measuring Angles* | Plane by hover or arrows, Shift lock; vertex, baseline, angle → angled guide; 15° ticks with snap | Core | M | inference | Planned (P5) | Angle math |
-| Guides | *Using Guides* | Infinite guide lines, guide points; snap to them; hide / unhide / delete / delete all | Core | M | kernel entity | Planned (P4) | Inference |
+| Guides | *Using Guides* | Infinite guide lines, guide points; snap to them; hide / unhide / delete / delete all | Core | M | kernel entity | Partly done (P4): guide lines and points, inference snaps to them; hide / delete-all commands P5 | Inference |
 | Axes tool / Align Axes | *Adjusting the Drawing Axes* | Place origin + axes; double-click moves origin; Align Axes to face; Reset / Hide / Move dialog | Core | M | camera, inference | Planned (P5) | Transforms |
 | Entity Info | *Inspecting an Entity* | Type, solid status, count, length / radius / segments / area / volume, tag, hidden, locked, cast/receive shadows, instance name vs definition | Core | M | kernel | Partly done (P3): selection summary, area, length; editing P5 | Panel integration |
 | Estimating height helper | *Estimating Height* | Not needed as a feature (formula doc) | Opt | — | — | Not planned | — |
@@ -93,11 +93,11 @@ Doc titles are shown in *italics* and map to entries in `help.sketchup.com/index
 
 | Feature | Reference | Required behavior | Pri | Cx | Dependencies | Status | Tests required |
 |---|---|---|---|---|---|---|---|
-| Line (L) | *Drawing Basics* | Click-click chaining; length via VCB; `[ ]` and `< >` coordinates; Esc restarts; splits and creates faces | MVP | M | insertSegments, inference | Planned (P4) | Integration + e2e |
-| Rectangle (R) | *Drawing Basic Shapes* | On ground, faces or axis planes; square and golden-section inference; `L,W` VCB incl. partial and negative | MVP | M | same | Planned (P4) | Integration + e2e |
+| Line (L) | *Drawing Basics* | Click-click chaining; length via VCB; `[ ]` and `< >` coordinates; Esc restarts; splits and creates faces | MVP | M | insertSegments, inference | Done (P4) | Integration + e2e |
+| Rectangle (R) | *Drawing Basic Shapes* | On ground, faces or axis planes; square and golden-section inference; `L,W` VCB incl. partial and negative | MVP | M | same | Partly done (P4): ground, face and axis planes, `L,W` VCB with re-entry; square and golden-section inference P5 | Integration + e2e |
 | Rotated Rectangle | same | Base edge, then protractor angle + width; Alt baseline | Core | M | protractor | Planned (P5) | Integration |
-| Circle (C) | same | Sides typed before drawing; radius during/after; circle curve entity; ellipse via Scale | MVP | S | curves | Planned (P4) | Params |
-| Polygon | same | Sides then radius; faceted curve entity | MVP | S | curves | Planned (P4) | Params |
+| Circle (C) | same | Sides typed before drawing; radius during/after; circle curve entity; ellipse via Scale | MVP | S | curves | Done (P4) | Params |
+| Polygon | same | Sides then radius; faceted curve entity | MVP | S | curves | Done (P4) | Params |
 | Arc (center) / Pie | *Drawing Arcs* | Center, start (radius), sweep angle; pie = closed face; `10s` / `20c` after drawing | Core | M | curves | Planned (P5) | Params |
 | 2-Point Arc (A) | same | Chord then bulge; half-circle inference; `24r` radius, `20s` segments; double-click fillet repeat; tangent arc with Alt lock | Core | M | curves | Planned (P5) | Params, tangent |
 | 3-Point Arc | same | Start, point on arc, end | Core | S | curves | Planned (P5) | Circumcircle math |
@@ -108,16 +108,16 @@ Doc titles are shown in *italics* and map to entries in `help.sketchup.com/index
 
 | Feature | Reference | Required behavior | Pri | Cx | Dependencies | Status | Tests required |
 |---|---|---|---|---|---|---|---|
-| Move (M) | *Moving Entities Around* | Reference point → destination; inference and axis lock (Shift, arrows); distance / `[ ]` / `< >` VCB; instance grips (Alt cycles grip sets) | MVP | L | transform ops | Planned (P4) | Integration + e2e |
-| Move copy + arrays | *Using the Measurements Box* | Ctrl toggles copy; `3x` / `3*` external array, `3/` internal divide, retypable | MVP | M | VCB re-entry | Planned (P4) | Integration + e2e |
+| Move (M) | *Moving Entities Around* | Reference point → destination; inference and axis lock (Shift, arrows); distance / `[ ]` / `< >` VCB; instance grips (Alt cycles grip sets) | MVP | L | transform ops | Partly done (P4): move, stretch, autofold, axis locks, distance and coordinate VCB; instance grips P5 | Integration + e2e |
+| Move copy + arrays | *Using the Measurements Box* | Ctrl toggles copy; `3x` / `3*` external array, `3/` internal divide, retypable | MVP | M | VCB re-entry | Done (P4) | Integration + e2e |
 | Stretch + autofold | *Stretching Geometry* | Moving vertices / edges / faces stretches connected geometry; non-planar faces fold with new edges or the move is constrained; Alt toggles autofold | MVP | XL | kernel | Planned (P4) | Behavior matrix |
-| Eraser (E) | *Erasing and Undoing* | Click / drag-over edges; cannot erase faces directly; guides; Shift hide, Ctrl soften+smooth, Alt unsoften | MVP | M | kernel | Planned (P4) | Integration |
+| Eraser (E) | *Erasing and Undoing* | Click / drag-over edges; cannot erase faces directly; guides; Shift hide, Ctrl soften+smooth, Alt unsoften | MVP | M | kernel | Partly done (P4): erase, hide, soften, unsoften; erasing guides P5 | Integration |
 | Delete command | *Erasing and Undoing* | Delete key erases the selection including faces | MVP | S | kernel | Done (P3) | Commands |
 | Rotate (Q) | *Flipping, Mirroring, Rotating and Arrays* | Protractor plane by hover / Shift / arrows; vertex, start, angle; degrees or slope VCB; fold rotation by dragging an axis; Ctrl copy; radial arrays `4x` / `4/`; instance rotate grips | MVP | L | transforms | Planned (P5) | Integration + e2e |
 | Scale (S) | *Scaling Your Model or Parts of Your Model* | Grip box; corner = uniform, edge/face grips = axis scale; Shift uniform toggle; Ctrl about center; VCB factor, `a,b` / `a,b,c`, or lengths with units | MVP | L | transforms | Planned (P5) | Integration + e2e |
 | Flip / Mirror | *Flipping…* | Three planes through selection; click to flip; drag plane; Ctrl copy; Alt own vs context axes; custom plane from face; context menu Flip Along | Core | M | transforms | Planned (P5) | Determinant / orientation |
 | Offset (F) | *Offsetting a Line from Existing Geometry* | Face or coplanar connected edges; distance via cursor or VCB; overlap removal (Alt keeps); double-click repeats; arcs stay arcs | MVP | L | arrangement engine | Planned (P5) | Behavior matrix |
-| Push/Pull (P) | *Pushing and Pulling Shapes into 3D* | Stretch vs extrude; frame remains; through-cut deletes volume; pocket; Ctrl new starting face; double-click repeat; parallel-face inference; pre-pick | MVP | XL | kernel | Planned (P4) | Behavior matrix + e2e |
+| Push/Pull (P) | *Pushing and Pulling Shapes into 3D* | Stretch vs extrude; frame remains; through-cut deletes volume; pocket; Ctrl new starting face; double-click repeat; parallel-face inference; pre-pick | MVP | XL | kernel | Partly done (P4): stretch, extrude, frame, through-cut, pocket, keep start face, typed distance with re-entry, double-click repeat; parallel-face inference and pre-pick P5 | Behavior matrix + e2e |
 | Follow Me | *Extruding with Follow Me* | Preselected path + click profile, or manual drag along path; lathe around circle; curve paths soften | Adv | L | kernel | Planned (P6) | Profile / path matrix |
 | Paint Bucket (B) | *Applying Materials* | Paint faces, edges, instances; Shift all matching, Ctrl connected, Ctrl+Shift same object, Alt sample; applies to preselection | MVP→Core | M | materials | Planned (P5 color, P7 full) | Integration + e2e |
 | Tag tool | *Controlling Visibility with Tags* | Assign active-panel tag; Alt sample, Shift replace all, Ctrl all instances | Core | S | tags | Planned (P5) | Integration |

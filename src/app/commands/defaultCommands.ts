@@ -1,7 +1,21 @@
+import type { InstanceId } from '../../kernel/ids';
 import type { StandardView } from '../camera/camera';
 import type { Editor } from '../Editor';
-import { ORBIT_TOOL_ID, PAN_TOOL_ID, SELECT_TOOL_ID, ZOOM_TOOL_ID } from '../tools/Tool';
-import type { CommandDefinition, CommandRegistry } from './CommandRegistry';
+import {
+  CIRCLE_TOOL_ID,
+  ERASER_TOOL_ID,
+  LINE_TOOL_ID,
+  MOVE_TOOL_ID,
+  ORBIT_TOOL_ID,
+  PAN_TOOL_ID,
+  POLYGON_TOOL_ID,
+  PUSH_PULL_TOOL_ID,
+  RECTANGLE_TOOL_ID,
+  SELECT_TOOL_ID,
+  TAPE_MEASURE_TOOL_ID,
+  ZOOM_TOOL_ID,
+} from '../tools/Tool';
+import type { CommandCategory, CommandDefinition, CommandRegistry } from './CommandRegistry';
 
 type EditorCommand = CommandDefinition<Editor>;
 
@@ -16,17 +30,24 @@ const STANDARD_VIEWS: readonly { readonly view: StandardView; readonly label: st
 ];
 
 const hasSelection = (editor: Editor): boolean => !editor.session.selection.isEmpty;
+const hasSelectedInstances = (editor: Editor): boolean => editor.session.selection.count('instance') > 0;
 
-function toolCommand(id: string, label: string, shortcut: string, aliases: readonly string[]): EditorCommand {
+function toolCommand(
+  id: string,
+  label: string,
+  shortcut: string | null,
+  aliases: readonly string[],
+  category: CommandCategory = 'Tools',
+): EditorCommand {
   return {
     id,
     label,
-    category: 'Tools',
-    defaultShortcuts: [shortcut],
+    category,
+    ...(shortcut ? { defaultShortcuts: [shortcut] } : {}),
     aliases,
     isChecked: (editor) => editor.tools.activeToolId === id,
     run: (editor) => {
-      editor.tools.activate(id);
+      editor.activateTool(id);
     },
   };
 }
@@ -118,6 +139,60 @@ export function registerDefaultCommands(registry: CommandRegistry<Editor>): void
       },
     },
     {
+      id: 'edit.makeGroup',
+      label: 'Make Group',
+      category: 'Edit',
+      defaultShortcuts: ['Mod+G'],
+      aliases: ['group', 'combine'],
+      isEnabled: hasSelection,
+      run: (editor) => {
+        editor.groupSelection('group');
+      },
+    },
+    {
+      id: 'edit.makeComponent',
+      label: 'Make Component',
+      category: 'Edit',
+      defaultShortcuts: ['G'],
+      aliases: ['component', 'block', 'reuse'],
+      isEnabled: hasSelection,
+      run: (editor) => {
+        editor.groupSelection('component');
+      },
+    },
+    {
+      id: 'edit.explode',
+      label: 'Explode',
+      category: 'Edit',
+      aliases: ['ungroup', 'break apart'],
+      isEnabled: hasSelectedInstances,
+      run: (editor) => {
+        editor.explodeSelection();
+      },
+    },
+    {
+      id: 'edit.openGroup',
+      label: 'Edit Group',
+      category: 'Edit',
+      description: 'Open the selected group or component to change what is inside it',
+      aliases: ['enter group', 'open component'],
+      isEnabled: (editor) => editor.session.selection.size === 1 && hasSelectedInstances(editor),
+      run: (editor) => {
+        const [instance] = editor.session.selection.ids('instance');
+        if (instance !== undefined) editor.openGroup(instance as InstanceId);
+      },
+    },
+    {
+      id: 'edit.closeGroup',
+      label: 'Close Group',
+      category: 'Edit',
+      aliases: ['exit group', 'close component'],
+      isEnabled: (editor) => editor.session.editPath.length > 0,
+      run: (editor) => {
+        editor.closeGroup();
+      },
+    },
+    {
       id: 'camera.zoomExtents',
       label: 'Zoom Extents',
       category: 'Camera',
@@ -156,6 +231,14 @@ export function registerDefaultCommands(registry: CommandRegistry<Editor>): void
       },
     },
     toolCommand(SELECT_TOOL_ID, 'Select', 'Space', ['pick', 'arrow']),
+    toolCommand(ERASER_TOOL_ID, 'Eraser', 'E', ['delete edges', 'hide edges', 'soften']),
+    toolCommand(LINE_TOOL_ID, 'Line', 'L', ['pencil', 'edge', 'draw'], 'Draw'),
+    toolCommand(RECTANGLE_TOOL_ID, 'Rectangle', 'R', ['square', 'box'], 'Draw'),
+    toolCommand(CIRCLE_TOOL_ID, 'Circle', 'C', ['round', 'disc'], 'Draw'),
+    toolCommand(POLYGON_TOOL_ID, 'Polygon', null, ['hexagon', 'regular polygon'], 'Draw'),
+    toolCommand(PUSH_PULL_TOOL_ID, 'Push/Pull', 'P', ['extrude', 'raise', 'thicken']),
+    toolCommand(MOVE_TOOL_ID, 'Move', 'M', ['translate', 'copy', 'array', 'stretch']),
+    toolCommand(TAPE_MEASURE_TOOL_ID, 'Tape Measure', 'T', ['measure', 'distance', 'guide']),
     toolCommand(ORBIT_TOOL_ID, 'Orbit', 'O', ['rotate view', 'turn']),
     toolCommand(PAN_TOOL_ID, 'Pan', 'H', ['hand', 'scroll view']),
     toolCommand(ZOOM_TOOL_ID, 'Zoom', 'Z', ['magnify']),

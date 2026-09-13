@@ -16,6 +16,17 @@ const PATHS: Readonly<Record<string, string>> = {
   'camera.view.front': 'M4 6h9v11H4zM13 6l3-3v11l-3 3M4 6l3-3h9',
   'camera.view.iso': 'M10 2l7 4v8l-7 4-7-4V6zM10 10l7-4M10 10v8M10 10L3 6',
   'help.commandPalette': 'M8.5 3a5.5 5.5 0 1 1 0 11 5.5 5.5 0 0 1 0-11zM12.5 12.5L17 17',
+  'tool.line': 'M5 15L15 5M3 13h4v4H3zM13 3h4v4h-4z',
+  'tool.rectangle': 'M3 5h14v10H3z',
+  'tool.circle': 'M10 3a7 7 0 1 1 0 14 7 7 0 0 1 0-14zM10 10h7',
+  'tool.polygon': 'M10 2.5l6.5 3.75v7.5L10 17.5l-6.5-3.75v-7.5z',
+  'tool.eraser': 'M11 3l6 6-8 8H5l-2-2zM7 7l6 6M10 17h7',
+  'tool.tapeMeasure': 'M2 6h16v8H2zM5 6v3M8 6v4M11 6v3M14 6v4',
+  'tool.pushPull': 'M3 13l7 4 7-4-7-4zM10 11V2M7 5l3-3 3 3',
+  'tool.move': 'M10 3v14M3 10h14M8 5l2-2 2 2M8 15l2 2 2-2M5 8l-2 2 2 2M15 8l2 2-2 2',
+  'edit.makeGroup': 'M3 3h14v14H3zM6 6h4v4H6zM11 10h3v4h-3z',
+  'edit.makeComponent': 'M3 4h6v6H3zM11 10h6v6h-6zM9 7h5v3',
+  'edit.explode': 'M8 8h4v4H8zM3 3l3 3M17 3l-3 3M3 17l3-3M17 17l-3-3',
 };
 
 export function hasIcon(commandId: string): boolean {

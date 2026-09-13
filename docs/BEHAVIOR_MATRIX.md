@@ -49,7 +49,7 @@ tool is marked Done.
 |---|---|---|---|
 | B1 | `R(1,1)`, push/pull the face by +1 (toward +Z) | 8/12/6 | Closed shell; all normals outward; volume 1 |
 | B2 | B1, then push/pull the top by +0.5 | 8/12/6 | **Stretch**: no new entities; top face keeps its id; height 1.5 |
-| B3 | B1, then push/pull the top by −1 (flush with the bottom) | 4/4/1 ⚑ verify | Side faces collapse; bottom face remains |
+| B3 | B1, then push/pull the top by −1 (flush with the bottom) | rejected ⚑ verify | Stretching would flatten the side faces, so the operation is refused and the model is unchanged |
 | B4 | B1, then `R(0.5,0.5)` centered on the top face | 12/16/7 | Top becomes a ring face with a hole plus an inner face |
 | B5 | B4, then pull the inner face +0.2 | 16/24/11 | **Frame remains**; inner face keeps its id at z = 1.2 |
 | B6 | B4, then push the inner face −0.3 (pocket) | 16/24/11 | Pocket side normals point into the pocket (outward from the solid) |
@@ -66,11 +66,11 @@ tool is marked Done.
 
 | # | Scenario | Expected V/E/F | Extra assertions |
 |---|---|---|---|
-| C1 | B1, then move the whole selection by (1,0,0) | 8/12/6 | Pure translation; ids unchanged |
+| C1 | B1, then move the whole selection by (1,0,0) | 8/12/6 | Pure translation; detached geometry is re-inserted so it merges at its destination, which gives it new ids |
 | C2 | B1, then move the top face by (0,0,0.5) | 8/12/6 | Equivalent to B2 |
 | C3 | B1, then move top edge y = 1 by (0,0.5,0) | 8/12/6 | All faces stay planar; no fold |
 | C4 | B1, then move top vertex (1,1,1) by (0,0,0.5) | 8/13/7 | **Autofold**: top face splits into 2 triangles; the fold edge avoids the moved vertex |
-| C5 | C4 with autofold disabled (Alt) | move constrained ⚑ verify | Either rejected with a hint or constrained to a planar-preserving direction |
+| C5 | C4 with autofold disabled (Alt) | rejected ⚑ verify | Refused with a message; the model is unchanged |
 | C6 | Move copy of `R(1,1)` by (2,0,0) | 8/8/2 | Disjoint copy |
 | C7 | C6, then type `3x` | 16/16/4 | 3 copies at 2, 4, 6 |
 | C8 | C6, then type `4/` | 20/20/5 | 4 copies evenly between 0 and 2 (0.5 spacing) ⚑ verify count semantics |

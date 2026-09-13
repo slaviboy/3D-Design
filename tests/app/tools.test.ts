@@ -1,0 +1,331 @@
+import { describe, expect, it } from 'vitest';
+import type { Editor } from '../../src/app/Editor';
+import {
+  CIRCLE_TOOL_ID,
+  ERASER_TOOL_ID,
+  LINE_TOOL_ID,
+  MOVE_TOOL_ID,
+  POLYGON_TOOL_ID,
+  PUSH_PULL_TOOL_ID,
+  RECTANGLE_TOOL_ID,
+  SELECT_TOOL_ID,
+  TAPE_MEASURE_TOOL_ID,
+} from '../../src/app/tools/Tool';
+import type { EdgeId } from '../../src/kernel/ids';
+import { validateDocument } from '../../src/kernel/model/validate';
+import { counts, draw, rectangle } from '../kernel/helpers';
+import { click, createTestEditor, pointer, screenOf } from './fixtures';
+
+const key = (value: string, modifiers: { shiftKey?: boolean } = {}) => ({
+  key: value,
+  ctrlKey: false,
+  metaKey: false,
+  altKey: false,
+  shiftKey: modifiers.shiftKey ?? false,
+});
+
+/** Types into the measurements box through the keyboard router and presses Enter. */
+function type(editor: Editor, text: string): void {
+  for (const character of text) expect(editor.handleKey(key(character))).toBe(true);
+  expect(editor.handleKey(key('Enter'))).toBe(true);
+}
+
+function clickAt(editor: Editor, x: number, y: number, overrides: Parameters<typeof pointer>[2] = {}): void {
+  const screen = screenOf(x, y);
+  click(editor, screen.x, screen.y, overrides);
+}
+
+function moveTo(editor: Editor, x: number, y: number, overrides: Parameters<typeof pointer>[2] = {}): void {
+  const screen = screenOf(x, y);
+  editor.tools.pointerMove(pointer(screen.x, screen.y, { buttons: 0, ...overrides }));
+}
+
+function positions(editor: Editor) {
+  return [...editor.session.doc.rootStore.vertices()].map((vertex) => vertex.position);
+}
+
+function extent(editor: Editor, axis: 'x' | 'y' | 'z') {
+  const values = positions(editor).map((p) => p[axis]);
+  return { min: Math.min(...values), max: Math.max(...values) };
+}
+
+function expectExtent(editor: Editor, axis: 'x' | 'y' | 'z', min: number, max: number): void {
+  const range = extent(editor, axis);
+  expect(range.min).toBeCloseTo(min, 9);
+  expect(range.max).toBeCloseTo(max, 9);
+}
+
+function expectValidModel(editor: Editor): void {
+  expect(validateDocument(editor.session.doc).problems).toEqual([]);
+}
+
+describe('Line tool', () => {
+  it('draws connected edges, closes a face and ends the chain', () => {
+    const editor = createTestEditor();
+    editor.activateTool(LINE_TOOL_ID);
+    clickAt(editor, 1, 1);
+    clickAt(editor, 4, 1);
+    clickAt(editor, 4, 3);
+    clickAt(editor, 1, 3);
+    clickAt(editor, 1, 1);
+    expect(counts(editor.session.doc)).toEqual({ v: 4, e: 4, f: 1 });
+    expect(editor.session.doc.undoDepth).toBe(4);
+    expect(editor.tools.statusHint).toMatch(/start point/);
+    expectValidModel(editor);
+  });
+
+  it('takes a typed length along the inferred axis', () => {
+    const editor = createTestEditor();
+    editor.activateTool(LINE_TOOL_ID);
+    clickAt(editor, 1, 1);
+    moveTo(editor, 3, 1.1);
+    expect(editor.session.preview?.lines[0]?.style).toBe('axis-x');
+    expect(editor.session.preview?.marker?.label).toBe('On Red Axis');
+    type(editor, '2.5m');
+    expect(extent(editor, 'x').max).toBeCloseTo(3.5);
+    expectExtent(editor, 'y', 1, 1);
+    expect(editor.handleKey(key('Escape'))).toBe(true);
+    expect(counts(editor.session.doc)).toEqual({ v: 2, e: 1, f: 0 });
+  });
+
+  it('locks an axis with the arrow keys', () => {
+    const editor = createTestEditor();
+    editor.activateTool(LINE_TOOL_ID);
+    clickAt(editor, 1, 1);
+    expect(editor.handleKey(key('ArrowLeft'))).toBe(true);
+    moveTo(editor, 3, 4);
+    expect(editor.session.preview?.marker?.label).toBe('On Green Axis');
+    clickAt(editor, 3, 4);
+    expectExtent(editor, 'x', 1, 1);
+    expect(extent(editor, 'y').max).toBeCloseTo(4);
+  });
+});
+
+describe('measurements box routing', () => {
+  it('sends typing to the active tool only while it has a measurements box', () => {
+    const editor = createTestEditor();
+    expect(editor.tools.activeToolId).toBe(SELECT_TOOL_ID);
+    expect(editor.handleKey(key('2'))).toBe(false);
+
+    editor.activateTool(LINE_TOOL_ID);
+    expect(editor.handleKey(key('2'))).toBe(true);
+    expect(editor.measurementText).toBe('2');
+    expect(editor.handleKey(key('Backspace'))).toBe(true);
+    expect(editor.measurementText).toBe('');
+    // Letters start shortcuts, not typing, while the box is empty.
+    expect(editor.handleKey(key('R'))).toBe(true);
+    expect(editor.tools.activeToolId).toBe(RECTANGLE_TOOL_ID);
+  });
+
+  it('reports values the tool cannot use', () => {
+    const editor = createTestEditor();
+    editor.activateTool(LINE_TOOL_ID);
+    type(editor, '5x');
+    expect(editor.notifications.at(-1)?.kind).toBe('error');
+    type(editor, '5m');
+    expect(editor.notifications.at(-1)?.message).toMatch(/start the line/);
+  });
+});
+
+describe('Rectangle tool', () => {
+  it('draws from two corners and replaces the result with typed dimensions', () => {
+    const editor = createTestEditor();
+    const doc = editor.session.doc;
+    editor.activateTool(RECTANGLE_TOOL_ID);
+    clickAt(editor, 1, 1);
+    clickAt(editor, 3, 2);
+    expect(counts(doc)).toEqual({ v: 4, e: 4, f: 1 });
+    expectExtent(editor, 'x', 1, 3);
+
+    type(editor, '4m,3m');
+    expect(counts(doc)).toEqual({ v: 4, e: 4, f: 1 });
+    expect(extent(editor, 'x').max).toBeCloseTo(5);
+    expect(extent(editor, 'y').max).toBeCloseTo(4);
+    expect(doc.undoDepth).toBe(1);
+    editor.undo();
+    expect(counts(doc)).toEqual({ v: 0, e: 0, f: 0 });
+  });
+});
+
+describe('Circle and Polygon tools', () => {
+  it('draws a circle with a typed radius, then changes its segment count', () => {
+    const editor = createTestEditor();
+    const doc = editor.session.doc;
+    editor.activateTool(CIRCLE_TOOL_ID);
+    clickAt(editor, 2, 2);
+    moveTo(editor, 3, 2);
+    type(editor, '1.5m');
+    expect(counts(doc)).toEqual({ v: 24, e: 24, f: 1 });
+    expect(extent(editor, 'x').max).toBeCloseTo(3.5);
+    type(editor, '12s');
+    expect(counts(doc)).toEqual({ v: 12, e: 12, f: 1 });
+    expect(doc.rootStore.curveCount).toBe(1);
+    expect(doc.undoDepth).toBe(1);
+  });
+
+  it('draws a polygon with the typed number of sides', () => {
+    const editor = createTestEditor();
+    editor.activateTool(POLYGON_TOOL_ID);
+    expect(editor.tools.measurement?.label).toBe('Sides');
+    type(editor, '5s');
+    clickAt(editor, 0, -3);
+    clickAt(editor, 1, -3);
+    expect(counts(editor.session.doc)).toEqual({ v: 5, e: 5, f: 1 });
+    expectValidModel(editor);
+  });
+});
+
+describe('Push/Pull tool', () => {
+  it('extrudes a face by a typed distance, retypes it, and repeats it with a double-click', () => {
+    const editor = createTestEditor();
+    const doc = editor.session.doc;
+    draw(doc, rectangle(1, 1, 3, 3));
+    const depth = doc.undoDepth;
+    editor.activateTool(PUSH_PULL_TOOL_ID);
+    moveTo(editor, 2, 2);
+    expect(editor.session.preview?.highlight).toHaveLength(1);
+
+    clickAt(editor, 2, 2);
+    type(editor, '2m');
+    expect(counts(doc)).toEqual({ v: 8, e: 12, f: 6 });
+    expectExtent(editor, 'z', 0, 2);
+
+    type(editor, '3m');
+    expect(extent(editor, 'z').max).toBeCloseTo(3);
+    expect(doc.undoDepth).toBe(depth + 1);
+
+    draw(doc, rectangle(5, 1, 7, 3));
+    clickAt(editor, 6, 2);
+    clickAt(editor, 6, 2, { detail: 2 });
+    expect(counts(doc)).toEqual({ v: 16, e: 24, f: 12 });
+    expectValidModel(editor);
+  });
+
+  it('cancels with Escape, leaving the model unchanged', () => {
+    const editor = createTestEditor();
+    const doc = editor.session.doc;
+    draw(doc, rectangle(1, 1, 3, 3));
+    editor.activateTool(PUSH_PULL_TOOL_ID);
+    clickAt(editor, 2, 2);
+    expect(editor.handleKey(key('Escape'))).toBe(true);
+    expect(counts(doc)).toEqual({ v: 4, e: 4, f: 1 });
+  });
+});
+
+describe('Move tool', () => {
+  it('moves the selection between two inferred points, then makes an array of copies', () => {
+    const editor = createTestEditor();
+    const doc = editor.session.doc;
+    draw(doc, rectangle(1, 1, 3, 3));
+    editor.selectAll();
+    editor.activateTool(MOVE_TOOL_ID);
+
+    clickAt(editor, 1, 1);
+    moveTo(editor, 5, 1);
+    clickAt(editor, 5, 1);
+    expect(counts(doc)).toEqual({ v: 4, e: 4, f: 1 });
+    expectExtent(editor, 'x', 5, 7);
+    expect(editor.session.selection.size).toBe(5);
+
+    clickAt(editor, 5, 1);
+    moveTo(editor, 8, 1, { ctrlKey: true });
+    clickAt(editor, 8, 1, { ctrlKey: true });
+    expect(counts(doc)).toEqual({ v: 8, e: 8, f: 2 });
+
+    type(editor, '3x');
+    expect(counts(doc)).toEqual({ v: 16, e: 16, f: 4 });
+    expect(extent(editor, 'x').max).toBeCloseTo(16);
+    expectValidModel(editor);
+  });
+
+  it('moves the entity under the pointer when nothing is selected, by a typed distance', () => {
+    const editor = createTestEditor();
+    const doc = editor.session.doc;
+    draw(doc, rectangle(1, 1, 3, 3));
+    editor.activateTool(MOVE_TOOL_ID);
+    clickAt(editor, 2, 2);
+    moveTo(editor, 2, 3.5);
+    type(editor, '1m');
+    expectExtent(editor, 'y', 2, 4);
+  });
+});
+
+describe('Eraser tool', () => {
+  it('erases, hides, softens and unsoftens edges', () => {
+    const editor = createTestEditor();
+    const doc = editor.session.doc;
+    draw(doc, rectangle(1, 1, 3, 3));
+    editor.activateTool(ERASER_TOOL_ID);
+
+    clickAt(editor, 2, 1, { shiftKey: true });
+    const hidden = [...doc.rootStore.edges()].filter((edge) => edge.attributes.hidden);
+    expect(hidden).toHaveLength(1);
+
+    clickAt(editor, 1, 2, { ctrlKey: true });
+    const left = [...doc.rootStore.edges()].find((edge) => edge.attributes.soft);
+    expect(left).toBeDefined();
+    clickAt(editor, 1, 2, { ctrlKey: true, shiftKey: true });
+    expect(doc.rootStore.getEdge(left?.id as EdgeId).attributes.soft).toBe(false);
+
+    clickAt(editor, 3, 2);
+    expect(counts(doc)).toEqual({ v: 4, e: 3, f: 0 });
+  });
+});
+
+describe('Tape Measure tool', () => {
+  it('creates a parallel guide line from an edge and a guide point from a point', () => {
+    const editor = createTestEditor();
+    const doc = editor.session.doc;
+    draw(doc, rectangle(-4, -4, 4, 4));
+    editor.activateTool(TAPE_MEASURE_TOOL_ID);
+
+    clickAt(editor, -2, -4);
+    moveTo(editor, -2, -2);
+    clickAt(editor, -2, -2);
+    const [line] = [...doc.rootStore.guides()];
+    expect(line?.geometry.kind).toBe('line');
+    expect(line?.geometry.point.y).toBeCloseTo(-2);
+
+    clickAt(editor, 4, 4);
+    clickAt(editor, 2, 4);
+    const point = [...doc.rootStore.guides()].find((guide) => guide.geometry.kind === 'point');
+    expect(point?.geometry.point.x).toBeCloseTo(2);
+
+    // Inference snaps to the guide line.
+    editor.activateTool(LINE_TOOL_ID);
+    moveTo(editor, 0, -2.1);
+    expect(editor.session.preview?.marker?.label).toBe('On Guide');
+  });
+});
+
+describe('groups', () => {
+  it('makes a group, opens it with a double-click, closes it with Escape, and explodes it', async () => {
+    const editor = createTestEditor();
+    const doc = editor.session.doc;
+    draw(doc, rectangle(1, 1, 3, 3));
+    editor.selectAll();
+    await editor.runCommand('edit.makeGroup');
+    expect(doc.rootStore.instanceCount).toBe(1);
+    expect(counts(doc)).toEqual({ v: 0, e: 0, f: 0 });
+
+    clickAt(editor, 2, 2, { detail: 2 });
+    expect(editor.session.editPath).toHaveLength(1);
+    expect(editor.session.activeContext).not.toBe(doc.rootDefinitionId);
+
+    // Drawing happens inside the open group.
+    editor.activateTool(LINE_TOOL_ID);
+    clickAt(editor, 1, 2);
+    clickAt(editor, 3, 2);
+    expect(counts(doc, editor.session.activeContext)).toEqual({ v: 6, e: 7, f: 2 });
+
+    editor.activateTool(SELECT_TOOL_ID);
+    expect(editor.handleKey(key('Escape'))).toBe(true);
+    expect(editor.session.editPath).toHaveLength(0);
+    expect(editor.session.selection.count('instance')).toBe(1);
+
+    await editor.runCommand('edit.explode');
+    expect(doc.rootStore.instanceCount).toBe(0);
+    expect(counts(doc)).toEqual({ v: 6, e: 7, f: 2 });
+    expectValidModel(editor);
+  });
+});

@@ -23,6 +23,7 @@ export function ViewportHost() {
   const hostRef = useRef<HTMLDivElement>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const overlay = useEditorState((state) => state.overlay);
+  const marker = useEditorState((state) => state.marker);
   const activeToolId = useEditorState((state) => state.activeToolId);
   const cursor = editor.tools.activeTool.cursor;
 
@@ -90,6 +91,24 @@ export function ViewportHost() {
         event.preventDefault();
       }}
     >
+      {marker && (
+        <>
+          <span
+            className={`inference-marker inference-marker--${marker.kind}`}
+            style={{ left: marker.x, top: marker.y }}
+            aria-hidden="true"
+          />
+          {marker.label !== '' && (
+            <span
+              className="inference-tooltip"
+              style={{ left: marker.x + 12, top: marker.y + 12 }}
+              data-testid="inference-label"
+            >
+              {marker.label}
+            </span>
+          )}
+        </>
+      )}
       {overlay?.kind === 'selection-rectangle' && (
         <div
           className={`selection-rectangle selection-rectangle--${overlay.mode}`}

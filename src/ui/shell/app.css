@@ -445,3 +445,98 @@
   font-size: 16px;
   line-height: 1;
 }
+
+/* Measurements box and inference cues ---------------------------------------------------------------- */
+
+.measurements {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.measurements__label {
+  color: var(--muted-fg);
+}
+
+.measurements__input {
+  width: 160px;
+  height: 20px;
+  padding: 0 6px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--surface-bg);
+  border: 1px solid var(--chrome-border);
+  border-radius: 3px;
+}
+
+.measurements__input:focus {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -1px;
+}
+
+.statusbar__context {
+  padding: 1px 6px;
+  color: var(--accent-fg);
+  background: var(--accent);
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+/* Each inference kind has its own shape as well as color, so the cue doesn't rely on color alone. */
+.inference-marker {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  margin: -5.5px 0 0 -5.5px;
+  pointer-events: none;
+  border: 2px solid #1d232b;
+  background: rgb(255 255 255 / 55%);
+}
+
+.inference-marker--endpoint {
+  border-color: #2f9d45;
+  border-radius: 50%;
+}
+
+.inference-marker--midpoint {
+  border-color: #16a0b5;
+}
+
+.inference-marker--center,
+.inference-marker--origin {
+  border-color: #2f5fd0;
+  border-radius: 50%;
+  background: rgb(47 95 208 / 35%);
+}
+
+.inference-marker--on-edge {
+  border-color: #c23b30;
+  transform: rotate(45deg);
+}
+
+.inference-marker--on-face {
+  border-color: #2f5fd0;
+  transform: rotate(45deg);
+  background: transparent;
+}
+
+.inference-marker--on-axis,
+.inference-marker--locked {
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  background: #1d232b;
+}
+
+.inference-tooltip {
+  position: absolute;
+  padding: 1px 6px;
+  font-size: 11px;
+  color: #1f2630;
+  white-space: nowrap;
+  pointer-events: none;
+  background: #fff8dc;
+  border: 1px solid #b9a24c;
+  border-radius: 3px;
+}

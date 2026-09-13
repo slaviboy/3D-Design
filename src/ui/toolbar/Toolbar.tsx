@@ -11,6 +11,9 @@ const MAIN_TOOLBAR: readonly (string | null)[] = [
   'edit.redo',
   'edit.delete',
   null,
+  'edit.makeGroup',
+  'edit.makeComponent',
+  null,
   'camera.zoomExtents',
   'camera.view.iso',
   'camera.view.top',
@@ -19,7 +22,20 @@ const MAIN_TOOLBAR: readonly (string | null)[] = [
   'help.commandPalette',
 ];
 
-const TOOL_PALETTE: readonly string[] = ['tool.select', 'tool.orbit', 'tool.pan', 'tool.zoom'];
+const TOOL_PALETTE: readonly string[] = [
+  'tool.select',
+  'tool.eraser',
+  'tool.line',
+  'tool.rectangle',
+  'tool.circle',
+  'tool.polygon',
+  'tool.pushPull',
+  'tool.move',
+  'tool.tapeMeasure',
+  'tool.orbit',
+  'tool.pan',
+  'tool.zoom',
+];
 
 function CommandButton({
   commandId,

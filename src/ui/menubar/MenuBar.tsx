@@ -15,7 +15,22 @@ export const MENUS: readonly MenuDefinition[] = [
   },
   {
     label: 'Edit',
-    items: ['edit.undo', 'edit.redo', null, 'edit.selectAll', 'edit.selectNone', null, 'edit.delete'],
+    items: [
+      'edit.undo',
+      'edit.redo',
+      null,
+      'edit.selectAll',
+      'edit.selectNone',
+      null,
+      'edit.delete',
+      null,
+      'edit.makeGroup',
+      'edit.makeComponent',
+      'edit.explode',
+      null,
+      'edit.openGroup',
+      'edit.closeGroup',
+    ],
   },
   {
     label: 'Camera',
@@ -34,7 +49,23 @@ export const MENUS: readonly MenuDefinition[] = [
       'camera.zoomExtents',
     ],
   },
-  { label: 'Tools', items: ['tool.select', null, 'tool.orbit', 'tool.pan', 'tool.zoom'] },
+  { label: 'Draw', items: ['tool.line', 'tool.rectangle', 'tool.circle', 'tool.polygon'] },
+  {
+    label: 'Tools',
+    items: [
+      'tool.select',
+      'tool.eraser',
+      null,
+      'tool.move',
+      'tool.pushPull',
+      null,
+      'tool.tapeMeasure',
+      null,
+      'tool.orbit',
+      'tool.pan',
+      'tool.zoom',
+    ],
+  },
   { label: 'Help', items: ['help.commandPalette'] },
 ];
 

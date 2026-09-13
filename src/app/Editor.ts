@@ -1,8 +1,9 @@
 import type { EdgeId, FaceId, InstanceId } from '../kernel/ids';
 import { ModelDocument } from '../kernel/model/ModelDocument';
 import { deleteFaces, eraseEdges } from '../kernel/ops/erase';
-import { deleteInstances } from '../kernel/ops/hierarchy';
+import { deleteInstances, explodeInstance, makeComponent, makeGroup } from '../kernel/ops/hierarchy';
 import { METRIC_UNIT_SETTINGS, type UnitSettings } from '../kernel/units/units';
+import { parseMeasurement } from '../kernel/vcb/parseMeasurement';
 import { decodePlanarFile, encodePlanarFile, PLANAR_FILE_EXTENSION } from '../io/format/planarFile';
 import type { FileAccess } from '../io/fs/types';
 import {
@@ -22,17 +23,27 @@ import {
 import { CommandRegistry } from './commands/CommandRegistry';
 import { registerDefaultCommands } from './commands/defaultCommands';
 import { definitionBounds } from './geometry/bounds';
-import { pick, type PickHit } from './picking/picker';
+import { pick, type PickHit, type PickRequest } from './picking/picker';
 import { createSampleModel, SAMPLE_MODEL_NAME } from './sample/sampleModel';
 import { boxSelect, type BoxSelectMode, type ScreenRect } from './selection/boxSelect';
 import { allSelectableRefs } from './selection/queries';
 import { Selection, type EntityRef } from './selection/Selection';
 import { EditorSession, UNTITLED_DOCUMENT_NAME } from './session/EditorSession';
 import { chordFromKeyboard, ShortcutMap, type KeyChordInput, type Platform } from './shortcuts/shortcuts';
+import { CircleTool } from './tools/CircleTool';
+import { EraserTool } from './tools/EraserTool';
+import { LineTool } from './tools/LineTool';
+import { MoveTool } from './tools/MoveTool';
 import { createOrbitTool, createPanTool, createZoomTool } from './tools/NavigationTools';
+import { PushPullTool } from './tools/PushPullTool';
+import { RectangleTool } from './tools/RectangleTool';
 import { SelectTool } from './tools/SelectTool';
+import { TapeMeasureTool } from './tools/TapeMeasureTool';
 import { SELECT_TOOL_ID } from './tools/Tool';
 import { ToolManager } from './tools/ToolManager';
+
+/** Characters that start typing into the measurements box. Once typing has started, any character continues it. */
+const MEASUREMENT_START = /^[0-9.,\-[</]$/;
 
 /** Orbit speed for mouse drags. */
 export const ORBIT_RADIANS_PER_PIXEL = 0.008;
@@ -49,7 +60,9 @@ export interface EditorNotification {
 export type UiRequest = 'command-palette';
 
 export type EditorEvent =
-  { readonly kind: 'notifications' } | { readonly kind: 'ui-request'; readonly request: UiRequest };
+  | { readonly kind: 'notifications' }
+  | { readonly kind: 'measurement' }
+  | { readonly kind: 'ui-request'; readonly request: UiRequest };
 
 export interface EditorEnvironment {
   readonly platform: Platform;
@@ -87,6 +100,7 @@ export class Editor {
   #viewportSize: ViewportSize = { width: 1, height: 1 };
   #notifications: readonly EditorNotification[] = [];
   #nextNotificationId = 1;
+  #measurementText = '';
 
   constructor(environment: EditorEnvironment) {
     this.#environment = environment;
@@ -96,9 +110,87 @@ export class Editor {
     this.shortcuts = ShortcutMap.fromCommands(this.commands.all());
     this.tools = new ToolManager(
       this,
-      [new SelectTool(), createOrbitTool(), createPanTool(), createZoomTool()],
+      [
+        new SelectTool(),
+        createOrbitTool(),
+        createPanTool(),
+        createZoomTool(),
+        new LineTool(),
+        new RectangleTool(),
+        new CircleTool('circle'),
+        new CircleTool('polygon'),
+        new EraserTool(),
+        new TapeMeasureTool(),
+        new PushPullTool(),
+        new MoveTool(),
+      ],
       SELECT_TOOL_ID,
     );
+  }
+
+  activateTool(toolId: string): void {
+    this.setMeasurementText('');
+    this.tools.activate(toolId);
+  }
+
+  // ---------------------------------------------------------------------------------------------- measurements box
+
+  /** What the user has typed into the measurements box and not yet entered. */
+  get measurementText(): string {
+    return this.#measurementText;
+  }
+
+  setMeasurementText(text: string): void {
+    if (text === this.#measurementText) return;
+    this.#measurementText = text;
+    this.#emit({ kind: 'measurement' });
+  }
+
+  /** Parses typed text for the active tool and applies it. Returns false (and notifies) when it can't be used. */
+  submitMeasurement(text: string = this.#measurementText): boolean {
+    this.setMeasurementText('');
+    const tool = this.tools.activeTool;
+    const field = this.tools.measurement;
+    if (!field || !tool.onMeasurement || text.trim() === '') return false;
+    const parsed = parseMeasurement(text, field.accepts, this.units);
+    if (!parsed.ok) {
+      this.notify('error', parsed.error);
+      return false;
+    }
+    try {
+      tool.onMeasurement(parsed.value, this);
+      return true;
+    } catch (error) {
+      this.notify('error', errorMessage(error));
+      return false;
+    } finally {
+      this.tools.refresh();
+    }
+  }
+
+  /** Typing goes to the measurements box while the active tool has one, as in the reference workflow. */
+  #handleMeasurementKey(input: KeyChordInput): boolean {
+    if (input.ctrlKey || input.metaKey || input.altKey || !this.tools.measurement) return false;
+    const text = this.#measurementText;
+    if (text !== '') {
+      if (input.key === 'Enter') {
+        this.submitMeasurement();
+        return true;
+      }
+      if (input.key === 'Backspace') {
+        this.setMeasurementText(text.slice(0, -1));
+        return true;
+      }
+      if (input.key === 'Escape') {
+        this.setMeasurementText('');
+        return true;
+      }
+    }
+    if (input.key.length === 1 && (text !== '' || MEASUREMENT_START.test(input.key))) {
+      this.setMeasurementText(text + input.key);
+      return true;
+    }
+    return false;
   }
 
   // ---------------------------------------------------------------------------------------------- events
@@ -141,6 +233,7 @@ export class Editor {
 
   /** Handles a key press: the active tool sees it first, then the shortcut map. Returns true when consumed. */
   handleKey(input: KeyChordInput): boolean {
+    if (this.#handleMeasurementKey(input)) return true;
     const chord = chordFromKeyboard(input, this.platform);
     if (!chord) return false;
     if (this.tools.keyDown(chord)) return true;
@@ -160,12 +253,16 @@ export class Editor {
     this.#viewportSize = { width: Math.max(1, size.width), height: Math.max(1, size.height) };
   }
 
-  pickAt(screen: ScreenPoint): PickHit | null {
+  pickAt(
+    screen: ScreenPoint,
+    options: Pick<PickRequest, 'edgeTolerancePx' | 'includeSoftEdges'> = {},
+  ): PickHit | null {
     const { session } = this;
     return pick(session.doc, session.activeContext, session.activeContextTransform, {
       camera: session.camera,
       size: this.#viewportSize,
-      screen,
+      screen: { x: screen.x, y: screen.y },
+      ...options,
     });
   }
 
@@ -263,6 +360,48 @@ export class Editor {
       eraseEdges(doc, context, selection.ids('edge') as EdgeId[]);
     });
     session.setSelection(Selection.EMPTY);
+  }
+
+  // ---------------------------------------------------------------------------------------------- groups & components
+
+  /** Wraps the selection in a new group (or component) and selects it. */
+  groupSelection(kind: 'group' | 'component'): void {
+    const { session } = this;
+    const selection = session.selection;
+    if (selection.isEmpty) return;
+    this.tools.cancel();
+    const make = kind === 'group' ? makeGroup : makeComponent;
+    const created = make(session.doc, session.activeContext, {
+      faces: selection.ids('face') as FaceId[],
+      edges: selection.ids('edge') as EdgeId[],
+      instances: selection.ids('instance') as InstanceId[],
+    });
+    session.setSelection(Selection.of([{ kind: 'instance', id: created.instance }]));
+  }
+
+  /** Replaces the selected groups and components with their contents. */
+  explodeSelection(): void {
+    const { session } = this;
+    const instances = session.selection.ids('instance') as InstanceId[];
+    if (instances.length === 0) return;
+    this.tools.cancel();
+    const doc = session.doc;
+    doc.transact('Explode', () => {
+      for (const id of instances) explodeInstance(doc, session.activeContext, id);
+    });
+    session.setSelection(Selection.EMPTY);
+  }
+
+  /** Opens a group or component for editing; the rest of the model fades. */
+  openGroup(instanceId: InstanceId): void {
+    this.tools.cancel();
+    this.session.enterInstance(instanceId);
+  }
+
+  /** Closes the open group or component. Returns false when none is open. */
+  closeGroup(): boolean {
+    this.tools.cancel();
+    return this.session.exitContext();
   }
 
   // ---------------------------------------------------------------------------------------------- files

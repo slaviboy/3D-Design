@@ -26,6 +26,14 @@ export interface ViewSelection {
   refs(): readonly ViewEntityRef[];
 }
 
+export type ViewPreviewLineStyle = 'preview' | 'axis-x' | 'axis-y' | 'axis-z' | 'guide';
+
+/** Temporary drawing aids from the active tool. Lines are in world coordinates, highlights in the active context. */
+export interface ViewPreview {
+  readonly lines: readonly { readonly a: Vec3; readonly b: Vec3; readonly style: ViewPreviewLineStyle }[];
+  readonly highlight: readonly ViewEntityRef[];
+}
+
 export interface ViewChange {
   readonly kind: string;
   readonly modelEvent?: DocumentEvent;
@@ -37,5 +45,8 @@ export interface ViewSource {
   readonly selection: ViewSelection;
   readonly activeContext: DefinitionId;
   readonly activeContextTransform: Mat4;
+  /** Instance ids of the open groups and components, outermost first. Everything outside is drawn faded. */
+  readonly editPath: readonly number[];
+  readonly preview: ViewPreview | null;
   subscribe(listener: (change: ViewChange) => void): () => void;
 }

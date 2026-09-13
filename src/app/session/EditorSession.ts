@@ -4,8 +4,9 @@ import { ModelDocument, type DocumentEvent } from '../../kernel/model/ModelDocum
 import { DEFAULT_CAMERA, type CameraState } from '../camera/camera';
 import { refExists } from '../selection/queries';
 import { Selection } from '../selection/Selection';
+import type { ToolPreview } from '../tools/Tool';
 
-export type SessionEventKind = 'document' | 'model' | 'selection' | 'camera' | 'file';
+export type SessionEventKind = 'document' | 'model' | 'selection' | 'camera' | 'file' | 'context' | 'preview';
 
 export interface SessionEvent {
   readonly kind: SessionEventKind;
@@ -33,6 +34,7 @@ export class EditorSession {
   #detach: () => void = () => undefined;
   #editPath: readonly InstanceId[] = [];
   #selection: Selection = Selection.EMPTY;
+  #preview: ToolPreview | null = null;
   #camera: CameraState;
   #revision = 0;
   #savedRevision = 0;
@@ -104,6 +106,39 @@ export class EditorSession {
     return transform;
   }
 
+  /** What the active tool draws in the view (rubber bands, highlights). Not part of the model. */
+  get preview(): ToolPreview | null {
+    return this.#preview;
+  }
+
+  setPreview(preview: ToolPreview | null): void {
+    if (preview === this.#preview) return;
+    if (preview === null && this.#preview === null) return;
+    this.#preview = preview;
+    this.#emit({ kind: 'preview' });
+  }
+
+  /** Opens a group or component instance of the active context for editing. */
+  enterInstance(instanceId: InstanceId): void {
+    const instance = this.#doc.store(this.activeContext).instance(instanceId);
+    if (!instance) throw new Error('Only a group or component in the open context can be opened');
+    this.#editPath = [...this.#editPath, instanceId];
+    this.#selection = Selection.EMPTY;
+    this.#emit({ kind: 'context' });
+    this.#emit({ kind: 'selection' });
+  }
+
+  /** Closes the innermost open group or component, selecting it. Returns false when editing the model root. */
+  exitContext(): boolean {
+    const closed = this.#editPath.at(-1);
+    if (closed === undefined) return false;
+    this.#editPath = this.#editPath.slice(0, -1);
+    this.#selection = Selection.of([{ kind: 'instance', id: closed }]);
+    this.#emit({ kind: 'context' });
+    this.#emit({ kind: 'selection' });
+    return true;
+  }
+
   setSelection(selection: Selection): void {
     const store = this.#doc.store(this.activeContext);
     const valid = selection.filter((ref) => refExists(store, ref));
@@ -162,7 +197,10 @@ export class EditorSession {
       validPath.push(instanceId);
       context = instance.definitionId;
     }
-    if (validPath.length !== this.#editPath.length) this.#editPath = validPath;
+    if (validPath.length !== this.#editPath.length) {
+      this.#editPath = validPath;
+      this.#emit({ kind: 'context' });
+    }
     const store = this.#doc.store(this.activeContext);
     const selection = this.#selection.filter((ref) => refExists(store, ref));
     if (selection !== this.#selection) {

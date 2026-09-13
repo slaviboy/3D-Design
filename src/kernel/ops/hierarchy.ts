@@ -1,16 +1,6 @@
 import { KernelError } from '../errors';
 import type { DefinitionId, EdgeId, FaceId, InstanceId, VertexId } from '../ids';
-import { classifyPointInPolygon } from '../math/geom2d';
-import {
-  IDENTITY,
-  linearDeterminant,
-  multiply,
-  transformNormal,
-  transformPoint,
-  type Mat4,
-} from '../math/mat4';
-import { canonicalPlane, planeBasis, planeFromPolygon, projectTo2D } from '../math/plane';
-import { normalize } from '../math/vec3';
+import { IDENTITY, linearDeterminant, multiply, transformPoint, type Mat4 } from '../math/mat4';
 import type { ModelDocument } from '../model/ModelDocument';
 import {
   addCurve,
@@ -30,8 +20,7 @@ import {
 import type { DefinitionAttributes, Loop } from '../model/types';
 import { splitCurveChains, transformCurveParams } from './curves';
 import { removeEdgeAndOrphans } from './erase';
-import { insertSegments } from './insertSegments';
-import { resolvePlane } from './planar/resolvePlane';
+import { captureFragment, insertFragment } from './fragment';
 
 export interface EntitySelection {
   readonly faces?: readonly FaceId[];
@@ -204,61 +193,13 @@ export function explodeInstance(doc: ModelDocument, context: DefinitionId, insta
     const definitionId = instance.definitionId;
     const definition = doc.getDefinition(definitionId);
     const source = definition.store;
-    const transform = instance.transform;
     removeInstance(doc, context, instanceId);
-
-    const sourceEdges = [...source.edges()].sort((a, b) => a.id - b.id);
-    const inserted = insertSegments(
-      doc,
-      context,
-      sourceEdges.map((edge) => ({
-        a: transformPoint(transform, source.position(edge.v0)),
-        b: transformPoint(transform, source.position(edge.v1)),
-        attributes: edge.attributes,
-      })),
-      { autoFace: false },
-    );
-    const chainByEdge = new Map<EdgeId, readonly EdgeId[]>();
-    sourceEdges.forEach((edge, index) => chainByEdge.set(edge.id, inserted.segmentEdges[index] ?? []));
-
-    for (const face of [...source.faces()].sort((a, b) => a.id - b.id)) {
-      if (!face.plane) continue;
-      const outerPoints = source.loopPoints(face.outer).map((p) => transformPoint(transform, p));
-      const plane = planeFromPolygon(outerPoints);
-      const transformedNormal = transformNormal(transform, face.plane.normal);
-      const desiredNormal = transformedNormal ? normalize(transformedNormal) : null;
-      if (!plane || !desiredNormal) continue;
-      const basis = planeBasis(plane.normal);
-      const outer2D = outerPoints.map((p) => projectTo2D(basis, p));
-      const inners2D = face.inners.map((loop) =>
-        source.loopPoints(loop).map((p) => projectTo2D(basis, transformPoint(transform, p))),
-      );
-      const seeds = source.faceEdges(face.id).flatMap((edgeId) => chainByEdge.get(edgeId) ?? []);
-      resolvePlane(doc, context, canonicalPlane(plane), seeds, {
-        policy: {
-          decide: (_region, sample) =>
-            classifyPointInPolygon(projectTo2D(basis, sample), outer2D, inners2D) === 'inside'
-              ? { attributes: face.attributes, normal: desiredNormal }
-              : null,
-        },
-      });
-    }
-
-    for (const curve of [...source.curves()].sort((a, b) => a.id - b.id)) {
-      const edges = curve.edges.flatMap((edgeId) => chainByEdge.get(edgeId) ?? []);
-      const unique = new Set(edges).size === edges.length;
-      const free = edges.every((edgeId) => store.edge(edgeId)?.curve === null);
-      if (edges.length === 0 || !unique || !free) continue;
-      const chains = splitCurveChains(store, edges);
-      const params =
-        chains.length === 1 ? transformCurveParams(curve.params, transform) : { kind: 'polyline' as const };
-      for (const chain of chains) addCurve(doc, context, params, chain);
-    }
-
-    for (const child of [...source.instances()].sort((a, b) => a.id - b.id)) {
-      addInstance(doc, context, child.definitionId, multiply(transform, child.transform), child.attributes);
-    }
-
+    const fragment = captureFragment(source, {
+      faces: [...source.faces()].map((face) => face.id),
+      edges: [...source.edges()].map((edge) => edge.id),
+      instances: [...source.instances()].map((child) => child.id),
+    });
+    insertFragment(doc, context, fragment, instance.transform, 'merge');
     if (definition.attributes.isGroup && doc.instancesOf(definitionId).length === 0) {
       clearDefinition(doc, definitionId);
       removeDefinition(doc, definitionId);

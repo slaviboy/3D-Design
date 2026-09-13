@@ -1,5 +1,12 @@
 import type { Editor } from '../Editor';
-import { MIDDLE_BUTTON, type PointerInput, type Tool, type ToolOverlay, type WheelInput } from './Tool';
+import {
+  MIDDLE_BUTTON,
+  type MeasurementField,
+  type PointerInput,
+  type Tool,
+  type ToolOverlay,
+  type WheelInput,
+} from './Tool';
 
 /** Wheel zoom: factor = exp(-deltaY × this). A typical mouse notch (deltaY 100) zooms by about 16%. */
 export const WHEEL_ZOOM_SENSITIVITY = 0.0015;
@@ -45,6 +52,14 @@ export class ToolManager {
     return this.#active.statusHint(this.#editor);
   }
 
+  get measurement(): MeasurementField | null {
+    return this.#active.measurement?.(this.#editor) ?? null;
+  }
+
+  tools(): Tool[] {
+    return [...this.#tools.values()];
+  }
+
   has(toolId: string): boolean {
     return this.#tools.has(toolId);
   }
@@ -65,7 +80,7 @@ export class ToolManager {
       this.#navigation = { mode: input.shiftKey ? 'pan' : 'orbit', lastX: input.x, lastY: input.y };
       return;
     }
-    this.#active.pointerDown?.(input, this.#editor);
+    this.#guard(() => this.#active.pointerDown?.(input, this.#editor));
     this.#changed();
   }
 
@@ -80,8 +95,9 @@ export class ToolManager {
       else this.#editor.panBy(dx, dy);
       return;
     }
-    if (this.#active.pointerMove) {
-      this.#active.pointerMove(input, this.#editor);
+    const tool = this.#active;
+    if (tool.pointerMove) {
+      this.#guard(() => tool.pointerMove?.(input, this.#editor));
       this.#changed();
     }
   }
@@ -91,7 +107,7 @@ export class ToolManager {
       if (input.button === MIDDLE_BUTTON) this.#navigation = null;
       return;
     }
-    this.#active.pointerUp?.(input, this.#editor);
+    this.#guard(() => this.#active.pointerUp?.(input, this.#editor));
     this.#changed();
   }
 
@@ -101,7 +117,7 @@ export class ToolManager {
 
   /** Offers a chord to the active tool. Escape always cancels the tool's current operation. */
   keyDown(chord: string): boolean {
-    const handled = this.#active.keyDown?.(chord, this.#editor) ?? false;
+    const handled = this.#guard(() => this.#active.keyDown?.(chord, this.#editor)) ?? false;
     if (handled) {
       this.#changed();
       return true;
@@ -127,7 +143,23 @@ export class ToolManager {
     };
   }
 
+  /** Call after something outside the tool manager changed what the active tool shows. */
+  refresh(): void {
+    this.#changed();
+  }
+
+  /** Runs tool code, turning failures into error notifications so one bad input never breaks the editor. */
+  #guard<T>(action: () => T): T | undefined {
+    try {
+      return action();
+    } catch (error) {
+      this.#editor.notify('error', error instanceof Error ? error.message : String(error));
+      return undefined;
+    }
+  }
+
   #changed(): void {
+    this.#editor.session.setPreview(this.#active.preview?.(this.#editor) ?? null);
     for (const listener of [...this.#listeners]) listener();
   }
 }

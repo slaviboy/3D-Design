@@ -129,6 +129,24 @@ Folders are created when they get their first real module. Placeholder files are
 - **Derived state.** Triangulation, spatial indexes and render buffers are never stored in history. They are
   recomputed from the dirty sets the primitives emit.
 
+## Tool previews, speculative edits and the measurements box
+
+- **Previews.** Tools publish a `ToolPreview`: world-space rubber-band lines (colored by the axis they follow), entities
+  to highlight in the active context, and the current inference marker. The `ToolManager` copies it into the session
+  after every input event. The renderer draws the lines and highlights, and the UI draws the marker and its tooltip.
+- **Speculative edits.** Push/Pull and Move show the real result while the pointer moves. A `Speculation` runs the
+  kernel operation in a transaction, and each new attempt first rolls back the previous one with
+  `ModelDocument.rollbackLastTransaction` (no redo entry). Committing keeps the last attempt as a single undo step.
+  If an attempt throws, the model is left without it and the error is shown in the status bar.
+- **Measurements box.** While the active tool reports a `MeasurementField`, `Editor.handleKey` sends typing to the
+  box: digits and `. , - [ < /` start it, and after that any character continues it. Enter parses the text against
+  the kinds the tool accepts (`parseMeasurement`) and calls `onMeasurement`. After an operation, typing replaces it as
+  long as the tool's transaction is still the last one in the history (`canReplace`). That is how retyping a
+  rectangle's size, a push/pull distance, or `3x` after a copy work.
+- **Edit context.** `EditorSession.enterInstance` and `exitContext` maintain the edit path. Picking, inference and
+  every tool work in the active context's coordinates; tools convert world points with the inverse of the context
+  transform.
+
 ## State management
 
 - **Kernel.** The kernel is a mutable, transaction-guarded store. It is not kept in React state.

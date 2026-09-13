@@ -1,9 +1,21 @@
+import type { Vec3 } from '../../kernel/math/vec3';
+import type { MeasurementIntent, MeasurementKind } from '../../kernel/vcb/parseMeasurement';
 import type { Editor } from '../Editor';
+import type { InferenceKind } from '../inference/inference';
+import type { EntityRef } from '../selection/Selection';
 
 export const SELECT_TOOL_ID = 'tool.select';
 export const ORBIT_TOOL_ID = 'tool.orbit';
 export const PAN_TOOL_ID = 'tool.pan';
 export const ZOOM_TOOL_ID = 'tool.zoom';
+export const LINE_TOOL_ID = 'tool.line';
+export const RECTANGLE_TOOL_ID = 'tool.rectangle';
+export const CIRCLE_TOOL_ID = 'tool.circle';
+export const POLYGON_TOOL_ID = 'tool.polygon';
+export const ERASER_TOOL_ID = 'tool.eraser';
+export const TAPE_MEASURE_TOOL_ID = 'tool.tapeMeasure';
+export const PUSH_PULL_TOOL_ID = 'tool.pushPull';
+export const MOVE_TOOL_ID = 'tool.move';
 
 export const PRIMARY_BUTTON = 0;
 export const MIDDLE_BUTTON = 1;
@@ -37,7 +49,42 @@ export interface SelectionRectangleOverlay {
   readonly mode: 'window' | 'crossing';
 }
 
+/** Screen-space overlays drawn by the UI on top of the viewport. */
 export type ToolOverlay = SelectionRectangleOverlay;
+
+/** Rubber-band lines are colored by the axis they follow, so the color itself is an inference cue. */
+export type PreviewLineStyle = 'preview' | 'axis-x' | 'axis-y' | 'axis-z' | 'guide';
+
+export interface PreviewLine {
+  /** World coordinates. */
+  readonly a: Vec3;
+  readonly b: Vec3;
+  readonly style: PreviewLineStyle;
+}
+
+export interface InferenceMarker {
+  /** World coordinates. */
+  readonly point: Vec3;
+  readonly kind: InferenceKind;
+  readonly label: string;
+}
+
+/** What a tool shows in the 3D view while it works. */
+export interface ToolPreview {
+  readonly lines: readonly PreviewLine[];
+  /** Entities of the active context to highlight (the face Push/Pull would use, edges the eraser marked). */
+  readonly highlight: readonly EntityRef[];
+  readonly marker: InferenceMarker | null;
+}
+
+/** The measurements box while a tool is active. */
+export interface MeasurementField {
+  readonly label: string;
+  /** Current value, shown when the user isn't typing. */
+  readonly value: string;
+  /** The kinds of typed input the tool understands. */
+  readonly accepts: readonly MeasurementKind[];
+}
 
 /**
  * An interactive tool. Tools are plain classes driven by the ToolManager, which makes them testable with
@@ -60,4 +107,8 @@ export interface Tool {
   /** Instruction shown in the status bar. */
   statusHint(editor: Editor): string;
   overlay?(): ToolOverlay | null;
+  preview?(editor: Editor): ToolPreview | null;
+  measurement?(editor: Editor): MeasurementField | null;
+  /** Applies a value typed in the measurements box. Throws to report invalid input. */
+  onMeasurement?(intent: MeasurementIntent, editor: Editor): void;
 }
