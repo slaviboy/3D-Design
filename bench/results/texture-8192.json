@@ -1,0 +1,37 @@
+{
+  "benchmark": "texture-8192",
+  "textureSize": "8192x8192",
+  "textureBytes": 25165881,
+  "note": "PNG signature and IHDR followed by incompressible placeholder data; the kernel only reads the header",
+  "entities": 10010,
+  "addTextureAsset": {
+    "medianMs": 2,
+    "minMs": 0.8,
+    "samples": 10
+  },
+  "buildAndPaint10kModel": {
+    "medianMs": 148.8,
+    "minMs": 147.3,
+    "samples": 3
+  },
+  "fileBytes": 25256191,
+  "encode": {
+    "medianMs": 262.2,
+    "minMs": 250.5,
+    "samples": 3
+  },
+  "decode": {
+    "medianMs": 267.5,
+    "minMs": 260,
+    "samples": 3
+  },
+  "decodeWithRepair": {
+    "medianMs": 265.6,
+    "minMs": 252.9,
+    "samples": 3
+  },
+  "decodedModel": {
+    "heapMb": 8,
+    "arrayBuffersMb": 24
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "benchmark": "save-load-100000",
+  "entities": 100022,
+  "boxes": 3847,
+  "fileBytes": 878809,
+  "encode": {
+    "medianMs": 333.3,
+    "minMs": 313.2,
+    "samples": 5
+  },
+  "decode": {
+    "medianMs": 1109.5,
+    "minMs": 1093,
+    "samples": 5
+  },
+  "decodeWithRepair": {
+    "medianMs": 1142.5,
+    "minMs": 1120.8,
+    "samples": 5
+  },
+  "decodedModel": {
+    "heapMb": 78.7,
+    "arrayBuffersMb": 0
+  }
+}
