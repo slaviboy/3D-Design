@@ -1,6 +1,7 @@
 :root {
   --ui-font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --ui-font-size: 13px;
+  --ui-scale: 1;
+  --ui-font-size: calc(13px * var(--ui-scale));
 
   --bg: #e9ecef;
   --fg: #1f2630;
@@ -16,12 +17,12 @@
   --danger: #c23b30;
   --focus-ring: #1f66d6;
 
-  --menubar-height: 28px;
-  --toolbar-height: 40px;
-  --statusbar-height: 26px;
-  --tool-palette-width: 44px;
-  --dock-width: 280px;
-  --tool-button-size: 32px;
+  --menubar-height: calc(28px * var(--ui-scale));
+  --toolbar-height: calc(40px * var(--ui-scale));
+  --statusbar-height: calc(26px * var(--ui-scale));
+  --tool-palette-width: calc(44px * var(--ui-scale));
+  --dock-width: calc(280px * var(--ui-scale));
+  --tool-button-size: calc(32px * var(--ui-scale));
 
   font-family: var(--ui-font);
   font-size: var(--ui-font-size);
@@ -30,7 +31,8 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
     --bg: #1d2127;
     --fg: #dfe3e8;
     --muted-fg: #9aa4b1;
@@ -45,6 +47,28 @@
     --danger: #ef6a5f;
     --focus-ring: #6aa2f3;
   }
+}
+
+/* An explicit theme from Preferences overrides the system setting. */
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #1d2127;
+  --fg: #dfe3e8;
+  --muted-fg: #9aa4b1;
+  --chrome-bg: #262b32;
+  --chrome-border: #3a414b;
+  --surface-bg: #21252b;
+  --hover-bg: #323842;
+  --pressed-bg: #2b3a52;
+  --accent: #4b8ef0;
+  --accent-hover: #6aa2f3;
+  --accent-fg: #0f1318;
+  --danger: #ef6a5f;
+  --focus-ring: #6aa2f3;
 }
 
 *,

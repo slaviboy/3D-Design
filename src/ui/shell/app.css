@@ -1076,3 +1076,45 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* Preferences ---------------------------------------------------------------------------------------- */
+
+.preferences {
+  width: min(520px, calc(100vw - 32px));
+}
+
+.preferences__group {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 8px 12px 12px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+}
+
+.preferences__group legend {
+  padding: 0 4px;
+  font-weight: 600;
+}
+
+.preferences__field {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.preferences__field select {
+  height: 26px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--surface-bg);
+  border: 1px solid var(--chrome-border);
+  border-radius: 3px;
+}
+
+.preferences__check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}

@@ -1,6 +1,8 @@
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import type { AnnotationId, DefinitionId } from '../../kernel/ids';
 import type { AnnotationKind } from '../../kernel/model/types';
+import type { UnitSettings } from '../../kernel/units/units';
+import type { Preferences } from '../preferences/preferences';
 import { collectAnnotationLabels, type AnnotationLabel } from '../annotations/annotationLabels';
 import { projectToScreen, type Projection } from '../camera/camera';
 import type { Editor, EditorNotification, InputRequest } from '../Editor';
@@ -64,6 +66,9 @@ export interface EditorViewState {
   readonly shortcutsDialogRequests: number;
   /** Increments whenever shortcuts change, so labels that show them refresh. */
   readonly shortcutsVersion: number;
+  /** Increments each time something asks for the Preferences dialog. */
+  readonly preferencesDialogRequests: number;
+  readonly preferences: Preferences;
   /** The tag new groups and components go on; null for untagged. */
   readonly activeTagId: number | null;
   /** Instance ids of the open groups and components, outermost first. */
@@ -88,14 +93,17 @@ export function createEditorStore(editor: Editor): EditorStore {
   let startScreenRequests = 0;
   let shortcutsDialogRequests = 0;
   let shortcutsVersion = 0;
+  let preferencesDialogRequests = 0;
+  let labelsUnits: UnitSettings | null = null;
   let labelsRevision = -1;
   let worldLabels: readonly AnnotationLabel[] = [];
   // Labels are collected when the model changes and projected on every refresh, since the camera moves often.
   const screenLabels = (): ScreenAnnotationLabel[] => {
     const { session } = editor;
-    if (session.revision !== labelsRevision) {
+    if (session.revision !== labelsRevision || editor.units !== labelsUnits) {
       worldLabels = collectAnnotationLabels(session.doc, editor.units);
       labelsRevision = session.revision;
+      labelsUnits = editor.units;
     }
     const size = editor.viewportSize;
     const result: ScreenAnnotationLabel[] = [];
@@ -157,6 +165,8 @@ export function createEditorStore(editor: Editor): EditorStore {
       startScreenRequests,
       shortcutsDialogRequests,
       shortcutsVersion,
+      preferencesDialogRequests,
+      preferences: editor.preferences,
       activeTagId: session.activeTagId,
       editPath: session.editPath,
       openPanels: editor.openPanels,
@@ -180,6 +190,7 @@ export function createEditorStore(editor: Editor): EditorStore {
         if (event.request === 'backups') backupRequests++;
         else if (event.request === 'start') startScreenRequests++;
         else if (event.request === 'shortcuts') shortcutsDialogRequests++;
+        else if (event.request === 'preferences') preferencesDialogRequests++;
         else commandPaletteRequests++;
       }
       refresh();

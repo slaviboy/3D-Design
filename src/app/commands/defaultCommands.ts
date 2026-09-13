@@ -364,6 +364,17 @@ export function registerDefaultCommands(registry: CommandRegistry<Editor>): void
     toolCommand(PAN_TOOL_ID, 'Pan', 'H', ['hand', 'scroll view']),
     toolCommand(ZOOM_TOOL_ID, 'Zoom', 'Z', ['magnify']),
     {
+      id: 'app.preferences',
+      label: 'Preferences…',
+      category: 'Window',
+      description: 'Theme, interface size, units, mouse wheel and autosave',
+      aliases: ['settings', 'options', 'units', 'dark mode', 'theme'],
+      defaultShortcuts: ['Mod+,'],
+      run: (editor) => {
+        editor.requestUi('preferences');
+      },
+    },
+    {
       id: 'help.keyboardShortcuts',
       label: 'Keyboard Shortcuts…',
       category: 'Help',

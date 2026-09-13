@@ -7,6 +7,7 @@ import { Notifications } from '../common/Notifications';
 import { InputDialog } from '../dialogs/InputDialog';
 import { RecoveryDialog } from '../dialogs/RecoveryDialog';
 import { KeyboardShortcutsDialog } from '../dialogs/KeyboardShortcutsDialog';
+import { PreferencesDialog } from '../dialogs/PreferencesDialog';
 import { StartScreen, startScreenEnabled } from '../dialogs/StartScreen';
 import { useEditor, useEditorState } from '../EditorContext';
 import { MenuBar } from '../menubar/MenuBar';
@@ -41,6 +42,8 @@ export function App({
   const backupRequests = useEditorState((state) => state.backupRequests);
   const startScreenRequests = useEditorState((state) => state.startScreenRequests);
   const shortcutsDialogRequests = useEditorState((state) => state.shortcutsDialogRequests);
+  const preferencesDialogRequests = useEditorState((state) => state.preferencesDialogRequests);
+  const preferences = useEditorState((state) => state.preferences);
   const openPanels = useEditorState((state) => state.openPanels);
   const inputRequest = useEditorState((state) => state.inputRequest);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -48,6 +51,7 @@ export function App({
   const [backups, setBackups] = useState<readonly RecoverySnapshot[] | null>(null);
   const [startOpen, setStartOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
   const startupChecked = useRef(false);
 
   useEffect(() => {
@@ -65,6 +69,17 @@ export function App({
   useEffect(() => {
     if (shortcutsDialogRequests > 0) setShortcutsOpen(true);
   }, [shortcutsDialogRequests]);
+
+  useEffect(() => {
+    if (preferencesDialogRequests > 0) setPreferencesOpen(true);
+  }, [preferencesDialogRequests]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (preferences.theme === 'system') root.removeAttribute('data-theme');
+    else root.setAttribute('data-theme', preferences.theme);
+    root.style.setProperty('--ui-scale', String(preferences.uiScale));
+  }, [preferences]);
 
   useEffect(() => {
     if (backupRequests === 0 || !recovery) return;
@@ -169,6 +184,13 @@ export function App({
       </div>
       <StatusBar />
       <Notifications />
+      {preferencesOpen && (
+        <PreferencesDialog
+          onClose={() => {
+            setPreferencesOpen(false);
+          }}
+        />
+      )}
       {shortcutsOpen && (
         <KeyboardShortcutsDialog
           onClose={() => {

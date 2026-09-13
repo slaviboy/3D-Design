@@ -21,7 +21,7 @@ import {
 import { deleteTag as deleteTagOp, purgeUnusedTags as purgeUnusedTagsOp } from '../kernel/ops/tags';
 import { transformEntities } from '../kernel/ops/transform';
 import { vec3 } from '../kernel/math/vec3';
-import { METRIC_UNIT_SETTINGS, type UnitSettings } from '../kernel/units/units';
+import { type UnitSettings } from '../kernel/units/units';
 import { parseMeasurement } from '../kernel/vcb/parseMeasurement';
 import { decodePlanarFile, encodePlanarFile, PLANAR_FILE_EXTENSION } from '../io/format/planarFile';
 import type { FileAccess } from '../io/fs/types';
@@ -50,6 +50,7 @@ import { nextTagColor, uniqueTagName } from './tags/tags';
 import { ComponentPlacementTool, PLACE_COMPONENT_TOOL_ID } from './tools/ComponentPlacementTool';
 import { pick, type PickHit, type PickRequest } from './picking/picker';
 import { createSampleModel, SAMPLE_MODEL_NAME } from './sample/sampleModel';
+import { DEFAULT_PREFERENCES, type Preferences, type PreferenceStorage } from './preferences/preferences';
 import { templateById } from './templates/templates';
 import { boxSelect, type BoxSelectMode, type ScreenRect } from './selection/boxSelect';
 import { WorkerBooleanEngine, type BooleanEngine } from './solids/booleanClient';
@@ -133,7 +134,7 @@ export interface RecentFilesRecorder {
   record(name: string, handle: unknown): void;
 }
 
-export type UiRequest = 'command-palette' | 'backups' | 'start' | 'shortcuts';
+export type UiRequest = 'command-palette' | 'backups' | 'start' | 'shortcuts' | 'preferences';
 
 export type EditorEvent =
   | { readonly kind: 'notifications' }
@@ -141,7 +142,8 @@ export type EditorEvent =
   | { readonly kind: 'ui-request'; readonly request: UiRequest }
   | { readonly kind: 'panels' }
   | { readonly kind: 'input-request' }
-  | { readonly kind: 'shortcuts' };
+  | { readonly kind: 'shortcuts' }
+  | { readonly kind: 'preferences' };
 
 /** Attributes Entity Info and commands can change on the selection. Each applies to the kinds that have it. */
 export interface SelectionAttributePatch {
@@ -207,7 +209,8 @@ export class Editor {
   #shortcutOverrides: ShortcutOverrides = {};
   #shortcutStorage: ShortcutStorage | null = null;
   readonly tools: ToolManager;
-  readonly units: UnitSettings = METRIC_UNIT_SETTINGS;
+  #preferences: Preferences = DEFAULT_PREFERENCES;
+  #preferenceStorage: PreferenceStorage | null = null;
 
   readonly #environment: EditorEnvironment;
   readonly #listeners = new Set<(event: EditorEvent) => void>();
@@ -410,6 +413,44 @@ export class Editor {
     return true;
   }
 
+  // ---------------------------------------------------------------------------------------------- preferences
+
+  /** Settings kept on this device: theme, interface size, wheel direction, autosave interval and units. */
+  get preferences(): Preferences {
+    return this.#preferences;
+  }
+
+  get units(): UnitSettings {
+    return this.#preferences.units;
+  }
+
+  /** Loads preferences from storage, and saves later changes there. */
+  setPreferenceStorage(storage: PreferenceStorage): void {
+    this.#preferenceStorage = storage;
+    this.#applyPreferences(storage.load(), false);
+  }
+
+  updatePreferences(patch: Partial<Preferences>): void {
+    this.#applyPreferences({ ...this.#preferences, ...patch }, true);
+  }
+
+  resetPreferences(): void {
+    this.#applyPreferences(DEFAULT_PREFERENCES, true);
+  }
+
+  #applyPreferences(preferences: Preferences, persist: boolean): void {
+    this.#preferences = preferences;
+    if (persist) {
+      try {
+        this.#preferenceStorage?.save(preferences);
+      } catch (error) {
+        this.notify('error', `Could not save your preferences: ${errorMessage(error)}`);
+      }
+    }
+    this.#emit({ kind: 'preferences' });
+    // Measurements and hints are shown in the units just chosen.
+    this.tools.refresh();
+  }
   // ---------------------------------------------------------------------------------------------- shortcuts
 
   get shortcuts(): ShortcutMap {

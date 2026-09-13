@@ -15,7 +15,7 @@ export function startScreenEnabled(): boolean {
   }
 }
 
-function setStartScreenEnabled(enabled: boolean): void {
+export function setStartScreenEnabled(enabled: boolean): void {
   try {
     if (enabled) window.localStorage.removeItem(START_SCREEN_PREFERENCE_KEY);
     else window.localStorage.setItem(START_SCREEN_PREFERENCE_KEY, 'hidden');

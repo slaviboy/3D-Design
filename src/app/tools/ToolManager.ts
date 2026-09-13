@@ -112,7 +112,11 @@ export class ToolManager {
   }
 
   wheel(input: WheelInput): void {
-    this.#editor.zoomAtScreen({ x: input.x, y: input.y }, Math.exp(-input.deltaY * WHEEL_ZOOM_SENSITIVITY));
+    const direction = this.#editor.preferences.invertWheelZoom ? -1 : 1;
+    this.#editor.zoomAtScreen(
+      { x: input.x, y: input.y },
+      Math.exp(-direction * input.deltaY * WHEEL_ZOOM_SENSITIVITY),
+    );
   }
 
   /** Offers a chord to the active tool. Escape always cancels the tool's current operation. */

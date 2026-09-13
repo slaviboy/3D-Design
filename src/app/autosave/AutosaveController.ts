@@ -16,6 +16,7 @@ export interface AutosaveOptions {
   readonly encode: () => Uint8Array;
   /** Identifies this browser tab's editing session in the recovery store. */
   readonly sessionId: string;
+  /** Time between snapshots; 0 turns periodic autosave off. */
   readonly intervalMs?: number;
   /** Newest sessions kept in the recovery store. */
   readonly keepSessions?: number;
@@ -35,6 +36,8 @@ export class AutosaveController {
   readonly sessionId: string;
   readonly #options: AutosaveOptions;
   readonly #timers: TimerApi;
+  #intervalMs: number;
+  #started = false;
   #handle: unknown = null;
   #lastSnapshotRevision: number | null = null;
   #pending: Promise<boolean> | null = null;
@@ -43,6 +46,7 @@ export class AutosaveController {
   constructor(options: AutosaveOptions) {
     this.#options = options;
     this.sessionId = options.sessionId;
+    this.#intervalMs = options.intervalMs ?? DEFAULT_AUTOSAVE_INTERVAL_MS;
     this.#timers = options.timers ?? {
       setInterval: (callback, milliseconds) => globalThis.setInterval(callback, milliseconds),
       clearInterval: (handle) => {
@@ -51,21 +55,34 @@ export class AutosaveController {
     };
   }
 
+  get intervalMs(): number {
+    return this.#intervalMs;
+  }
+
   start(): void {
-    if (this.#handle !== null) return;
-    this.#handle = this.#timers.setInterval(() => {
-      void this.tick();
-    }, this.#options.intervalMs ?? DEFAULT_AUTOSAVE_INTERVAL_MS);
+    if (this.#started) return;
+    this.#started = true;
+    this.#schedule();
     this.#unsubscribe = this.#options.session.subscribe((event) => {
       if (event.kind === 'file') void this.discard();
     });
   }
 
   stop(): void {
-    if (this.#handle !== null) this.#timers.clearInterval(this.#handle);
-    this.#handle = null;
+    this.#started = false;
+    this.#clearTimer();
     this.#unsubscribe?.();
     this.#unsubscribe = null;
+  }
+
+  /** Changes the time between snapshots; 0 turns periodic autosave off. Takes effect immediately. */
+  setIntervalMs(milliseconds: number): void {
+    const interval = Number.isFinite(milliseconds) && milliseconds > 0 ? milliseconds : 0;
+    if (interval === this.#intervalMs) return;
+    this.#intervalMs = interval;
+    if (!this.#started) return;
+    this.#clearTimer();
+    this.#schedule();
   }
 
   /** Writes a snapshot when there are unsaved changes that aren't in the latest snapshot. Resolves to whether it wrote. */
@@ -84,6 +101,18 @@ export class AutosaveController {
     } catch (error) {
       this.#options.onError?.(error);
     }
+  }
+
+  #schedule(): void {
+    if (this.#intervalMs <= 0) return;
+    this.#handle = this.#timers.setInterval(() => {
+      void this.tick();
+    }, this.#intervalMs);
+  }
+
+  #clearTimer(): void {
+    if (this.#handle !== null) this.#timers.clearInterval(this.#handle);
+    this.#handle = null;
   }
 
   async #write(): Promise<boolean> {

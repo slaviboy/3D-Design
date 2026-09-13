@@ -5,6 +5,12 @@ import { Editor } from './app/Editor';
 import { projectToScreen } from './app/camera/camera';
 import type { Platform } from './app/shortcuts/shortcuts';
 import { vec3 } from './kernel/math/vec3';
+import {
+  DEFAULT_PREFERENCES,
+  MILLISECONDS_PER_MINUTE,
+  parsePreferences,
+  serializePreferences,
+} from './app/preferences/preferences';
 import { exportShortcuts, parseStoredOverrides } from './app/shortcuts/customization';
 import { createEditorStore } from './app/stores/editorStore';
 import { createBrowserFileAccess } from './io/fs/browserFileAccess';
@@ -69,6 +75,20 @@ async function start(): Promise<void> {
     },
   });
 
+  const preferencesKey = 'planar.preferences';
+  editor.setPreferenceStorage({
+    load: () => {
+      try {
+        return parsePreferences(window.localStorage.getItem(preferencesKey));
+      } catch {
+        return DEFAULT_PREFERENCES;
+      }
+    },
+    save: (preferences) => {
+      window.localStorage.setItem(preferencesKey, serializePreferences(preferences));
+    },
+  });
+
   let recovery: RecoveryOptions | undefined;
   let recent: RecentFilesRepository | undefined;
   try {
@@ -79,11 +99,17 @@ async function start(): Promise<void> {
       repository,
       encode: () => editor.encodeDocument(),
       sessionId: crypto.randomUUID(),
+      intervalMs: editor.preferences.autosaveMinutes * MILLISECONDS_PER_MINUTE,
       onError: (error) => {
         editor.notify('error', `Autosave failed: ${error instanceof Error ? error.message : String(error)}`);
       },
     });
     autosave.start();
+    editor.subscribe((event) => {
+      if (event.kind === 'preferences') {
+        autosave.setIntervalMs(editor.preferences.autosaveMinutes * MILLISECONDS_PER_MINUTE);
+      }
+    });
     editor.setBackupRepository(repository, autosave.sessionId);
     recovery = { repository, sessionId: autosave.sessionId };
     const recentFiles = new IndexedDbRecentFilesRepository(db);

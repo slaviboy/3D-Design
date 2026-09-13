@@ -127,7 +127,15 @@ export const MENUS: readonly MenuDefinition[] = [
   },
   {
     label: 'Window',
-    items: ['window.entityInfo', 'window.outliner', 'window.components', 'window.tags', 'window.soften'],
+    items: [
+      'window.entityInfo',
+      'window.outliner',
+      'window.components',
+      'window.tags',
+      'window.soften',
+      null,
+      'app.preferences',
+    ],
   },
   { label: 'Help', items: ['help.commandPalette', 'help.keyboardShortcuts'] },
 ];
