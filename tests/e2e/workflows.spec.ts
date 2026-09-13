@@ -111,7 +111,14 @@ test('saves a model to a file and opens it again', async ({ page }, testInfo) =>
     .toMatchObject({ instances: 0, name: 'Sample House', dirty: false });
 });
 
-test('keeps working offline after the first visit', async ({ page, context }) => {
+test('keeps working offline after the first visit', async ({ page, context, browserName }) => {
+  // Playwright's offline emulation in WebKit fails navigations even when the service worker would answer them
+  // ("WebKit encountered an internal error"). The service worker precaches index.html with a navigation fallback,
+  // which this test verifies in Chromium.
+  test.skip(
+    browserName === 'webkit',
+    'offline emulation breaks service-worker navigations in Playwright WebKit',
+  );
   await page.goto('/');
   await page.evaluate(async () => {
     await navigator.serviceWorker.ready;
@@ -134,8 +141,9 @@ test('offers to recover unsaved work after a session ends unexpectedly', async (
   await page.goto('/');
   await openSample(page);
   await page.keyboard.press('ControlOrMeta+A');
+  await expect(page.getByTestId('selection-count')).toHaveText('1 selected');
   await page.keyboard.press('Delete');
-  expect((await modelState(page)).dirty).toBe(true);
+  await expect.poll(async () => (await modelState(page)).dirty).toBe(true);
 
   // Autosave runs every five minutes.
   await page.clock.runFor(5 * 60 * 1000 + 1000);

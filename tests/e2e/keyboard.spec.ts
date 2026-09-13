@@ -19,10 +19,11 @@ async function rootInstances(page: Page) {
   });
 }
 
-test('opens a menu with the keyboard and runs a command', async ({ page }) => {
+test('opens a menu with the keyboard and runs a command', async ({ page, browserName }) => {
   await openApp(page);
   const file = page.getByRole('menuitem', { name: 'File', exact: true });
-  await page.keyboard.press('Tab');
+  // Safari's Tab only visits form fields unless "Tab to all controls" is on; Option+Tab visits every control.
+  await page.keyboard.press(browserName === 'webkit' ? 'Alt+Tab' : 'Tab');
   await expect(file).toBeFocused();
 
   await page.keyboard.press('Enter');
