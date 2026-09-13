@@ -52,3 +52,15 @@ npm run dev          # http://localhost:5173
 
 - **TypeScript is pinned to `~6.0`** because typescript-eslint 8.x supports TypeScript below 6.1 only. Revisit when
   typescript-eslint supports TypeScript 7.
+
+## Diagnostics
+
+Planar logs through `src/app/diagnostics/log.ts` (`createLogger(scope)`), never with `console` directly (ESLint
+forbids it). Logging is always on in `npm run dev` and silent in production builds. To see diagnostics in a
+production or preview build, run `localStorage.setItem('planar.debug', '1')` in the developer console and reload,
+or open Planar with `?debug` in the address. Remove the key to turn it off again.
+
+The logger writes only to the browser's own console. There is no telemetry and no remote error reporting.
+Error notifications, failed tool actions, rendering errors caught by error boundaries, and storage or autosave
+failures are logged with their full error objects.
+

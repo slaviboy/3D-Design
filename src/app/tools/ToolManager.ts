@@ -1,3 +1,4 @@
+import { createLogger } from '../diagnostics/log';
 import type { Editor } from '../Editor';
 import {
   MIDDLE_BUTTON,
@@ -7,6 +8,8 @@ import {
   type ToolOverlay,
   type WheelInput,
 } from './Tool';
+
+const toolLog = createLogger('tools');
 
 /** Wheel zoom: factor = exp(-deltaY × this). A typical mouse notch (deltaY 100) zooms by about 16%. */
 export const WHEEL_ZOOM_SENSITIVITY = 0.0015;
@@ -157,6 +160,7 @@ export class ToolManager {
     try {
       return action();
     } catch (error) {
+      toolLog.error(`${this.#active.id} failed`, error);
       this.#editor.notify('error', error instanceof Error ? error.message : String(error));
       return undefined;
     }

@@ -1,3 +1,4 @@
+import { createLogger } from './diagnostics/log';
 import type { DefinitionId, EdgeId, FaceId, InstanceId, TagId, CurveId, AnnotationId } from '../kernel/ids';
 import { ModelDocument } from '../kernel/model/ModelDocument';
 import {
@@ -265,6 +266,7 @@ function attributeLabel(patch: SelectionAttributePatch & { readonly name?: strin
   return 'Change Attributes';
 }
 
+const editorLog = createLogger('editor');
 const countOf = (count: number, noun: string): string => `${String(count)} ${noun}${count === 1 ? '' : 's'}`;
 
 export interface EditorEnvironment {
@@ -497,6 +499,7 @@ export class Editor {
   }
 
   notify(kind: NotificationKind, message: string): void {
+    if (kind === 'error') editorLog.error(message);
     this.#notifications = [...this.#notifications, { id: this.#nextNotificationId++, kind, message }];
     this.#emit({ kind: 'notifications' });
   }

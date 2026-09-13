@@ -1,4 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { createLogger } from '../../app/diagnostics/log';
+
+const uiLog = createLogger('ui');
 
 interface ErrorBoundaryProps {
   /** Short name of the area, used in the message ("the Entity Info panel"). */
@@ -19,11 +22,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   override componentDidCatch(error: Error, info: ErrorInfo): void {
-    if (import.meta.env.DEV) {
-      // Development diagnostics only; production builds never log.
-      // eslint-disable-next-line no-console
-      console.error(error, info.componentStack);
-    }
+    // Silent in production unless diagnostics are turned on (see src/app/diagnostics/log.ts).
+    uiLog.error(`Rendering failed in ${this.props.area}`, error, info.componentStack);
   }
 
   override render(): ReactNode {

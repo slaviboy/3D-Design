@@ -1,3 +1,4 @@
+import { createLogger } from './app/diagnostics/log';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AutosaveController } from './app/autosave/AutosaveController';
@@ -21,6 +22,8 @@ import { EditorProvider } from './ui/EditorContext';
 import { App, type RecoveryOptions } from './ui/shell/App';
 import './ui/shell/base.css';
 import { DEFAULT_DOCK_LAYOUT, parseDockLayout, serializeDockLayout } from './app/dock/dockLayout';
+
+const startupLog = createLogger('startup');
 
 declare global {
   interface Window {
@@ -118,6 +121,7 @@ async function start(): Promise<void> {
       sessionId: crypto.randomUUID(),
       intervalMs: editor.preferences.autosaveMinutes * MILLISECONDS_PER_MINUTE,
       onError: (error) => {
+        startupLog.warn('Autosave failed', error);
         editor.notify('error', `Autosave failed: ${error instanceof Error ? error.message : String(error)}`);
       },
     });
@@ -133,6 +137,7 @@ async function start(): Promise<void> {
     editor.setRecentFiles({
       record: (name, handle, thumbnail) => {
         recentFiles.add({ name, openedAt: Date.now(), handle, thumbnail }).catch((error: unknown) => {
+          startupLog.warn('Recent files update failed', error);
           editor.notify(
             'error',
             `Could not update recent files: ${error instanceof Error ? error.message : String(error)}`,
