@@ -83,6 +83,8 @@ export const MENUS: readonly MenuDefinition[] = [
       null,
       'tool.tapeMeasure',
       'tool.protractor',
+      'tool.axes',
+      'axes.reset',
       null,
       'tool.orbit',
       'tool.pan',

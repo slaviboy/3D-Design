@@ -28,9 +28,11 @@ import type {
   InstanceData,
   Loop,
   MaterialData,
+  ModelAxes,
   TagData,
   VertexData,
 } from './types';
+import { DEFAULT_MODEL_AXES } from './types';
 import { validateDocument } from './validate';
 
 export const SNAPSHOT_FORMAT = 'planar-document';
@@ -58,6 +60,8 @@ export interface DocumentSnapshot {
   readonly materials: readonly MaterialData[];
   readonly tags: readonly TagData[];
   readonly definitions: readonly DefinitionSnapshot[];
+  /** Present only when the drawing axes differ from the default. */
+  readonly axes?: ModelAxes;
 }
 
 // -------------------------------------------------------------------------------------------------- writing
@@ -120,6 +124,15 @@ function curveParamsCopy(params: CurveParams): CurveParams {
 
 const byId = <T extends { readonly id: number }>(a: T, b: T): number => a.id - b.id;
 
+function isDefaultAxes(axes: ModelAxes): boolean {
+  const same = (a: Vec3, b: Vec3): boolean => a.x === b.x && a.y === b.y && a.z === b.z;
+  return (
+    same(axes.origin, DEFAULT_MODEL_AXES.origin) &&
+    same(axes.xAxis, DEFAULT_MODEL_AXES.xAxis) &&
+    same(axes.yAxis, DEFAULT_MODEL_AXES.yAxis)
+  );
+}
+
 /** Canonical snapshot: entities sorted by id, with a fixed key order, so equal documents serialize identically. */
 export function createSnapshot(doc: ModelDocument): DocumentSnapshot {
   return {
@@ -166,6 +179,9 @@ export function createSnapshot(doc: ModelDocument): DocumentSnapshot {
         })),
       };
     }),
+    ...(isDefaultAxes(doc.axes)
+      ? {}
+      : { axes: { origin: vec(doc.axes.origin), xAxis: vec(doc.axes.xAxis), yAxis: vec(doc.axes.yAxis) } }),
   };
 }
 
@@ -443,6 +459,14 @@ export function restoreSnapshot(input: unknown, options: DocumentOptions = {}): 
   const definitions = r
     .list(root.definitions, '$.definitions')
     .map((entry, i) => readDefinition(r, entry, `$.definitions[${String(i)}]`));
+  const axesRecord = root.axes === undefined ? null : r.record(root.axes, '$.axes');
+  const axes: ModelAxes | null = axesRecord
+    ? {
+        origin: r.vec3(axesRecord.origin, '$.axes.origin'),
+        xAxis: r.vec3(axesRecord.xAxis, '$.axes.xAxis'),
+        yAxis: r.vec3(axesRecord.yAxis, '$.axes.yAxis'),
+      }
+    : null;
   if (r.errors.length > 0) return err(`Invalid document structure: ${r.errors.join('; ')}`);
 
   const allIds = [
@@ -480,6 +504,7 @@ export function restoreSnapshot(input: unknown, options: DocumentOptions = {}): 
     if (d.id !== rootDefinitionId)
       changes.push({ kind: 'definition.add', data: { id: d.id, name: d.name, isGroup: d.isGroup } });
   }
+  if (axes) changes.push({ kind: 'document.axes', from: DEFAULT_MODEL_AXES, to: axes });
   for (const data of materials) changes.push({ kind: 'material.add', data });
   for (const data of tags) changes.push({ kind: 'tag.add', data });
   for (const d of definitions) {

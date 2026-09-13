@@ -1,23 +1,20 @@
 import { invertAffine, transformDirection, transformNormal, transformPoint } from '../../kernel/math/mat4';
 import { planeFromPointNormal, type Plane } from '../../kernel/math/plane';
-import {
-  AXIS_X,
-  AXIS_Y,
-  AXIS_Z,
-  cross,
-  distance,
-  dot,
-  normalize,
-  scale,
-  sub,
-  type Vec3,
-} from '../../kernel/math/vec3';
+import { cross, distance, dot, normalize, scale, sub, type Vec3, add } from '../../kernel/math/vec3';
 import { EPS_LEN } from '../../kernel/tolerance';
 import type { ModelDocument, TransactionRecord } from '../../kernel/model/ModelDocument';
 import { formatLength } from '../../kernel/units/units';
 import { cameraBasis, type ScreenPoint } from '../camera/camera';
 import type { Editor } from '../Editor';
-import { axisOf, infer, type Axis, type Inference } from '../inference/inference';
+import {
+  axisOf,
+  infer,
+  type Axis,
+  type Inference,
+  axisFrameOf,
+  WORLD_AXIS_FRAME,
+  type AxisFrame,
+} from '../inference/inference';
 import type { InferenceMarker, PointerInput, PreviewLineStyle } from './Tool';
 
 /** Below this |forward·Z| the camera counts as looking sideways, and free drawing uses a vertical plane. */
@@ -109,14 +106,19 @@ export function toWorldNormal(editor: Editor, normal: Vec3): Vec3 {
   return (world && normalize(world)) ?? normal;
 }
 
-export const AXIS_DIRECTIONS: Readonly<Record<Axis, Vec3>> = { x: AXIS_X, y: AXIS_Y, z: AXIS_Z };
+/** The document's drawing axes. */
+export function modelFrame(editor: Editor): AxisFrame {
+  return axisFrameOf(editor.session.doc);
+}
+
+/** World position of coordinates typed relative to the drawing axes, as in `[1m, 2m, 0]`. */
+export function modelPoint(editor: Editor, coordinates: Vec3): Vec3 {
+  const { origin, x, y, z } = modelFrame(editor);
+  return add(origin, add(scale(x, coordinates.x), add(scale(y, coordinates.y), scale(z, coordinates.z))));
+}
 
 export function lineStyleFor(axis: Axis | undefined): PreviewLineStyle {
   return axis ? `axis-${axis}` : 'preview';
-}
-
-export function lineStyleBetween(a: Vec3, b: Vec3): PreviewLineStyle {
-  return lineStyleFor(axisOf(sub(b, a)));
 }
 
 export function markerFor(inference: Inference | null): InferenceMarker | null {
@@ -124,15 +126,16 @@ export function markerFor(inference: Inference | null): InferenceMarker | null {
   return { point: inference.point, kind: inference.kind, label: inference.label };
 }
 
-/** Arrow keys lock drawing to an axis: up blue (Z), right red (X), left green (Y). */
-export function axisForArrowKey(chord: string): Vec3 | null {
+/** Arrow keys lock drawing to a drawing axis: up blue, right red, left green. */
+export function axisForArrowKey(chord: string, editor: Editor): Vec3 | null {
+  const frame = modelFrame(editor);
   switch (chord) {
     case 'ArrowUp':
-      return AXIS_Z;
+      return frame.z;
     case 'ArrowRight':
-      return AXIS_X;
+      return frame.x;
     case 'ArrowLeft':
-      return AXIS_Y;
+      return frame.y;
     default:
       return null;
   }
@@ -154,19 +157,21 @@ export function toggleModifierName(editor: Editor): string {
 export function drawingPlane(editor: Editor, inference: Inference): Plane {
   if (inference.facePlane) return inference.facePlane;
   const forward = cameraBasis(editor.session.camera).forward;
-  let normal = AXIS_Z;
-  if (Math.abs(forward.z) < SIDEWAYS_VIEW_Z)
-    normal = Math.abs(forward.x) > Math.abs(forward.y) ? AXIS_X : AXIS_Y;
+  const frame = modelFrame(editor);
+  let normal = frame.z;
+  if (Math.abs(dot(forward, frame.z)) < SIDEWAYS_VIEW_Z) {
+    normal = Math.abs(dot(forward, frame.x)) > Math.abs(dot(forward, frame.y)) ? frame.x : frame.y;
+  }
   return planeFromPointNormal(inference.point, normal);
 }
 
-/** Two in-plane unit directions for a plane normal, aligned with the world axes where possible. */
-export function planeAxes(normal: Vec3): { u: Vec3; v: Vec3 } {
-  const axis = axisOf(normal);
-  if (axis === 'z') return { u: AXIS_X, v: AXIS_Y };
-  if (axis === 'x') return { u: AXIS_Y, v: AXIS_Z };
-  if (axis === 'y') return { u: AXIS_X, v: AXIS_Z };
-  const u = normalize(cross(AXIS_Z, normal)) ?? AXIS_X;
+/** Two in-plane unit directions for a plane normal, aligned with the drawing axes where possible. */
+export function planeAxes(normal: Vec3, frame: AxisFrame = WORLD_AXIS_FRAME): { u: Vec3; v: Vec3 } {
+  const axis = axisOf(normal, frame);
+  if (axis === 'z') return { u: frame.x, v: frame.y };
+  if (axis === 'x') return { u: frame.y, v: frame.z };
+  if (axis === 'y') return { u: frame.x, v: frame.z };
+  const u = normalize(cross(frame.z, normal)) ?? frame.x;
   return { u, v: cross(normal, u) };
 }
 

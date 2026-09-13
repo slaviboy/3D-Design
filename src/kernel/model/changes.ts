@@ -27,6 +27,7 @@ import type {
   InstanceData,
   MaterialAttributes,
   MaterialData,
+  ModelAxes,
   TagAttributes,
   TagData,
   VertexData,
@@ -137,7 +138,8 @@ export type Change =
       readonly id: TagId;
       readonly from: TagAttributes;
       readonly to: TagAttributes;
-    };
+    }
+  | { readonly kind: 'document.axes'; readonly from: ModelAxes; readonly to: ModelAxes };
 
 export type ChangeKind = Change['kind'];
 
@@ -192,6 +194,7 @@ export function invertChange(change: Change): Change {
     case 'definition.attributes':
     case 'material.attributes':
     case 'tag.attributes':
+    case 'document.axes':
       return { ...change, from: change.to, to: change.from } as Change;
   }
 }

@@ -1,4 +1,7 @@
 import type { InstanceId } from '../../kernel/ids';
+import { setModelAxes } from '../../kernel/model/mutations';
+import { DEFAULT_MODEL_AXES } from '../../kernel/model/types';
+import { AXES_TOOL_ID } from '../tools/AxesTool';
 import type { StandardView } from '../camera/camera';
 import type { Editor } from '../Editor';
 import {
@@ -248,6 +251,28 @@ export function registerDefaultCommands(registry: CommandRegistry<Editor>): void
     toolCommand(ROTATE_TOOL_ID, 'Rotate', 'Q', ['turn', 'spin', 'radial array']),
     toolCommand(SCALE_TOOL_ID, 'Scale', 'S', ['resize', 'stretch', 'mirror', 'enlarge']),
     toolCommand(PROTRACTOR_TOOL_ID, 'Protractor', null, ['angle', 'angled guide']),
+    toolCommand(AXES_TOOL_ID, 'Axes', null, ['move axes', 'origin', 'drawing axes']),
+    {
+      id: 'axes.reset',
+      label: 'Reset Axes',
+      category: 'Tools',
+      aliases: ['default axes', 'world axes'],
+      isEnabled: (editor) => {
+        const { origin, xAxis, yAxis } = editor.session.doc.axes;
+        const same = (a: typeof origin, b: typeof origin) => a.x === b.x && a.y === b.y && a.z === b.z;
+        return !(
+          same(origin, DEFAULT_MODEL_AXES.origin) &&
+          same(xAxis, DEFAULT_MODEL_AXES.xAxis) &&
+          same(yAxis, DEFAULT_MODEL_AXES.yAxis)
+        );
+      },
+      run: (editor) => {
+        const doc = editor.session.doc;
+        doc.transact('Reset Axes', () => {
+          setModelAxes(doc, DEFAULT_MODEL_AXES);
+        });
+      },
+    },
     toolCommand(ARC_TOOL_ID, 'Arc', null, ['center arc', 'curve'], 'Draw'),
     toolCommand(TWO_POINT_ARC_TOOL_ID, '2-Point Arc', 'A', ['arc', 'bulge', 'fillet', 'curve'], 'Draw'),
     toolCommand(THREE_POINT_ARC_TOOL_ID, '3-Point Arc', null, ['arc through points', 'curve'], 'Draw'),

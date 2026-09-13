@@ -94,11 +94,35 @@ export const DEFAULT_INFERENCE_TOLERANCE_PX = 10;
 /** Points within this angle (as a sine) of an axis through the anchor count as aligned with it. */
 const AXIS_ALIGNMENT_SINE = 1e-4;
 
-const AXES: readonly { readonly axis: Axis; readonly direction: Vec3; readonly label: string }[] = [
-  { axis: 'x', direction: AXIS_X, label: 'On Red Axis' },
-  { axis: 'y', direction: AXIS_Y, label: 'On Green Axis' },
-  { axis: 'z', direction: AXIS_Z, label: 'On Blue Axis' },
-];
+/** Drawing axes in world coordinates: an origin and three perpendicular unit directions. */
+export interface AxisFrame {
+  readonly origin: Vec3;
+  readonly x: Vec3;
+  readonly y: Vec3;
+  readonly z: Vec3;
+}
+
+export const WORLD_AXIS_FRAME: AxisFrame = Object.freeze({ origin: ZERO, x: AXIS_X, y: AXIS_Y, z: AXIS_Z });
+
+/** The document's drawing axes as a frame. */
+export function axisFrameOf(doc: ModelDocument): AxisFrame {
+  const { origin, xAxis, yAxis } = doc.axes;
+  return { origin, x: xAxis, y: yAxis, z: normalize(cross(xAxis, yAxis)) ?? AXIS_Z };
+}
+
+interface AxisEntry {
+  readonly axis: Axis;
+  readonly direction: Vec3;
+  readonly label: string;
+}
+
+function axisEntries(frame: AxisFrame): readonly AxisEntry[] {
+  return [
+    { axis: 'x', direction: frame.x, label: 'On Red Axis' },
+    { axis: 'y', direction: frame.y, label: 'On Green Axis' },
+    { axis: 'z', direction: frame.z, label: 'On Blue Axis' },
+  ];
+}
 
 /** Lower wins. Points on geometry beat points along lines. */
 const PRIORITY: Readonly<Record<InferenceKind, number>> = {
@@ -132,10 +156,11 @@ interface Candidate {
   readonly pixels: number;
 }
 
-export function axisOf(direction: Vec3): Axis | undefined {
+export function axisOf(direction: Vec3, frame: AxisFrame = WORLD_AXIS_FRAME): Axis | undefined {
   const unit = normalize(direction);
   if (!unit) return undefined;
-  return AXES.find(({ direction: axis }) => length(cross(unit, axis)) <= AXIS_ALIGNMENT_SINE)?.axis;
+  return axisEntries(frame).find(({ direction: axis }) => length(cross(unit, axis)) <= AXIS_ALIGNMENT_SINE)
+    ?.axis;
 }
 
 /** The point on the line through `point` along `direction` closest to the ray. */
@@ -163,6 +188,8 @@ export function infer(
 ): Inference {
   const { camera, size, screen, anchor } = request;
   const tolerance = request.tolerancePx ?? DEFAULT_INFERENCE_TOLERANCE_PX;
+  const frame = axisFrameOf(doc);
+  const axes = axisEntries(frame);
   const ray = rayThroughScreen(camera, screen, size);
   const pixelsTo = (point: Vec3): number => {
     const projected = projectToScreen(camera, point, size);
@@ -183,7 +210,7 @@ export function infer(
     }
   };
 
-  offer({ point: ZERO, kind: 'origin', label: 'Origin', inGroup: false });
+  offer({ point: frame.origin, kind: 'origin', label: 'Origin', inGroup: false });
   traverseAlongRay(doc, context, contextTransform, camera, size, ray, tolerance, (visit) => {
     const inGroup = visit.topLevel !== null;
     const worldStart = transformPoint(visit.toWorld, visit.start);
@@ -232,19 +259,19 @@ export function infer(
   const geometric = best as Candidate | null;
   const withAxis = (inference: Inference): Inference => {
     if (!anchor) return inference;
-    const axis = axisOf(sub(inference.point, anchor));
+    const axis = axisOf(sub(inference.point, anchor), frame);
     return axis && distance(inference.point, anchor) > 0 ? { ...inference, axis } : inference;
   };
 
   if (anchor && request.lockDirection) {
     const direction = normalize(request.lockDirection);
     if (direction) {
-      const axis = axisOf(direction);
+      const axis = axisOf(direction, frame);
       const strong = geometric && PRIORITY[geometric.inference.kind] <= 1 ? geometric.inference : null;
       const point = strong
         ? add(anchor, scale(direction, dot(sub(strong.point, anchor), direction)))
         : closestPointOnLineToRay(anchor, direction, ray);
-      const axisLabel = AXES.find((entry) => entry.axis === axis)?.label;
+      const axisLabel = axes.find((entry) => entry.axis === axis)?.label;
       return {
         point,
         kind: 'locked',
@@ -257,7 +284,7 @@ export function infer(
 
   if (geometric && PRIORITY[geometric.inference.kind] <= 1) return withAxis(geometric.inference);
 
-  const linear = bestLinearInference(request, ray, tolerance, pixelsTo);
+  const linear = bestLinearInference(request, ray, tolerance, pixelsTo, frame);
   if (linear) {
     // Lines through the anchor may win a tie with geometry; lines elsewhere only when strictly closer.
     const throughAnchor = linear.inference.kind !== 'extension' && linear.inference.kind !== 'from-point';
@@ -291,7 +318,7 @@ export function infer(
     });
   }
 
-  return withAxis({ point: freePoint(request, ray), kind: 'free', label: '', inGroup: false });
+  return withAxis({ point: freePoint(request, ray, frame), kind: 'free', label: '', inGroup: false });
 }
 
 /**
@@ -303,8 +330,10 @@ function bestLinearInference(
   ray: Ray,
   tolerance: number,
   pixelsTo: (point: Vec3) => number,
+  frame: AxisFrame,
 ): Candidate | null {
   const { anchor, references } = request;
+  const axes = axisEntries(frame);
   let best: Candidate | null = null;
   const offer = (inference: Inference): void => {
     const pixels = pixelsTo(inference.point);
@@ -322,19 +351,19 @@ function bestLinearInference(
   };
 
   if (anchor) {
-    for (const { axis, direction, label } of AXES) {
+    for (const { axis, direction, label } of axes) {
       const point = closestPointOnLineToRay(anchor, direction, ray);
       if (distance(point, anchor) > 0) offer({ point, kind: 'on-axis', label, inGroup: false, axis });
     }
     for (const edge of references?.edges ?? []) {
       const along = normalize(sub(edge.b, edge.a));
       // Axis-aligned edges add nothing the axis inferences don't already give.
-      if (!along || axisOf(along)) continue;
+      if (!along || axisOf(along, frame)) continue;
       const parallel = closestPointOnLineToRay(anchor, along, ray);
       if (distance(parallel, anchor) > 0) {
         offer({ point: parallel, kind: 'parallel', label: 'Parallel to Edge', inGroup: false, edge });
       }
-      const planeNormal = normalize(cross(along, sub(anchor, edge.a))) ?? AXIS_Z;
+      const planeNormal = normalize(cross(along, sub(anchor, edge.a))) ?? frame.z;
       const across = normalize(cross(planeNormal, along));
       if (!across) continue;
       const perpendicular = closestPointOnLineToRay(anchor, across, ray);
@@ -360,7 +389,7 @@ function bestLinearInference(
     }
   }
   for (const reference of references?.points ?? []) {
-    for (const { direction } of AXES) {
+    for (const { direction } of axes) {
       const point = closestPointOnLineToRay(reference, direction, ray);
       if (distance(point, reference) > 0) {
         offer({ point, kind: 'from-point', label: 'From Point', inGroup: false });
@@ -371,20 +400,20 @@ function bestLinearInference(
 }
 
 /** Where a ray meets the fallback plane: the given one, a plane through the anchor, or the ground. */
-function freePoint(request: InferenceRequest, ray: Ray): Vec3 {
+function freePoint(request: InferenceRequest, ray: Ray, frame: AxisFrame): Vec3 {
   const { camera, size, screen, anchor } = request;
   let plane = request.fallbackPlane;
   if (!plane) {
     if (anchor) {
       const forward = cameraBasis(camera).forward;
-      const facing = AXES.reduce((bestAxis, entry) =>
+      const facing = axisEntries(frame).reduce((bestAxis, entry) =>
         Math.abs(dot(entry.direction, forward)) > Math.abs(dot(bestAxis.direction, forward))
           ? entry
           : bestAxis,
       );
       plane = planeFromPointNormal(anchor, facing.direction);
     } else {
-      plane = planeFromPointNormal(ZERO, AXIS_Z);
+      plane = planeFromPointNormal(frame.origin, frame.z);
     }
   }
   const denominator = dot(plane.normal, ray.direction);

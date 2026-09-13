@@ -20,12 +20,12 @@ import {
   drawingPlane,
   formatDistance,
   inferAt,
-  lineStyleBetween,
   markerFor,
   projectOntoPlane,
   toLocalDirection,
   toLocalNormal,
   toLocalPoint,
+  lineStyleFor,
 } from './toolSupport';
 import { formatAngleValue, MIN_ANGLE, signedAngle, snapAngle } from './transformSupport';
 
@@ -291,7 +291,7 @@ export class ArcTool implements Tool {
     if (!point || !first) return { lines: [], highlight: [], marker };
     if (this.#points.length === 1) {
       return {
-        lines: [{ a: first, b: point, style: lineStyleBetween(first, point) }],
+        lines: [{ a: first, b: point, style: lineStyleFor(this.#current?.axis) }],
         highlight: [],
         marker,
       };

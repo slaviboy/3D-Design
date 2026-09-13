@@ -33,6 +33,7 @@ import { Selection, type EntityRef } from './selection/Selection';
 import { EditorSession, UNTITLED_DOCUMENT_NAME } from './session/EditorSession';
 import { chordFromKeyboard, ShortcutMap, type KeyChordInput, type Platform } from './shortcuts/shortcuts';
 import { ArcTool } from './tools/ArcTool';
+import { AxesTool } from './tools/AxesTool';
 import { CircleTool } from './tools/CircleTool';
 import { EraserTool } from './tools/EraserTool';
 import { FreehandTool } from './tools/FreehandTool';
@@ -143,6 +144,7 @@ export class Editor {
         new FreehandTool(),
         new RotatedRectangleTool(),
         new ProtractorTool(),
+        new AxesTool(),
       ],
       SELECT_TOOL_ID,
     );

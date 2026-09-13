@@ -18,6 +18,7 @@ export interface ViewportCallbacks {
 
 function buildAxes(): THREE.Group {
   const axes = new THREE.Group();
+  axes.matrixAutoUpdate = false;
   const directions: [THREE.Vector3, number][] = [
     [new THREE.Vector3(1, 0, 0), VIEW_COLORS.axisX],
     [new THREE.Vector3(0, 1, 0), VIEW_COLORS.axisY],
@@ -153,7 +154,14 @@ export class Viewport {
     const far = Math.max(reach * 2, MIN_FAR);
     const near = Math.max(far * NEAR_TO_FAR_RATIO, MIN_NEAR);
     const aspect = this.#width / this.#height;
-    this.#axes.scale.setScalar(far);
+    const axes = this.#source.doc.axes;
+    const red = new THREE.Vector3(axes.xAxis.x, axes.xAxis.y, axes.xAxis.z);
+    const green = new THREE.Vector3(axes.yAxis.x, axes.yAxis.y, axes.yAxis.z);
+    const blue = red.clone().cross(green);
+    this.#axes.matrix
+      .makeBasis(red.multiplyScalar(far), green.multiplyScalar(far), blue.multiplyScalar(far))
+      .setPosition(axes.origin.x, axes.origin.y, axes.origin.z);
+    this.#axes.matrixWorldNeedsUpdate = true;
 
     if (view.projection === 'parallel') {
       const camera = this.#orthographic;

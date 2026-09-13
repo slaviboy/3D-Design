@@ -41,6 +41,7 @@ example.planar
   "materials": [{ "id": 1, "name": "Brick", "color": [0.7, 0.3, 0.2], "opacity": 1, "roughness": 0.9,
                   "metalness": 0, "texture": { "asset": "<sha256>", "width": 0.5, "height": 0.25 }, ... }],
   "tags": [{ "id": 2, "name": "Walls", "visible": true, "color": [..], "dash": "solid", "folderId": null }],
+  "axes": { "origin": { "x": 0, "y": 0, "z": 0 }, "xAxis": {..}, "yAxis": {..} },  // only when moved from the default
   "tagFolders": [],
   "styles": [ /* StyleSpec */ ],
   "activeStyleId": 3,

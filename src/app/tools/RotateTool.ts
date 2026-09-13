@@ -162,8 +162,8 @@ export class RotateTool implements Tool {
     if (operation?.dragged && input.button === PRIMARY_BUTTON) this.#commit(editor, operation);
   }
 
-  keyDown(chord: string): boolean {
-    const axis = axisForArrowKey(chord);
+  keyDown(chord: string, editor: Editor): boolean {
+    const axis = axisForArrowKey(chord, editor);
     if (axis && !this.#operation) {
       this.#lockNormal = this.#lockNormal === axis ? null : axis;
       const pivot = this.#pivot;

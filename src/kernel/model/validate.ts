@@ -369,6 +369,16 @@ function validateDocumentLevel(doc: ModelDocument, report: Reporter): void {
       }
     }
   }
+  const { origin, xAxis, yAxis } = doc.axes;
+  const unit = (v: typeof xAxis): boolean => isFiniteVec3(v) && Math.abs(length(v) - 1) <= EPS_UNIT_LENGTH;
+  if (
+    !isFiniteVec3(origin) ||
+    !unit(xAxis) ||
+    !unit(yAxis) ||
+    Math.abs(xAxis.x * yAxis.x + xAxis.y * yAxis.y + xAxis.z * yAxis.z) > EPS_UNIT_LENGTH
+  ) {
+    report('invalid-axes', 'Drawing axes must have a finite origin and perpendicular unit directions', []);
+  }
   const inUnitRange = (value: number): boolean => Number.isFinite(value) && value >= 0 && value <= 1;
   for (const material of doc.materials()) {
     const { r, g, b } = material.color;

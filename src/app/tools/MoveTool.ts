@@ -28,12 +28,13 @@ import {
   errorMessage,
   formatDistance,
   inferAt,
-  lineStyleBetween,
   markerFor,
   Speculation,
   toggleModifier,
   toggleModifierName,
   toLocalDirection,
+  lineStyleFor,
+  modelPoint,
 } from './toolSupport';
 
 interface Operation {
@@ -139,8 +140,8 @@ export class MoveTool implements Tool {
     if (operation?.dragged && input.button === PRIMARY_BUTTON) this.#commit(editor, operation);
   }
 
-  keyDown(chord: string): boolean {
-    const axis = axisForArrowKey(chord);
+  keyDown(chord: string, editor: Editor): boolean {
+    const axis = axisForArrowKey(chord, editor);
     if (axis && this.#operation) {
       this.#lock = this.#lock === axis ? null : axis;
       return true;
@@ -171,7 +172,7 @@ export class MoveTool implements Tool {
     const operation = this.#operation;
     if (operation) {
       if (intent.kind === 'copies') throw new Error('Finish the copy first, then type the number of copies');
-      const offset = this.#offsetFor(intent, operation.start, operation.offset);
+      const offset = this.#offsetFor(intent, operation.start, operation.offset, editor);
       this.#apply(editor, operation, offset);
       if (operation.error !== null) throw new Error(operation.error);
       this.#commit(editor, operation);
@@ -195,7 +196,7 @@ export class MoveTool implements Tool {
         translation(scale(step, k)),
       );
     } else {
-      offset = this.#offsetFor(intent, null, last.offset);
+      offset = this.#offsetFor(intent, null, last.offset, editor);
       result = transformEntities(
         doc,
         session.activeContext,
@@ -220,7 +221,7 @@ export class MoveTool implements Tool {
     return {
       lines:
         length(operation.offset) > EPS_LEN
-          ? [{ a: operation.start, b: end, style: lineStyleBetween(operation.start, end) }]
+          ? [{ a: operation.start, b: end, style: lineStyleFor(operation.inference?.axis) }]
           : [],
       highlight: [],
       marker: markerFor(operation.inference),
@@ -236,7 +237,7 @@ export class MoveTool implements Tool {
       : `Click a start point to move the selection, or the entity under the pointer. ${key} copies; after a copy type 3x or 3/ for arrays.`;
   }
 
-  #offsetFor(intent: MeasurementIntent, start: Vec3 | null, current: Vec3): Vec3 {
+  #offsetFor(intent: MeasurementIntent, start: Vec3 | null, current: Vec3, editor: Editor): Vec3 {
     switch (intent.kind) {
       case 'length': {
         const direction = this.#lock ?? normalize(current);
@@ -247,7 +248,7 @@ export class MoveTool implements Tool {
         return intent.offset;
       case 'absolutePoint':
         if (!start) throw new Error('Coordinates can only be typed while moving');
-        return sub(intent.point, start);
+        return sub(modelPoint(editor, intent.point), start);
       default:
         throw new Error('Type a distance, coordinates, or a number of copies');
     }

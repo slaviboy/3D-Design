@@ -32,6 +32,7 @@ import {
   toLocalDirection,
   toLocalNormal,
   toLocalPoint,
+  modelFrame,
 } from './toolSupport';
 
 export const DEFAULT_POLYGON_SIDES = 6;
@@ -143,7 +144,7 @@ export class CircleTool implements Tool {
       if (radius === null) return;
       const toward = this.#current
         ? this.#xAxis(placement, this.#current.point)
-        : planeAxes(placement.plane.normal).u;
+        : planeAxes(placement.plane.normal, modelFrame(editor)).u;
       this.#draw(editor, placement, radius, toward);
       return;
     }

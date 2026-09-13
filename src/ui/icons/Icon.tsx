@@ -36,6 +36,7 @@ const PATHS: Readonly<Record<string, string>> = {
   'tool.freehand': 'M3 14c2-6 4 2 6-3s3-5 5-1 2 4 3 2',
   'tool.rotatedRectangle': 'M10 2l8 8-8 8-8-8z',
   'tool.protractor': 'M3 15a7 7 0 0 1 14 0zM10 15l4-6',
+  'tool.axes': 'M5 15V3M5 15h12M5 15l-3 3M3 5l2-2 2 2M15 13l2 2-2 2',
 };
 
 export function hasIcon(commandId: string): boolean {

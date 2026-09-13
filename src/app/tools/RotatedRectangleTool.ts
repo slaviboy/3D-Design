@@ -18,11 +18,12 @@ import {
   drawingPlane,
   formatDistance,
   inferAt,
-  lineStyleBetween,
   markerFor,
   planeAxes,
   projectOntoPlane,
   toLocalPoint,
+  lineStyleFor,
+  modelFrame,
 } from './toolSupport';
 import { rotateDirection } from './transformSupport';
 
@@ -127,7 +128,11 @@ export class RotatedRectangleTool implements Tool {
     const point = this.#pointer();
     if (start && !end && plane) {
       if (intent.kind === 'angle') {
-        this.#direction = rotateDirection(planeAxes(plane.normal).u, plane.normal, intent.radians);
+        this.#direction = rotateDirection(
+          planeAxes(plane.normal, modelFrame(editor)).u,
+          plane.normal,
+          intent.radians,
+        );
         return;
       }
       if (intent.kind === 'length') {
@@ -163,7 +168,7 @@ export class RotatedRectangleTool implements Tool {
     if (!start || !point) return { lines: [], highlight: [], marker };
     if (!end)
       return {
-        lines: [{ a: start, b: point, style: lineStyleBetween(start, point) }],
+        lines: [{ a: start, b: point, style: lineStyleFor(this.#current?.axis) }],
         highlight: [],
         marker,
       };

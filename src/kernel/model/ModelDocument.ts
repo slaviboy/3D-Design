@@ -2,7 +2,13 @@ import { KernelError, KernelInvariantError } from '../errors';
 import { IdAllocator, type DefinitionId, type MaterialId, type TagId } from '../ids';
 import { changeContext, invertChange, type Change } from './changes';
 import { EntityStore, type InstanceView } from './EntityStore';
-import type { DefinitionAttributes, MaterialData, TagData } from './types';
+import {
+  DEFAULT_MODEL_AXES,
+  type DefinitionAttributes,
+  type MaterialData,
+  type ModelAxes,
+  type TagData,
+} from './types';
 import { validateDocument } from './validate';
 
 export const DEFAULT_HISTORY_LIMIT = 500;
@@ -72,6 +78,7 @@ export class ModelDocument {
   readonly #listeners = new Set<DocumentListener>();
   #active: ActiveTransaction | null = null;
   #nextTransactionId = 1;
+  #axes: ModelAxes = DEFAULT_MODEL_AXES;
 
   constructor(options: DocumentOptions = {}, init: DocumentInit = {}) {
     this.#validateOnCommit = options.validateOnCommit ?? false;
@@ -128,6 +135,11 @@ export class ModelDocument {
 
   tags(): IterableIterator<TagData> {
     return this.#tags.values();
+  }
+
+  /** The drawing axes that inference, drawing planes and typed coordinates use. */
+  get axes(): ModelAxes {
+    return this.#axes;
   }
 
   /** Every instance of `definitionId`, together with the definition that contains it. */
@@ -442,6 +454,9 @@ export class ModelDocument {
         this.#tags.set(change.id, { ...change.to, id: change.id });
         return;
       }
+      case 'document.axes':
+        this.#axes = change.to;
+        return;
     }
   }
 

@@ -195,3 +195,18 @@ export interface TagAttributes {
 export interface TagData extends TagAttributes {
   readonly id: TagId;
 }
+
+/** The drawing axes: an origin and two perpendicular unit directions. The blue axis is their cross product. */
+export interface ModelAxes {
+  readonly origin: Vec3;
+  /** Red axis. */
+  readonly xAxis: Vec3;
+  /** Green axis. */
+  readonly yAxis: Vec3;
+}
+
+export const DEFAULT_MODEL_AXES: ModelAxes = Object.freeze({
+  origin: Object.freeze({ x: 0, y: 0, z: 0 }),
+  xAxis: Object.freeze({ x: 1, y: 0, z: 0 }),
+  yAxis: Object.freeze({ x: 0, y: 1, z: 0 }),
+});

@@ -19,7 +19,7 @@ import { definitionBounds, transformAabb } from '../geometry/bounds';
 import type { Inference } from '../inference/inference';
 import type { EntityRef, Selection } from '../selection/Selection';
 import type { PreviewLine } from './Tool';
-import { drawingPlane, planeAxes, projectOntoPlane } from './toolSupport';
+import { drawingPlane, planeAxes, projectOntoPlane, modelFrame } from './toolSupport';
 
 /** Rotations snap to multiples of this angle while the pointer is close to one. */
 export const ANGLE_SNAP_STEP = Math.PI / 12;
@@ -128,7 +128,7 @@ export function protractorLines(
 ): PreviewLine[] {
   const radius =
     worldUnitsPerPixel(editor.session.camera, center, editor.viewportSize) * PROTRACTOR_RADIUS_PX;
-  const u = reference ?? planeAxes(normal).u;
+  const u = reference ?? planeAxes(normal, modelFrame(editor)).u;
   const v = cross(normal, u);
   const at = (angle: number, r: number): Vec3 =>
     add(center, add(scale(u, r * Math.cos(angle)), scale(v, r * Math.sin(angle))));

@@ -16,9 +16,10 @@ import {
   axisForArrowKey,
   formatDistance,
   inferAt,
-  lineStyleBetween,
   markerFor,
   toLocalPoint,
+  lineStyleFor,
+  modelPoint,
 } from './toolSupport';
 
 /**
@@ -53,8 +54,8 @@ export class LineTool implements Tool {
     this.#addSegment(editor, inference.point);
   }
 
-  keyDown(chord: string): boolean {
-    const axis = axisForArrowKey(chord);
+  keyDown(chord: string, editor: Editor): boolean {
+    const axis = axisForArrowKey(chord, editor);
     if (axis && this.#start) {
       this.#lock = this.#lock === axis ? null : axis;
       this.#shiftLock = false;
@@ -87,8 +88,8 @@ export class LineTool implements Tool {
   onMeasurement(intent: MeasurementIntent, editor: Editor): void {
     const start = this.#start;
     if (intent.kind === 'absolutePoint') {
-      if (start) this.#addSegment(editor, intent.point);
-      else this.#start = this.#chainStart = intent.point;
+      if (start) this.#addSegment(editor, modelPoint(editor, intent.point));
+      else this.#start = this.#chainStart = modelPoint(editor, intent.point);
       return;
     }
     if (!start) throw new Error('Click to start the line first');
@@ -105,10 +106,7 @@ export class LineTool implements Tool {
     const start = this.#start;
     const current = this.#current;
     return {
-      lines:
-        start && current
-          ? [{ a: start, b: current.point, style: lineStyleBetween(start, current.point) }]
-          : [],
+      lines: start && current ? [{ a: start, b: current.point, style: lineStyleFor(current.axis) }] : [],
       highlight: [],
       marker: markerFor(current),
     };

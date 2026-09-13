@@ -12,8 +12,8 @@ import type {
 } from '../ids';
 import { IDENTITY, invertAffine, isMat4, type Mat4 } from '../math/mat4';
 import { planeFromPolygon } from '../math/plane';
-import { distance, isFiniteVec3, normalize, type Vec3 } from '../math/vec3';
-import { EPS_LEN } from '../tolerance';
+import { distance, dot, isFiniteVec3, normalize, scale, sub, type Vec3 } from '../math/vec3';
+import { EPS_LEN, EPS_PARALLEL } from '../tolerance';
 import type { EntityStore } from './EntityStore';
 import type { ModelDocument } from './ModelDocument';
 import {
@@ -31,6 +31,7 @@ import {
   type Loop,
   type LoopUse,
   type MaterialAttributes,
+  type ModelAxes,
   type TagAttributes,
 } from './types';
 
@@ -474,6 +475,38 @@ export function setMaterialAttributes(
   const to: MaterialAttributes = { ...from, ...patch };
   if (shallowEqual(from, to)) return;
   doc.apply({ kind: 'material.attributes', id, from, to });
+}
+
+/**
+ * Moves the drawing axes. The green direction is made exactly perpendicular to the red one; directions that are
+ * zero, non-finite or parallel are refused.
+ */
+export function setModelAxes(doc: ModelDocument, axes: ModelAxes): void {
+  const xAxis = normalize(axes.xAxis);
+  const alongX = xAxis ? sub(axes.yAxis, scale(xAxis, dot(axes.yAxis, xAxis))) : null;
+  const yAxis = alongX ? normalize(alongX) : null;
+  const inputY = normalize(axes.yAxis);
+  if (
+    !isFiniteVec3(axes.origin) ||
+    !xAxis ||
+    !yAxis ||
+    !inputY ||
+    Math.abs(dot(xAxis, inputY)) > 1 - EPS_PARALLEL
+  ) {
+    throw new KernelError(
+      'invalid-geometry',
+      'The axes need a finite origin and two non-parallel directions',
+    );
+  }
+  const from = doc.axes;
+  const to: ModelAxes = {
+    origin: { x: axes.origin.x, y: axes.origin.y, z: axes.origin.z },
+    xAxis,
+    yAxis,
+  };
+  const same = (a: Vec3, b: Vec3): boolean => a.x === b.x && a.y === b.y && a.z === b.z;
+  if (same(from.origin, to.origin) && same(from.xAxis, to.xAxis) && same(from.yAxis, to.yAxis)) return;
+  doc.apply({ kind: 'document.axes', from, to });
 }
 
 export function addTag(doc: ModelDocument, attributes: TagAttributes): TagId {

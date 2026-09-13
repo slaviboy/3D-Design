@@ -95,8 +95,8 @@ export class ProtractorTool implements Tool {
     );
   }
 
-  keyDown(chord: string): boolean {
-    const axis = axisForArrowKey(chord);
+  keyDown(chord: string, editor: Editor): boolean {
+    const axis = axisForArrowKey(chord, editor);
     if (axis && !this.#reference) {
       this.#lockNormal = this.#lockNormal === axis ? null : axis;
       const pivot = this.#pivot;

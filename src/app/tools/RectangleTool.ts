@@ -23,6 +23,7 @@ import {
   planeAxes,
   projectOntoPlane,
   toLocalPoint,
+  modelFrame,
 } from './toolSupport';
 
 interface Frame {
@@ -71,7 +72,7 @@ export class RectangleTool implements Tool {
     const frame = this.#frame;
     if (!frame) {
       const plane = drawingPlane(editor, inference);
-      this.#frame = { corner: inference.point, plane, ...planeAxes(plane.normal) };
+      this.#frame = { corner: inference.point, plane, ...planeAxes(plane.normal, modelFrame(editor)) };
       return;
     }
     const { width, height } = this.#size(frame, inference.point);
