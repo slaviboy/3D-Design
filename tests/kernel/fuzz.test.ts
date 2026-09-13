@@ -1,15 +1,19 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { KernelError, KernelInvariantError } from '../../src/kernel/errors';
 import { translation } from '../../src/kernel/math/mat4';
 import { vec3 } from '../../src/kernel/math/vec3';
 import { ModelDocument } from '../../src/kernel/model/ModelDocument';
 import { setInstanceTransform } from '../../src/kernel/model/mutations';
 import { createSnapshot, hashDocument, restoreSnapshot } from '../../src/kernel/model/snapshot';
 import { validateDocument } from '../../src/kernel/model/validate';
+import { divideEdge } from '../../src/kernel/ops/curveEdit';
 import { insertCurve } from '../../src/kernel/ops/curves';
 import { deleteFaces, eraseEdges } from '../../src/kernel/ops/erase';
 import { explodeInstance, makeGroup } from '../../src/kernel/ops/hierarchy';
 import { insertSegments } from '../../src/kernel/ops/insertSegments';
+import { offsetFace } from '../../src/kernel/ops/offset';
+import { softenEdgesByAngle } from '../../src/kernel/ops/soften';
 import { polygon, rectangle } from './helpers';
 
 /**
@@ -49,6 +53,9 @@ type Operation =
   | { readonly kind: 'group'; readonly pick: number }
   | { readonly kind: 'moveInstance'; readonly pick: number; readonly dx: number; readonly dy: number }
   | { readonly kind: 'explode'; readonly pick: number }
+  | { readonly kind: 'offset'; readonly pick: number; readonly distance: number }
+  | { readonly kind: 'divide'; readonly pick: number; readonly segments: number }
+  | { readonly kind: 'soften'; readonly degrees: number }
   | { readonly kind: 'undo' }
   | { readonly kind: 'redo' };
 
@@ -108,12 +115,37 @@ const operation: fc.Arbitrary<Operation> = fc.oneof(
     }),
   },
   { weight: 1, arbitrary: fc.record({ kind: fc.constant('explode' as const), pick }) },
+  {
+    weight: 2,
+    arbitrary: fc.record({
+      kind: fc.constant('offset' as const),
+      pick,
+      distance: fc.constantFrom(-0.5, -0.25, 0.25, 0.5),
+    }),
+  },
+  {
+    weight: 1,
+    arbitrary: fc.record({ kind: fc.constant('divide' as const), pick, segments: fc.constantFrom(2, 3) }),
+  },
+  {
+    weight: 1,
+    arbitrary: fc.record({ kind: fc.constant('soften' as const), degrees: fc.constantFrom(0, 45, 100) }),
+  },
   { weight: 2, arbitrary: fc.constant({ kind: 'undo' as const }) },
   { weight: 1, arbitrary: fc.constant({ kind: 'redo' as const }) },
 );
 
 function nth<T>(items: readonly T[], index: number): T | undefined {
   return items.length === 0 ? undefined : items[index % items.length];
+}
+
+/** Runs an operation that may legitimately refuse. Refusals must still be clean: invariant violations fail the run. */
+function refusable(fn: () => unknown): void {
+  try {
+    fn();
+  } catch (error) {
+    if (error instanceof KernelInvariantError || !(error instanceof KernelError)) throw error;
+  }
 }
 
 function run(doc: ModelDocument, op: Operation): void {
@@ -187,6 +219,30 @@ function run(doc: ModelDocument, op: Operation): void {
       if (instance !== undefined) explodeInstance(doc, root, instance);
       return;
     }
+    case 'offset': {
+      const face = nth(
+        [...store.faces()].map((f) => f.id).sort((a, b) => a - b),
+        op.pick,
+      );
+      if (face !== undefined) refusable(() => offsetFace(doc, root, face, op.distance));
+      return;
+    }
+    case 'divide': {
+      const edge = nth(
+        [...store.edges()].map((e) => e.id).sort((a, b) => a - b),
+        op.pick,
+      );
+      if (edge !== undefined) refusable(() => divideEdge(doc, root, edge, op.segments));
+      return;
+    }
+    case 'soften':
+      softenEdgesByAngle(
+        doc,
+        root,
+        [...store.edges()].map((e) => e.id),
+        { maxAngleRadians: (op.degrees * Math.PI) / 180, softenCoplanar: false, smooth: true },
+      );
+      return;
     case 'undo':
       doc.undo();
       return;

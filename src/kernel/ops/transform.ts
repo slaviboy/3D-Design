@@ -1,7 +1,7 @@
 import { KernelError } from '../errors';
 import type { DefinitionId, EdgeId, FaceId, InstanceId, VertexId } from '../ids';
 import { aabbExpand } from '../math/aabb';
-import { multiply, transformPoint, type Mat4 } from '../math/mat4';
+import { invertAffine, isMat4, linearDeterminant, multiply, transformPoint, type Mat4 } from '../math/mat4';
 import { isPointOnPlane } from '../math/plane';
 import { closestPointsOnSegments, distancePointToSegment } from '../math/segment';
 import type { EntityStore } from '../model/EntityStore';
@@ -12,9 +12,11 @@ import {
   addInstance,
   moveVertex,
   removeFace,
+  reverseLoop,
+  setFaceLoops,
   setInstanceTransform,
 } from '../model/mutations';
-import type { LoopUse } from '../model/types';
+import type { Loop, LoopUse } from '../model/types';
 import { EPS_LEN } from '../tolerance';
 import { removeEdgeAndOrphans } from './erase';
 import { captureFragment, insertFragment } from './fragment';
@@ -58,6 +60,12 @@ export function transformEntities(
   transform: Mat4,
   options: TransformOptions = {},
 ): TransformResult {
+  if (!isMat4(transform) || !invertAffine(transform)) {
+    throw new KernelError(
+      'invalid-geometry',
+      'The transform must be finite and must not flatten geometry (a scale factor of 0)',
+    );
+  }
   return doc.transact(options.copy === true ? 'Copy' : 'Move', () => {
     const store = doc.store(context);
     const faces = [...new Set(selection.faces ?? [])].filter((id) => store.face(id)).sort(byId);
@@ -86,6 +94,7 @@ export function transformEntities(
         for (const vertex of [...vertices].sort(byId)) {
           moveVertex(doc, context, vertex, transformPoint(transform, store.position(vertex)));
         }
+        if (linearDeterminant(transform) < 0) reverseCarriedLoops(doc, context, vertices);
         foldBentFaces(doc, context, vertices, options.autofold ?? true);
         assertNoContact(store, vertices);
         geometry = { faces: faces.filter((id) => store.face(id)), edges: [...edges].sort(byId) };
@@ -146,6 +155,28 @@ function isDetached(
     }
   }
   return true;
+}
+
+/**
+ * A mirroring transform reverses the winding of every loop whose vertices all moved, which would turn those faces
+ * inside out (or make a hole wind like an outline). Reversing those loops again keeps each face's front on the same
+ * side of the geometry.
+ */
+function reverseCarriedLoops(doc: ModelDocument, context: DefinitionId, moved: ReadonlySet<VertexId>): void {
+  const store = doc.store(context);
+  const touched = new Set<FaceId>();
+  for (const vertex of moved) {
+    for (const edgeId of store.getVertex(vertex).edges) {
+      for (const faceId of store.getEdge(edgeId).faces) touched.add(faceId);
+    }
+  }
+  const carried = (loop: Loop): boolean => store.loopVertices(loop).every((vertex) => moved.has(vertex));
+  for (const faceId of [...touched].sort(byId)) {
+    const face = store.getFace(faceId);
+    if (![face.outer, ...face.inners].some(carried)) continue;
+    const orient = (loop: Loop): Loop => (carried(loop) ? reverseLoop(loop) : loop);
+    setFaceLoops(doc, context, faceId, { outer: orient(face.outer), inners: face.inners.map(orient) });
+  }
 }
 
 /** Folds four-sided faces bent by moved vertices into two planar triangles; refuses any other bent face. */
