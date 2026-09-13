@@ -108,6 +108,8 @@ export interface EditorViewState {
   readonly dockLayout: DockLayout;
   /** The latest request to bring a panel into view. */
   readonly panelFocusRequest: PanelFocusRequest | null;
+  /** Increments each time something asks for the 3D Text dialog. */
+  readonly text3dDialogRequests: number;
 }
 
 export interface EditorStore extends StoreApi<EditorViewState> {
@@ -123,6 +125,7 @@ export function createEditorStore(editor: Editor): EditorStore {
   let shortcutsDialogRequests = 0;
   let shortcutsVersion = 0;
   let preferencesDialogRequests = 0;
+  let text3dDialogRequests = 0;
   let labelsUnits: UnitSettings | null = null;
   let labelsRevision = -1;
   let worldLabels: readonly AnnotationLabel[] = [];
@@ -219,6 +222,7 @@ export function createEditorStore(editor: Editor): EditorStore {
       environmentImageName: session.environmentImage?.name ?? null,
       dockLayout: editor.dockLayout,
       panelFocusRequest: editor.panelFocusRequest,
+      text3dDialogRequests,
     };
   };
   const store = createStore<EditorViewState>(snapshot);
@@ -238,6 +242,7 @@ export function createEditorStore(editor: Editor): EditorStore {
         else if (event.request === 'start') startScreenRequests++;
         else if (event.request === 'shortcuts') shortcutsDialogRequests++;
         else if (event.request === 'preferences') preferencesDialogRequests++;
+        else if (event.request === 'text3d') text3dDialogRequests++;
         else commandPaletteRequests++;
       }
       refresh();

@@ -75,6 +75,9 @@ import { PANEL_IDS, type PanelId, DEFAULT_OPEN_PANELS } from './panels/panels';
 import { hasLockedInstance, isInstanceLocked, LOCKED_MESSAGE } from './selection/locking';
 import { nextTagColor, uniqueTagName } from './tags/tags';
 import { ComponentPlacementTool, PLACE_COMPONENT_TOOL_ID } from './tools/ComponentPlacementTool';
+import { Text3DTool, TEXT_3D_TOOL_ID } from './tools/Text3DTool';
+import type { Text3DOptions } from '../kernel/ops/text3d';
+import { parseText3DForm, type Text3DForm } from './text3d/text3dForm';
 import { pick, type PickHit, type PickRequest } from './picking/picker';
 import { createSampleModel, SAMPLE_MODEL_NAME } from './sample/sampleModel';
 import { DEFAULT_PREFERENCES, type Preferences, type PreferenceStorage } from './preferences/preferences';
@@ -221,7 +224,7 @@ export interface RecentFilesRecorder {
   record(name: string, handle: unknown, thumbnail: Uint8Array | null): void;
 }
 
-export type UiRequest = 'command-palette' | 'backups' | 'start' | 'shortcuts' | 'preferences';
+export type UiRequest = 'command-palette' | 'backups' | 'start' | 'shortcuts' | 'preferences' | 'text3d';
 
 export type EditorEvent =
   | { readonly kind: 'notifications' }
@@ -339,6 +342,8 @@ export class Editor {
   #nextNotificationId = 1;
   #measurementText = '';
   readonly #placementTool = new ComponentPlacementTool();
+  readonly #text3dTool = new Text3DTool();
+  #text3dForm: Text3DForm | null = null;
   #openPanels: readonly PanelId[] = DEFAULT_OPEN_PANELS;
   #inputRequest: InputRequest | null = null;
   #backups: { readonly repository: RecoveryRepository; readonly sessionId: string } | null = null;
@@ -401,6 +406,7 @@ export class Editor {
         new SectionPlaneTool(),
         this.#placementTool,
         new FollowMeTool(),
+        this.#text3dTool,
       ],
       SELECT_TOOL_ID,
     );
@@ -1466,6 +1472,30 @@ export class Editor {
     }
     this.activateTool(PLACE_COMPONENT_TOOL_ID);
     this.#placementTool.setDefinition(definitionId);
+    this.tools.refresh();
+  }
+
+  /** The values last placed from the 3D Text dialog in this session, or null before the first placement. */
+  get text3DForm(): Text3DForm | null {
+    return this.#text3dForm;
+  }
+
+  /**
+   * Checks the 3D Text dialog's values. When they are usable, remembers them and starts placing the text; otherwise
+   * returns the message to show.
+   */
+  submitText3DForm(form: Text3DForm): string | null {
+    const parsed = parseText3DForm(form, this.units);
+    if (!parsed.ok) return parsed.error;
+    this.#text3dForm = form;
+    this.place3DText(parsed.value);
+    return null;
+  }
+
+  /** Activates the 3D Text tool, which places the given text where the user clicks. */
+  place3DText(options: Text3DOptions): void {
+    this.activateTool(TEXT_3D_TOOL_ID);
+    this.#text3dTool.setOptions(options);
     this.tools.refresh();
   }
 

@@ -115,6 +115,7 @@ export const MENUS: readonly MenuDefinition[] = [
       null,
       'tool.dimension',
       'tool.text',
+      'tools.text3d',
       null,
       'tool.paint',
       'materials.paintSelection',

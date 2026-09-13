@@ -417,6 +417,39 @@ volume, scaled by the instance transform's determinant.
       hidden flag.
 4. **Guarantee.** Faces → mesh → faces gives back the same V/E/F counts for planar-faced solids (behavior matrix H10).
 
+## 3D Text
+
+- **Font** (`src/kernel/text/`). The built-in font is original to Planar and lives in code, so text is identical on
+  every machine and never touches the network or system fonts.
+  - Glyphs are drawn in `glyphArt.ts` on a grid of square cells: 7 rows from the baseline to the cap height and 2
+    below for descenders. A cell is empty, filled, or half filled along a diagonal, which gives 45° chamfers and
+    diagonal strokes.
+  - `traceGlyph` turns a drawing into outlines. Every piece contributes its counter-clockwise sides, shared sides
+    cancel, and the rest chain into rings with collinear points removed. Counter-clockwise rings are outlines;
+    clockwise rings are holes, assigned to the smallest outline containing them.
+  - Pieces may meet only along whole cell sides. A corner where two separate parts of the boundary meet is a data
+    error, so rings are always simple and never touch each other.
+  - Coverage: A–Z, a–z, 0–9 and all printable ASCII punctuation. Any other character draws a box with a hole.
+- **Layout** (`layoutText`). The pure function scales one cell to `height / 7` meters.
+  - Each glyph advances by its width plus a one-cell gap, a space by 3 cells, and a tab counts as 4 spaces.
+  - Lines stack upwards from the last line, whose baseline starts at the origin, and align left, centre or right
+    within the widest line. Line spacing is 11 cells times a factor clamped to 1–10.
+  - Glyphs are therefore at least one cell apart and lines at least two, whatever the text, so sticky geometry never
+    merges letters.
+- **Operation** (`create3DText` in `ops/text3d.ts`). It runs as one transaction, "Place 3D Text".
+  - Refuses blank text, more than 2000 characters, heights under 1 mm (the thinnest stroke then stays far above
+    `EPS_LEN`) and negative depths.
+  - Creates a group, or a component named `Text#n`. The instance is named after the first line of text.
+  - Inserts all outline segments into the new definition with `autoFace` off.
+  - For filled text, each polygon becomes a face (with holes) through `settleRegion`, facing +z. With a depth, each
+    face is extruded by Push/Pull into a closed shape with outward sides.
+  - Outline text keeps only the edges and ignores the depth.
+  - The instance transform comes from a `Mat4` or from an origin with x and y directions, orthonormalized.
+- **Placement** (`Text3DTool`). The text's origin goes to the inferred point.
+  - On a face, the text lies in the face plane, with its front turned towards the camera. Elsewhere it lies on the
+    ground plane of the drawing axes.
+  - The text reads along the red axis where possible. On vertical faces it points up the blue axis.
+
 ## Other operations
 
 This section is expanded as each operation is implemented.

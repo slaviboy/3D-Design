@@ -1666,3 +1666,29 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* 3D Text dialog ----------------------------------------------------------------------------------- */
+
+.text3d-dialog__text {
+  height: auto;
+  min-height: 64px;
+  padding: 6px 8px;
+  resize: vertical;
+}
+
+.text3d-dialog .preferences__field .input-dialog__input {
+  height: 26px;
+}
+
+.text3d-dialog .input-dialog__input:disabled {
+  opacity: 0.6;
+}
+
+.text3d-dialog__error {
+  margin: 0 0 8px;
+  color: var(--danger);
+}
+
+.text3d-dialog__footer {
+  gap: 8px;
+}

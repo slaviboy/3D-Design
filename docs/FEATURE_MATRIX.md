@@ -102,7 +102,7 @@ Doc titles are shown in *italics* and map to entries in `help.sketchup.com/index
 | 2-Point Arc (A) | same | Chord then bulge; half-circle inference; `24r` radius, `20s` segments; double-click fillet repeat; tangent arc with Alt lock | Core | M | curves | Partly done (P5): start, end, bulge; typed length, bulge, radius and segments; fillet by double-click P9 | Params, tangent |
 | 3-Point Arc | same | Start, point on arc, end | Core | S | curves | Done (P5) | Circumcircle math |
 | Freehand | *Drawing Freehand Shapes* | Press-drag-release polyline curve; arrow keys pick plane; closes on start point | Core | S | curves | Done (P5) | Simplification |
-| 3D Text | *Adding Text, Labels, and Dimensions* | Text, bundled original font, height, filled / extruded, placed via move | Adv | L | font outlines | Not done: needs an original outline font; deferred to P9, nothing in the app pretends to offer it | Geometry validity |
+| 3D Text | *Adding Text, Labels, and Dimensions* | Text, bundled original font, height, filled / extruded, placed via move | Adv | L | font outlines | Done (P9): Tools > 3D Text… (palette: text, letters, extruded text, sign) opens a dialog for multiline text, alignment, height and depth in the model's units, filled or outline, extruded, group or component; the outline follows the cursor onto faces or the ground, and a click places it as one undo step. Original built-in font (A–Z, a–z, 0–9, ASCII punctuation, box for unknown characters) | Every glyph simple and apart, whole character set valid flat and extruded, undo hash identity, placement E2E |
 
 ## 6. Editing tools
 

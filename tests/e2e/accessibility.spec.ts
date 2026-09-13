@@ -144,3 +144,19 @@ test('the dark theme has no serious contrast violations', async ({ page }) => {
   await expect(page.getByRole('menubar', { name: 'Main menu' })).toBeVisible();
   expect(await seriousViolations(page)).toEqual([]);
 });
+
+for (const colorScheme of ['light', 'dark'] as const) {
+  test(`the 3D Text dialog has no serious accessibility violations (${colorScheme})`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme });
+    await page.goto('/');
+    await expect(page.getByRole('menubar', { name: 'Main menu' })).toBeVisible();
+    await page.getByRole('menuitem', { name: 'Tools', exact: true }).click();
+    await page.getByRole('menuitem', { name: '3D Text…' }).click();
+    const dialog = page.getByRole('dialog', { name: '3D Text' });
+    await expect(dialog).toBeVisible();
+    // Placing without any text shows the error message, so its contrast is audited too.
+    await dialog.getByRole('button', { name: 'Place' }).click();
+    await expect(dialog.getByRole('alert')).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+  });
+}
