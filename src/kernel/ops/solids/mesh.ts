@@ -23,6 +23,11 @@ import { EPS_AREA, EPS_LEN, EPS_MESH_SNAP, WELD_GRID_CELL_SIZE } from '../../tol
 import { insertSegments, type SegmentInput } from '../insertSegments';
 import { settleRegion } from '../planar/settle';
 import { triangulateFace } from '../triangulate';
+import { addVertex, addEdge, addFace } from '../../model/mutations';
+import { validateDocument } from '../../model/validate';
+import { KernelError } from '../../errors';
+import type { VertexId } from '../../ids';
+import type { LoopUse } from '../../model/types';
 
 /** An indexed triangle mesh. Triangles wind counter-clockwise seen from the front (outside) of the surface. */
 export interface TriangleMesh {
@@ -161,8 +166,10 @@ function pointAt(positions: Float64Array, index: number): Vec3 {
 
 /** Merges vertices closer than the length tolerance. Returns the representative index of every vertex. */
 function weldVertices(points: readonly Vec3[]): number[] {
-  const cells = new Map<string, number[]>();
-  const cellKey = (x: number, y: number, z: number): string => `${String(x)},${String(y)},${String(z)}`;
+  const cells = new Map<number, number[]>();
+  // A hashed cell key: two cells may share a key, which only adds candidates that the distance check rejects.
+  const cellKey = (x: number, y: number, z: number): number =>
+    Math.imul(x | 0, 73856093) ^ Math.imul(y | 0, 19349663) ^ Math.imul(z | 0, 83492791);
   return points.map((p, index) => {
     const cx = Math.floor(p.x / WELD_GRID_CELL_SIZE);
     const cy = Math.floor(p.y / WELD_GRID_CELL_SIZE);
@@ -547,6 +554,14 @@ export function insertTriangleMesh(
 
   return doc.transact('Insert mesh', () => {
     const store = doc.store(context);
+    // Into an empty context nothing can interact with the new geometry except the mesh itself, so its faces can be
+    // built directly. Meshes that intersect or overlap themselves fail validation and take the sticky path below.
+    if (store.isEmpty) {
+      const mark = doc.savepoint();
+      const built = buildMeshDirectly(doc, context, polygons, position);
+      if (built) return built;
+      doc.revertToSavepoint(mark);
+    }
     const segments: SegmentInput[] = [];
     const segmentIndex = new Map<string, number>();
     const segmentOf = (a: number, b: number): number => {
@@ -584,4 +599,58 @@ export function insertTriangleMesh(
         .sort(byId),
     };
   });
+}
+
+/**
+ * Adds the polygons' vertices, edges and faces directly, each shared edge once, for a context that was empty.
+ * Returns null when the result isn't valid (self-intersections, overlaps, T-junctions, pinched loops), so the caller
+ * can fall back to sticky-geometry insertion, which resolves those cases.
+ */
+function buildMeshDirectly(
+  doc: ModelDocument,
+  context: DefinitionId,
+  polygons: readonly {
+    readonly loops: readonly (readonly number[])[];
+    readonly attributes: FaceAttributes;
+  }[],
+  position: readonly Vec3[],
+): InsertedMesh | null {
+  const vertices = new Map<number, VertexId>();
+  const edges = new Map<string, EdgeId>();
+  const faces: FaceId[] = [];
+  const vertexOf = (index: number): VertexId => {
+    let id = vertices.get(index);
+    if (id === undefined) {
+      id = addVertex(doc, context, position[index] ?? vec3(0, 0, 0));
+      vertices.set(index, id);
+    }
+    return id;
+  };
+  const useOf = (a: number, b: number): LoopUse => {
+    const low = Math.min(a, b);
+    const high = Math.max(a, b);
+    const key = `${String(low)}:${String(high)}`;
+    let id = edges.get(key);
+    if (id === undefined) {
+      id = addEdge(doc, context, vertexOf(low), vertexOf(high));
+      edges.set(key, id);
+    }
+    // Edges run from the lower to the higher mesh vertex; a loop going the other way uses them reversed.
+    return { edge: id, reversed: a > b };
+  };
+  const toLoop = (loop: readonly number[]): LoopUse[] =>
+    loop.map((vertex, i) => useOf(vertex, loop[(i + 1) % loop.length] ?? vertex));
+  try {
+    for (const polygon of polygons) {
+      const [outer = [], ...holes] = polygon.loops;
+      faces.push(
+        addFace(doc, context, { outer: toLoop(outer), inners: holes.map(toLoop) }, polygon.attributes),
+      );
+    }
+  } catch (error) {
+    if (error instanceof KernelError) return null;
+    throw error;
+  }
+  if (!validateDocument(doc, { definitions: [context] }).ok) return null;
+  return { faces: faces.sort(byId), edges: [...edges.values()].sort(byId) };
 }

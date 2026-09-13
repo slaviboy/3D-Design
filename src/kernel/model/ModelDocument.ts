@@ -291,6 +291,30 @@ export class ModelDocument {
     transaction.changes.push(change);
   }
 
+  /**
+   * Marks the current point in the active transaction. Changes made after it can be undone with
+   * {@link revertToSavepoint} while the transaction stays open, for operations that try a fast path first.
+   */
+  savepoint(): number {
+    const transaction = this.#active;
+    if (!transaction) {
+      throw new KernelError('transaction-required', 'A savepoint needs an active transaction');
+    }
+    return transaction.changes.length;
+  }
+
+  /** Reverts the changes made in the active transaction since `mark`, keeping the ones before it. */
+  revertToSavepoint(mark: number): void {
+    const transaction = this.#active;
+    if (!transaction) {
+      throw new KernelError('transaction-required', 'Reverting to a savepoint needs an active transaction');
+    }
+    if (!Number.isInteger(mark) || mark < 0 || mark > transaction.changes.length) {
+      throw new KernelError('invalid-operation', `Savepoint ${String(mark)} is not in this transaction`);
+    }
+    this.#revert(transaction.changes.splice(mark));
+  }
+
   get canUndo(): boolean {
     return this.#undoStack.length > 0;
   }
