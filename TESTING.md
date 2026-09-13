@@ -21,7 +21,7 @@ Tests are mandatory. A feature counts as done only when its tests exist and pass
 - Every mutation primitive is tested forward and inverse.
 - Every operation is tested against its rows in [docs/BEHAVIOR_MATRIX.md](docs/BEHAVIOR_MATRIX.md).
 
-### Geometry regression suite (`tests/kernel/regressions`)
+### Geometry regression suite (`tests/kernel/ops`, `tests/kernel/behavior`)
 
 Covers these cases:
 
@@ -52,16 +52,22 @@ CI runs a fast profile. `FUZZ_RUNS=10000 npm test` runs the deep profile before 
 - `boundaries.test.ts` proves the ESLint layer rules reject forbidden imports.
 - `tsconfig.kernel.json` compiles the kernel with no DOM or Node types, and runs as part of `npm run typecheck`.
 
-### Integration tests (`tests/integration`)
+### Integration tests (`tests/app`)
 
-- **Tools.** `ToolManager` drives tools with synthetic pointer and keyboard events, using a fake camera and picker.
+- **Tools.** `ToolManager` drives tools with synthetic pointer and keyboard events on a fixed top-down camera
+  (`tests/app/fixtures.ts`: world (x, y) appears at screen (100 + 20x, 100 − 20y)). See `tools.test.ts`,
+  `transformTools.test.ts` and `linearInference.test.ts`.
+- **Behavior matrices.** `tests/kernel/behavior/*.test.ts` implement the rows of
+  [docs/BEHAVIOR_MATRIX.md](docs/BEHAVIOR_MATRIX.md) for insertion, push/pull, move and hierarchy operations.
 - **Workflows.** For example: draw rectangle → push/pull → group → component → make unique → undo/redo.
 - **Autosave and recovery.** Tested with `fake-indexeddb`.
 - **Scenes.** Capture and apply.
 
 ### End-to-end tests (`tests/e2e`, Playwright)
 
-- **Build under test.** Tests run against the production build.
+- **Build under test.** Tests run against a production build made with `--mode e2e`, which adds the
+  `window.__planar` hook (`editor` and `screenOf(point)` for clicking real geometry). A normal build must not
+  contain it.
 - **Automatic guards.** `tests/e2e/fixtures.ts` applies two guards to every test:
   - **Offline guard:** any request to an origin other than the preview server fails the test.
   - **Error guard:** any uncaught exception or console error fails the test.
