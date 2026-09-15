@@ -23,18 +23,23 @@ import { useEditor, useEditorState } from '../EditorContext';
 import { AnnotationLabels } from './AnnotationLabels';
 import { selectForContextMenu } from '../../app/contextMenu/contextMenu';
 import { contextMenuJustOpened, showContextMenu } from '../contextmenu/contextMenuStore';
+import { ClickCounter } from './clickCount';
 
 /** The right mouse button opens the context menu instead of reaching the active tool. */
 const SECONDARY_BUTTON = 2;
 
-function pointerInput(event: ReactPointerEvent<HTMLElement>, element: HTMLElement): PointerInput {
+function pointerInput(
+  event: ReactPointerEvent<HTMLElement>,
+  element: HTMLElement,
+  clickCount: number,
+): PointerInput {
   const rect = element.getBoundingClientRect();
   return {
     x: event.clientX - rect.left,
     y: event.clientY - rect.top,
     button: event.button,
     buttons: event.buttons,
-    detail: event.detail,
+    detail: clickCount,
     shiftKey: event.shiftKey,
     ctrlKey: event.ctrlKey,
     altKey: event.altKey,
@@ -45,6 +50,7 @@ function pointerInput(event: ReactPointerEvent<HTMLElement>, element: HTMLElemen
 export function ViewportHost() {
   const editor = useEditor();
   const hostRef = useRef<HTMLDivElement>(null);
+  const clicksRef = useRef(new ClickCounter());
   const [failure, setFailure] = useState<string | null>(null);
   const overlay = useEditorState((state) => state.overlay);
   const marker = useEditorState((state) => state.marker);
@@ -108,14 +114,16 @@ export function ViewportHost() {
         }
         host.setPointerCapture(event.pointerId);
         host.focus({ preventScroll: true });
-        editor.tools.pointerDown(pointerInput(event, host));
+        editor.tools.pointerDown(pointerInput(event, host, clicksRef.current.press(event)));
       }}
       onPointerMove={(event) => {
-        if (hostRef.current) editor.tools.pointerMove(pointerInput(event, hostRef.current));
+        if (hostRef.current)
+          editor.tools.pointerMove(pointerInput(event, hostRef.current, clicksRef.current.current));
       }}
       onPointerUp={(event) => {
         if (event.button === SECONDARY_BUTTON) return;
-        if (hostRef.current) editor.tools.pointerUp(pointerInput(event, hostRef.current));
+        if (hostRef.current)
+          editor.tools.pointerUp(pointerInput(event, hostRef.current, clicksRef.current.current));
       }}
       onPointerCancel={() => {
         editor.tools.cancel();

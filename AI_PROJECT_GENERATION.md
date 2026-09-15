@@ -455,6 +455,18 @@ never interacts: two groups may overlap, touch or intersect freely.
   - windows with a sill at about 0.9 m, stair risers 0.17 m and treads 0.28 m.
 - Give groups meaningful `name`s. They appear in the Outliner.
 - Add one or two scenes (an eye-level street view and a view from above) so the user can jump between them.
+- Leave `locked` and `hidden` false on instances. A locked group refuses every edit.
+
+### How the user edits the result
+
+A generated project is fully editable, but grouped geometry is edited the way groups work in Planar:
+
+- **Click** a wall to select the whole group. Move, Rotate and Scale then act on the group as a unit.
+- **Double-click** a group to open it. Push/Pull, Move, Line, Eraser and the other tools then edit its faces and
+  edges: raise a wall, thicken it, or move a window. Click outside the group or press Esc to close it.
+- **Explode** a group to merge its geometry into the model around it. Exploding every group gives one connected
+  model in which walls, slabs and roof share edges, as if drawn by hand. Components (such as the window glass) stay
+  reusable.
 
 ## 10. Reference generator (Python 3, standard library only)
 
