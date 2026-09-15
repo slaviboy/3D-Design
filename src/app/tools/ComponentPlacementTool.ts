@@ -17,41 +17,19 @@
 
 import type { DefinitionId } from '../../kernel/ids';
 import { aabbIsEmpty } from '../../kernel/math/aabb';
-import { transformPoint, translation } from '../../kernel/math/mat4';
-import { add, sub, vec3, type Vec3 } from '../../kernel/math/vec3';
+import { translation } from '../../kernel/math/mat4';
+import { sub, vec3, type Vec3 } from '../../kernel/math/vec3';
 import { addInstance } from '../../kernel/model/mutations';
 import { DEFAULT_INSTANCE_ATTRIBUTES } from '../../kernel/model/types';
 import type { Editor } from '../Editor';
-import { aabbCorners, definitionBounds } from '../geometry/bounds';
+import { definitionBounds } from '../geometry/bounds';
 import type { Inference } from '../inference/inference';
 import { Selection } from '../selection/Selection';
-import {
-  PRIMARY_BUTTON,
-  SELECT_TOOL_ID,
-  type PointerInput,
-  type PreviewLine,
-  type Tool,
-  type ToolPreview,
-} from './Tool';
+import { boxPreviewLines } from './boxPreview';
+import { PRIMARY_BUTTON, SELECT_TOOL_ID, type PointerInput, type Tool, type ToolPreview } from './Tool';
 import { inferAt, markerFor, toLocalPoint } from './toolSupport';
 
 export const PLACE_COMPONENT_TOOL_ID = 'tool.placeComponent';
-
-/** Corner index pairs of a box from `aabbCorners` (index bits: x·4 + y·2 + z). */
-const BOX_EDGES: readonly (readonly [number, number])[] = [
-  [0, 1],
-  [2, 3],
-  [4, 5],
-  [6, 7],
-  [0, 2],
-  [1, 3],
-  [4, 6],
-  [5, 7],
-  [0, 4],
-  [1, 5],
-  [2, 6],
-  [3, 7],
-];
 
 const EMPTY_PREVIEW: ToolPreview = { lines: [], highlight: [], marker: null };
 
@@ -123,14 +101,7 @@ export class ComponentPlacementTool implements Tool {
     const bounds = definitionBounds(doc, definitionId);
     if (aabbIsEmpty(bounds)) return { lines: [], highlight: [], marker };
     const offset = this.#offset(editor, definitionId, inference.point);
-    const toWorld = editor.session.activeContextTransform;
-    const corners = aabbCorners(bounds).map((corner) => transformPoint(toWorld, add(corner, offset)));
-    const lines: PreviewLine[] = [];
-    for (const [a, b] of BOX_EDGES) {
-      const start = corners[a];
-      const end = corners[b];
-      if (start && end) lines.push({ a: start, b: end, style: 'preview' });
-    }
+    const lines = boxPreviewLines(bounds, offset, editor.session.activeContextTransform);
     return { lines, highlight: [], marker };
   }
 

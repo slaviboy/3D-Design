@@ -25,6 +25,7 @@ import {
   setFaceAttributes,
   setInstanceAttributes,
   setTagAttributes,
+  removeInstance,
 } from '../kernel/model/mutations';
 import type { EdgeAttributes, InstanceAttributes, Rgb } from '../kernel/model/types';
 import { deleteFaces, eraseEdges } from '../kernel/ops/erase';
@@ -93,6 +94,15 @@ import { PANEL_IDS, type PanelId, DEFAULT_OPEN_PANELS } from './panels/panels';
 import { hasLockedInstance, isInstanceLocked, LOCKED_MESSAGE } from './selection/locking';
 import { nextTagColor, uniqueTagName } from './tags/tags';
 import { ComponentPlacementTool, PLACE_COMPONENT_TOOL_ID } from './tools/ComponentPlacementTool';
+import { PasteTool, PASTE_TOOL_ID } from './tools/PasteTool';
+import {
+  copySelection as captureClipboard,
+  describeClipboard,
+  insertedRefs,
+  pasteFragment,
+  pasteWouldNest,
+  type Clipboard,
+} from './clipboard/clipboard';
 import { Text3DTool, TEXT_3D_TOOL_ID } from './tools/Text3DTool';
 import type { Text3DOptions } from '../kernel/ops/text3d';
 import { parseText3DForm, type Text3DForm } from './text3d/text3dForm';
@@ -361,6 +371,9 @@ export class Editor {
   #nextNotificationId = 1;
   #measurementText = '';
   readonly #placementTool = new ComponentPlacementTool();
+  readonly #pasteTool = new PasteTool();
+  /** What Cut or Copy last captured; kept until the next copy, and only pasteable into its own document. */
+  #clipboard: Clipboard | null = null;
   readonly #text3dTool = new Text3DTool();
   #text3dForm: Text3DForm | null = null;
   #openPanels: readonly PanelId[] = DEFAULT_OPEN_PANELS;
@@ -424,6 +437,7 @@ export class Editor {
         new PaintBucketTool(),
         new SectionPlaneTool(),
         this.#placementTool,
+        this.#pasteTool,
         new FollowMeTool(),
         this.#text3dTool,
       ],
@@ -1017,6 +1031,74 @@ export class Editor {
       for (const id of instances) explodeInstance(doc, session.activeContext, id);
     });
     session.setSelection(Selection.EMPTY);
+  }
+
+  // ---------------------------------------------------------------------------------------------- clipboard
+
+  /** What Cut or Copy last captured, if anything. */
+  get clipboard(): Clipboard | null {
+    return this.#clipboard;
+  }
+
+  /**
+   * True when the clipboard holds geometry of the open document that may go into the open context. Pasting a group
+   * into itself is refused, so Paste is disabled while the copied group is open.
+   */
+  canPaste(): boolean {
+    const clipboard = this.#clipboard;
+    const { session } = this;
+    if (clipboard?.doc !== session.doc) return false;
+    return !pasteWouldNest(session.doc, session.activeContext, clipboard);
+  }
+
+  /** Copies the selected faces, edges, groups and components. Returns false when there was nothing to copy. */
+  copySelection(): boolean {
+    const { session } = this;
+    const clipboard = captureClipboard(session.doc, session.activeContext, session.selection.refs());
+    if (!clipboard) return false;
+    this.#clipboard = clipboard;
+    return true;
+  }
+
+  /** Copies the selection and removes it. */
+  cutSelection(): void {
+    const { session } = this;
+    const selection = session.selection;
+    if (selection.isEmpty) return;
+    const doc = session.doc;
+    const context = session.activeContext;
+    if (hasLockedInstance(doc, context, selection.refs())) {
+      this.notify('error', LOCKED_MESSAGE);
+      return;
+    }
+    if (!this.copySelection()) return;
+    this.tools.cancel();
+    // Unlike Delete, a cut group keeps its definition even while nothing instances it, so Paste can bring it back.
+    doc.transact('Cut', () => {
+      for (const id of selection.ids('instance')) removeInstance(doc, context, id as InstanceId);
+      deleteFaces(doc, context, selection.ids('face') as FaceId[]);
+      eraseEdges(doc, context, selection.ids('edge') as EdgeId[]);
+      for (const id of selection.ids('section')) removeSectionPlane(doc, context, id as SectionPlaneId);
+    });
+    session.setSelection(Selection.EMPTY);
+  }
+
+  /** Starts a paste: the copied geometry follows the cursor until a click drops it into the open context. */
+  pasteFromClipboard(): void {
+    if (!this.canPaste()) return;
+    this.#pasteTool.setClipboard(this.#clipboard);
+    this.activateTool(PASTE_TOOL_ID);
+  }
+
+  /** Pastes at the coordinates the copy came from, without waiting for a click. */
+  pasteInPlace(): void {
+    const clipboard = this.#clipboard;
+    if (!clipboard || !this.canPaste()) return;
+    this.tools.cancel();
+    const { session } = this;
+    const inserted = pasteFragment(session.doc, session.activeContext, clipboard, vec3(0, 0, 0));
+    session.setSelection(Selection.of(insertedRefs(inserted)));
+    this.notify('info', `Pasted ${describeClipboard(clipboard.counts)}`);
   }
 
   /** Opens a group or component for editing; the rest of the model fades. */

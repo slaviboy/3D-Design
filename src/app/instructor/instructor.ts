@@ -19,6 +19,7 @@ import type { Platform } from '../shortcuts/shortcuts';
 import { ARC_TOOL_ID, PIE_TOOL_ID, THREE_POINT_ARC_TOOL_ID, TWO_POINT_ARC_TOOL_ID } from '../tools/ArcTool';
 import { AXES_TOOL_ID } from '../tools/AxesTool';
 import { PLACE_COMPONENT_TOOL_ID } from '../tools/ComponentPlacementTool';
+import { PASTE_TOOL_ID } from '../tools/PasteTool';
 import { DIMENSION_TOOL_ID } from '../tools/DimensionTool';
 import { FOLLOW_ME_TOOL_ID } from '../tools/FollowMeTool';
 import { FREEHAND_TOOL_ID } from '../tools/FreehandTool';
@@ -414,6 +415,16 @@ export const INSTRUCTOR_HINTS: Readonly<Record<string, HintSource>> = {
       'Move to where it should go and click to place it.',
     ],
     keys: [{ keys: 'Esc', effect: 'Stops placing.' }],
+    measurements: null,
+  }),
+  [PASTE_TOOL_ID]: () => ({
+    title: 'Paste',
+    purpose: 'Put what you cut or copied into the open group or the model.',
+    steps: [
+      'Move to where the copy should go; its outline follows the cursor.',
+      'Click to drop it. Use Paste In Place to keep the original coordinates.',
+    ],
+    keys: [{ keys: 'Esc', effect: 'Stops pasting.' }],
     measurements: null,
   }),
 };

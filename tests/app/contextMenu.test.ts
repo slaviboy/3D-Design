@@ -73,6 +73,8 @@ describe('context menu entries', () => {
     expect(contextMenuGroups(NOTHING).flat()).toEqual([
       'edit.selectAll',
       'edit.unhideAll',
+      'edit.paste',
+      'edit.pasteInPlace',
       'camera.zoomExtents',
     ]);
     expect(contextMenuGroups({ ...NOTHING, editDepth: 1 }).flat()).toContain('edit.closeGroup');
@@ -114,6 +116,8 @@ describe('context menu entries', () => {
     selectFace(editor, face);
     expect(outline(contextMenuFor(editor))).toEqual([
       'edit.entityInfo',
+      'edit.cut',
+      'edit.copy',
       'edit.delete',
       'edit.hide',
       '|',

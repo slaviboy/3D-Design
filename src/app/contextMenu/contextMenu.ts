@@ -127,6 +127,7 @@ export function contextMenuGroups(summary: SelectionSummary): ContextMenuItemSpe
   if (entities + sections === 0) {
     return [
       ['edit.selectAll', 'edit.unhideAll'],
+      ['edit.paste', 'edit.pasteInPlace'],
       editDepth > 0 ? ['edit.closeGroup'] : [],
       ['camera.zoomExtents'],
     ];
@@ -136,6 +137,9 @@ export function contextMenuGroups(summary: SelectionSummary): ContextMenuItemSpe
   return [
     [
       'edit.entityInfo',
+      ...when(entities > 0 && !anyLocked, ['edit.cut']),
+      ...when(entities > 0, ['edit.copy']),
+      'edit.paste',
       ...when(!anyLocked, ['edit.delete']),
       ...when(entities > hidden, ['edit.hide']),
       ...when(hidden > 0, ['edit.unhide']),

@@ -69,6 +69,9 @@ const STANDARD_VIEWS: readonly { readonly view: StandardView; readonly label: st
 
 const hasSelection = (editor: Editor): boolean => !editor.session.selection.isEmpty;
 const hasSelectedInstances = (editor: Editor): boolean => editor.session.selection.count('instance') > 0;
+/** The clipboard holds faces, edges, groups and components; section planes can't be copied. */
+const hasCopyableSelection = (editor: Editor): boolean =>
+  editor.session.selection.refs().some((ref) => ref.kind !== 'section');
 
 function toolCommand(
   id: string,
@@ -164,6 +167,52 @@ export function registerDefaultCommands(registry: CommandRegistry<Editor>): void
       isEnabled: (editor) => editor.session.doc.canRedo,
       run: (editor) => {
         editor.redo();
+      },
+    },
+    {
+      id: 'edit.cut',
+      label: 'Cut',
+      category: 'Edit',
+      defaultShortcuts: ['Mod+X'],
+      aliases: ['clipboard'],
+      isEnabled: hasCopyableSelection,
+      run: (editor) => {
+        editor.cutSelection();
+      },
+    },
+    {
+      id: 'edit.copy',
+      label: 'Copy',
+      category: 'Edit',
+      defaultShortcuts: ['Mod+C'],
+      aliases: ['clipboard', 'duplicate'],
+      isEnabled: hasCopyableSelection,
+      run: (editor) => {
+        editor.copySelection();
+      },
+    },
+    {
+      id: 'edit.paste',
+      label: 'Paste',
+      category: 'Edit',
+      description: 'Paste the clipboard where the next click lands',
+      defaultShortcuts: ['Mod+V'],
+      aliases: ['clipboard'],
+      isEnabled: (editor) => editor.canPaste(),
+      run: (editor) => {
+        editor.pasteFromClipboard();
+      },
+    },
+    {
+      id: 'edit.pasteInPlace',
+      label: 'Paste In Place',
+      category: 'Edit',
+      description: 'Paste the clipboard at the coordinates it was copied from',
+      defaultShortcuts: ['Mod+Shift+V'],
+      aliases: ['clipboard'],
+      isEnabled: (editor) => editor.canPaste(),
+      run: (editor) => {
+        editor.pasteInPlace();
       },
     },
     {
