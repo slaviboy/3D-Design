@@ -16,29 +16,30 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { groundReceiverDepth } from '../../src/render/shadows/groundReceiver';
+import { groundReceiverHeight } from '../../src/render/shadows/groundReceiver';
 
-describe('groundReceiverDepth', () => {
-  it('never leaves the receiver in the plane of the ground itself', () => {
-    for (const radius of [0.5, 1, 10, 40, 500, 10_000]) {
-      expect(groundReceiverDepth(radius)).toBeGreaterThan(0);
-    }
+describe('groundReceiverHeight', () => {
+  it('stays below the ground for a model that sits on it', () => {
+    expect(groundReceiverHeight(20, 0)).toBeLessThan(0);
+    expect(groundReceiverHeight(20, 1.5)).toBeLessThan(0);
   });
 
-  it('grows with the model, so it clears the depth buffer on a large site', () => {
-    expect(groundReceiverDepth(500)).toBeGreaterThan(groundReceiverDepth(40));
-    expect(groundReceiverDepth(40)).toBeCloseTo(0.004, 6);
+  it('drops below a model that reaches under the ground', () => {
+    // A foundation slab to −0.3 m and a terrace sunk to −0.16: the receiver clears both.
+    expect(groundReceiverHeight(22, -0.3)).toBeLessThan(-0.3);
+    expect(groundReceiverHeight(22, -0.3)).toBeGreaterThan(-0.32);
   });
 
-  it('stays too small to see', () => {
-    // A house-sized model sinks the receiver by a few millimeters, a large site by a centimeter.
-    expect(groundReceiverDepth(20)).toBeLessThan(0.01);
-    expect(groundReceiverDepth(1000)).toBeLessThan(0.2);
+  it('keeps a margin that scales with the model but stays invisible', () => {
+    const smallSink = -groundReceiverHeight(5, 0);
+    const siteSink = -groundReceiverHeight(500, 0);
+    expect(siteSink).toBeGreaterThan(smallSink);
+    expect(smallSink).toBeGreaterThan(0);
+    expect(siteSink).toBeLessThan(0.2);
   });
 
-  it('falls back to the minimum for a tiny or unusable radius', () => {
-    expect(groundReceiverDepth(0)).toBe(0.001);
-    expect(groundReceiverDepth(-5)).toBe(0.001);
-    expect(groundReceiverDepth(Number.NaN)).toBe(0.001);
+  it('falls back to just below the ground when the extent is unusable', () => {
+    expect(groundReceiverHeight(0, Number.NaN)).toBe(-0.001);
+    expect(groundReceiverHeight(Number.NaN, Number.NaN)).toBe(-0.001);
   });
 });

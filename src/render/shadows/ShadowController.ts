@@ -19,7 +19,7 @@ import * as THREE from 'three';
 import { DEFAULT_SHADOW_SETTINGS, type ShadowSettings } from '../../kernel/model/types';
 import { localDateTimeToUtc, parseLocalDateTime, solarPosition, sunDirection } from '../../kernel/sun/solar';
 import { AMBIENT_LIGHT_INTENSITY, SUN_DIRECTION, SUN_LIGHT_INTENSITY } from '../palette';
-import { groundReceiverDepth } from './groundReceiver';
+import { groundReceiverHeight } from './groundReceiver';
 
 /** Shadow map resolution in texels per side. */
 const SHADOW_MAP_SIZE = 2048;
@@ -119,7 +119,11 @@ export class ShadowController {
     this.sun.shadow.normalBias = ((2 * radius) / SHADOW_MAP_SIZE) * NORMAL_BIAS_TEXELS;
 
     this.ground.visible = casting && settings.onGround;
-    this.ground.position.set(sphere.center.x, sphere.center.y, -groundReceiverDepth(radius));
+    this.ground.position.set(
+      sphere.center.x,
+      sphere.center.y,
+      groundReceiverHeight(radius, bounds.isEmpty() ? 0 : bounds.min.z),
+    );
     this.ground.scale.setScalar(radius * GROUND_EXTENT_RADII);
     this.ground.material.opacity = GROUND_SHADOW_OPACITY * settings.light;
 

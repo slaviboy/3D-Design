@@ -20,14 +20,21 @@ const GROUND_SINK_FRACTION = 1e-4;
 /** Never less than this, so a tiny model still separates the two planes. */
 const MIN_GROUND_SINK = 1e-3;
 
-/**
- * How far below z = 0 the ground shadow receiver sits, for a model of this radius.
- *
- * Slabs, terraces and floors usually have a face exactly at z = 0. A receiver in that same plane fights with them,
- * and the ground flickers wherever the two meet as the camera moves, so the receiver is sunk just below it. The
- * offset stays far too small to see: a millimeter for a room, a centimeter for a whole site.
- */
-export function groundReceiverDepth(radius: number): number {
+/** How far the receiver sits below whatever it is put under, for a model of this radius. */
+function sinkFor(radius: number): number {
   if (!Number.isFinite(radius) || radius <= 0) return MIN_GROUND_SINK;
   return Math.max(MIN_GROUND_SINK, radius * GROUND_SINK_FRACTION);
+}
+
+/**
+ * Where the ground shadow receiver sits: just under the model's lowest geometry, and never above z = 0.
+ *
+ * The receiver only exists to catch shadows on empty ground — a slab or terrace catches its own, since faces
+ * receive shadows too. Left level with the ground it fights whatever shares that height: terraces sunk a couple of
+ * centimeters, paving at z = 0, the tops of foundations. Any of those makes a shadow flip on and off as the camera
+ * moves. Putting the receiver below all of them ends that, and the drop is far too small to see.
+ */
+export function groundReceiverHeight(radius: number, modelMinZ: number): number {
+  const base = Number.isFinite(modelMinZ) ? Math.min(0, modelMinZ) : 0;
+  return base - sinkFor(radius);
 }
