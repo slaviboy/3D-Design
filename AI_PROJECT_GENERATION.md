@@ -10,7 +10,8 @@ How to use it:
 1. Read sections 1–9 to understand the format and the geometry rules.
 2. Copy the reference generator in section 10 (Python 3, standard library only) and write a build script with its
    helpers (section 9 explains the modeling strategy).
-3. Run the script. It writes the `.planar` file.
+3. Run the script. It writes the `.planar` file, and prints any surface conflicts it finds — fix every one of
+   them and run it again, since each is something that will flicker on screen.
 4. Check the result against the checklist in section 12.
 
 Everything here matches the loader in the Planar source code (`src/io/format/planarFile.ts`,
@@ -452,6 +453,20 @@ never interacts: two groups may overlap, touch or intersect freely.
 
   Stack solids flush, so the touching faces are hidden between them (a floor's underside exactly on a slab's top),
   or leave a real gap of a few tenths of a meter. Faces that touch flush are fine; faces that nearly touch are not.
+- **Give ground level an order.** This is where generated models go wrong most often: the site slab, the floor
+  slab, the driveway and the garage floor all end up with their top face at z = 0, four surfaces in one plane.
+  Decide what the walking surface is, put it at 0, and step everything else down, each hidden under the one above:
+
+  | surface | top | why |
+  | --- | --- | --- |
+  | Interior floor slab | `0.000` | the level the model is set out from |
+  | Garage floor | `-0.020` | slightly lower, and buried where the slab covers it |
+  | Driveway, paving | `-0.040` | lower again, so it never shares the slab's plane |
+  | Site plinth or terrain | `-0.060` | the base everything else sits on |
+
+  The exact steps don't matter, only that no two visible tops share a height. The same applies on a roof: the slab,
+  its parapet, planters and terraces each need their own level, and a planter sits **on** the roof (its underside on
+  the slab's top), not two centimeters above it.
 - **Sloped surfaces.** Do not round the coordinates of a sloped quad to millimeters, because that breaks planarity.
   Compute its points from one exact origin and exact axis vectors (as `prism()` does). Rounding is only safe on
   axis-aligned faces.
@@ -736,14 +751,121 @@ class Project:
             model["scenes"] = self.scenes
         return model
 
-    def save(self, path, app_version="0.1.0"):
+    def conflicts(self):
+        """Surface conflicts in this model; empty when there are none."""
+        return surface_conflicts(self)
+
+    def save(self, path, app_version="0.1.0", check=True):
         now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
         manifest = {"format": "planar-model", "schemaVersion": 1, "appVersion": app_version,
                     "createdAt": now, "modifiedAt": now}
+        if check:
+            report = describe_conflicts(self)
+            if report:
+                print(report)
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
             z.writestr("manifest.json", json.dumps(manifest, indent=2))
             z.writestr("model.json", json.dumps(self.model_json(), separators=(",", ":")))
 
+
+# ----------------------------------------------------------------------------- checking
+
+# Faces closer than this, in the same plane or nearly, have nothing to separate them on screen.
+CONFLICT_TOLERANCE = 0.05
+# Overlaps smaller than this are too small to notice.
+MIN_CONFLICT_AREA = 0.05
+
+
+def _matmul(a, b):
+    out = [0.0] * 16
+    for col in range(4):
+        for row in range(4):
+            out[col * 4 + row] = sum(a[k * 4 + row] * b[col * 4 + k] for k in range(4))
+    return out
+
+
+def _local_bounds(definition):
+    if not definition.vertices:
+        return None
+    xs = [v["position"]["x"] for v in definition.vertices]
+    ys = [v["position"]["y"] for v in definition.vertices]
+    zs = [v["position"]["z"] for v in definition.vertices]
+    return (min(xs), min(ys), min(zs), max(xs), max(ys), max(zs))
+
+
+def _transform_bounds(box, m):
+    pts = []
+    for x in (box[0], box[3]):
+        for y in (box[1], box[4]):
+            for z in (box[2], box[5]):
+                pts.append((m[0] * x + m[4] * y + m[8] * z + m[12],
+                            m[1] * x + m[5] * y + m[9] * z + m[13],
+                            m[2] * x + m[6] * y + m[10] * z + m[14]))
+    xs, ys, zs = zip(*pts)
+    return (min(xs), min(ys), min(zs), max(xs), max(ys), max(zs))
+
+
+def placed_bounds(project):
+    """Every piece of geometry in the model, as (name, world bounding box)."""
+    by_id = {d.id: d for d in project.definitions}
+    found = []
+
+    def walk(definition, matrix):
+        box = _local_bounds(definition)
+        if box:
+            found.append((definition.name, _transform_bounds(box, matrix)))
+        for inst in definition.instances:
+            child = by_id.get(inst["definitionId"])
+            if child is not None:
+                walk(child, _matmul(matrix, inst["transform"]))
+
+    walk(project.root, IDENTITY)
+    return found
+
+
+def surface_conflicts(project):
+    """Upward faces that share a plane or nearly touch, and solids left floating just above another.
+
+    Only faces a camera can see are reported: an underside resting on a slab is hidden, and so is a top buried
+    inside the solid above it. What is left flickers as the camera moves, because the depth buffer cannot tell
+    the two apart.
+    """
+    items = placed_bounds(project)
+    problems = []
+    for i, (name_a, a) in enumerate(items):
+        for name_b, b in items[i + 1:]:
+            overlap_x = min(a[3], b[3]) - max(a[0], b[0])
+            overlap_y = min(a[4], b[4]) - max(a[1], b[1])
+            area = overlap_x * overlap_y
+            if overlap_x <= 0 or overlap_y <= 0 or area < MIN_CONFLICT_AREA:
+                continue
+            gap = b[5] - a[5]
+            if abs(gap) <= CONFLICT_TOLERANCE:
+                lower_top, upper = (a[5], b) if gap > 0 else (b[5], a)
+                buried = upper[2] < lower_top < upper[5]
+                if abs(gap) < 1e-9 or not buried:
+                    problems.append(("same plane" if abs(gap) < 1e-9 else "nearly touching",
+                                     f"{name_a} top", f"{name_b} top", a[5], gap, area))
+            for (top_name, top_z), (bottom_name, bottom_z) in (((name_a, a[5]), (name_b, b[2])),
+                                                               ((name_b, b[5]), (name_a, a[2]))):
+                lift = bottom_z - top_z
+                if 1e-9 < lift <= CONFLICT_TOLERANCE:
+                    problems.append(("floating", f"{bottom_name} underside", f"{top_name} top",
+                                     bottom_z, lift, area))
+    return problems
+
+
+def describe_conflicts(project):
+    """A report for the model, or an empty string when nothing is wrong."""
+    problems = surface_conflicts(project)
+    if not problems:
+        return ""
+    lines = [f"{len(problems)} surface conflict(s) that will flicker as the camera moves:"]
+    for kind, a, b, z, gap, area in sorted(problems, key=lambda p: -p[5]):
+        where = "in one plane" if kind == "same plane" else f"{abs(gap) * 100:.0f} cm apart"
+        lines.append(f"  {kind}: {a} and {b} {where} at z={z:+.3f}, over {area:.1f} m2")
+    lines.append("  Stack them flush so the touching faces are hidden, or move one clear of the other.")
+    return "\n".join(lines)
 
 # ----------------------------------------------------------------------------- building helpers
 
@@ -852,6 +974,9 @@ if __name__ == "__main__":
 - `Project.group(name, parent=None, tag=None, matrix=None)` creates a group placed once. `Project.component(name)`
   plus `parent.instance(component, transform((x, y, z), rotate_z_deg))` places a reusable part.
 - `Project.scene(name, eye, target)`, and `project.shadows = {...}` for optional settings.
+- `Project.conflicts()` lists surfaces that would flicker: tops sharing a plane or nearly touching, and solids
+  left floating a centimeter above what they stand on. `save()` runs the same check and prints a report, so a
+  clean run means no pair of visible surfaces is fighting. Fix what it names rather than silencing it.
 - Extras not covered by a helper (annotations, style, fog, section planes) can be added to the dict returned by
   `model_json()` before writing, following section 7.
 
@@ -985,6 +1110,8 @@ Before handing over the file, check:
 - [ ] Faces that meet share edge and vertex ids. There are no duplicate vertices and no vertex lying on another edge.
 - [ ] Faces are planar, and holes are strictly inside the outline with the opposite winding.
 - [ ] Colors are 0–1 (materials linear, style, fog and tags sRGB); opacity, roughness and metalness are 0–1.
+- [ ] `save()` printed no surface conflicts: no two visible tops share a plane or sit a few centimeters apart,
+      and nothing floats just above what it stands on.
 
 The app opens files **with repair**. It removes invalid faces and entities or clears broken references, then opens
 the model with a "Repaired N problems" notice. A file that needs repair is a bug in the generator: fix the cause.
