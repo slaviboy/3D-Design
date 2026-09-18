@@ -63,9 +63,12 @@ export default defineConfig(({ mode }) => ({
     react(),
     contentSecurityPolicy(),
     VitePWA({
-      // `static` builds (npm run build:local) leave the service worker out, so a folder served by a static server
-      // always shows the files that were just built instead of a cached earlier version.
-      disable: mode === 'static',
+      /*
+       * `static` builds (npm run build:local) ship a service worker that unregisters itself and empties the caches.
+       * Leaving it out is not enough: a worker registered by an earlier build stays in charge of that origin and
+       * keeps serving its own cached copy, so a rebuilt folder still shows the old app until the worker is gone.
+       */
+      selfDestroying: mode === 'static',
       registerType: 'autoUpdate',
       injectRegister: false,
       includeAssets: ['favicon.svg'],
