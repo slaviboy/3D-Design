@@ -74,7 +74,7 @@ function CommandButton({
   const editor = useEditor();
   useEditorState(
     (state) =>
-      `${String(state.revision)}|${String(state.selectionVersion)}|${state.activeToolId}|${String(state.shortcutsVersion)}`,
+      `${String(state.revision)}|${String(state.selectionVersion)}|${state.activeToolId}|${String(state.shortcutsVersion)}|${String(state.preferences.toolTips)}`,
   );
   const command = editor.commands.get(commandId);
   if (!command) return null;
@@ -85,7 +85,9 @@ function CommandButton({
       type="button"
       className="toolbar__button"
       aria-label={command.label}
-      title={title}
+      data-tooltip={title}
+      // With tool tips on, the layer shows this text; with them off, the browser's own tooltip does.
+      title={editor.preferences.toolTips ? undefined : title}
       aria-pressed={pressable ? editor.commands.isChecked(commandId, editor) : undefined}
       disabled={!editor.commands.isEnabled(commandId, editor)}
       onClick={() => {

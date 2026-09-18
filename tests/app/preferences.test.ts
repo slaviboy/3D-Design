@@ -38,11 +38,15 @@ describe('preferences', () => {
     const custom: Preferences = {
       theme: 'dark',
       uiScale: 1.25,
+      toolTips: false,
       invertWheelZoom: true,
       autosaveMinutes: 10,
       units: architectural ?? IMPERIAL_UNIT_SETTINGS,
     };
     expect(parsePreferences(serializePreferences(custom))).toEqual(custom);
+    // Tool tips are on unless they were turned off, including for settings saved before they existed.
+    expect(DEFAULT_PREFERENCES.toolTips).toBe(true);
+    expect(parsePreferences(JSON.stringify({ preferences: { theme: 'dark' } })).toolTips).toBe(true);
 
     const broken = JSON.parse(serializePreferences(custom)) as { preferences: Record<string, unknown> };
     broken.preferences.theme = 'neon';

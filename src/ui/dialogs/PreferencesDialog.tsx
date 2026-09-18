@@ -76,6 +76,16 @@ export function PreferencesDialog({ onClose }: { readonly onClose: () => void })
             ))}
           </select>
         </div>
+        <label className="preferences__check">
+          <input
+            type="checkbox"
+            checked={preferences.toolTips}
+            onChange={(event) => {
+              editor.updatePreferences({ toolTips: event.currentTarget.checked });
+            }}
+          />
+          Show tool tips on the toolbar buttons
+        </label>
       </fieldset>
 
       <fieldset className="preferences__group">

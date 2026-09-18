@@ -23,6 +23,7 @@ import type { RecentFilesRepository } from '../../io/idb/recent';
 import type { RecoveryRepository, RecoverySnapshot } from '../../io/idb/recovery';
 import { ErrorBoundary } from '../common/ErrorBoundary';
 import { Notifications } from '../common/Notifications';
+import { TooltipLayer } from '../common/Tooltip';
 import { ExchangeDialog } from '../dialogs/ExchangeDialogs';
 import { InputDialog } from '../dialogs/InputDialog';
 import { RecoveryDialog } from '../dialogs/RecoveryDialog';
@@ -230,6 +231,7 @@ export function App({
         <DockSplitter />
       </div>
       <StatusBar />
+      <TooltipLayer />
       <Notifications />
       <ContextMenuLayer />
       {preferencesOpen && (

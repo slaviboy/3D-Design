@@ -34,6 +34,8 @@ export interface Preferences {
   readonly theme: ThemePreference;
   /** Size of the interface chrome relative to the default. */
   readonly uiScale: number;
+  /** Show the name of a tool when the pointer rests on its button. */
+  readonly toolTips: boolean;
   /** Zoom in when scrolling toward you instead of away. */
   readonly invertWheelZoom: boolean;
   /** Minutes between autosaves of unsaved work; 0 turns autosave off. */
@@ -50,6 +52,7 @@ const MAX_AUTOSAVE_MINUTES = 120;
 export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
   theme: 'system',
   uiScale: 1,
+  toolTips: true,
   invertWheelZoom: false,
   autosaveMinutes: 5,
   units: METRIC_UNIT_SETTINGS,
@@ -171,6 +174,8 @@ export function parsePreferences(text: string | null): Preferences {
       typeof p.uiScale === 'number' && UI_SCALES.includes(p.uiScale)
         ? p.uiScale
         : DEFAULT_PREFERENCES.uiScale,
+    // Settings saved before tool tips existed get the default, which shows them.
+    toolTips: typeof p.toolTips === 'boolean' ? p.toolTips : DEFAULT_PREFERENCES.toolTips,
     invertWheelZoom:
       typeof p.invertWheelZoom === 'boolean' ? p.invertWheelZoom : DEFAULT_PREFERENCES.invertWheelZoom,
     autosaveMinutes: isInteger(p.autosaveMinutes, 0, MAX_AUTOSAVE_MINUTES)
