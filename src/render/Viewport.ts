@@ -16,6 +16,7 @@
  */
 
 import * as THREE from 'three';
+import { axisReach } from './axes';
 import { ModelRenderer } from './ModelRenderer';
 import { VIEW_COLORS } from './palette';
 import { SectionOverlay } from './sections/SectionOverlay';
@@ -222,8 +223,16 @@ export class Viewport {
     const red = new THREE.Vector3(axes.xAxis.x, axes.xAxis.y, axes.xAxis.z);
     const green = new THREE.Vector3(axes.yAxis.x, axes.yAxis.y, axes.yAxis.z);
     const blue = red.clone().cross(green);
+    // The axes run past the edge of the view in every direction, so they read as infinite lines.
+    const origin = new THREE.Vector3(axes.origin.x, axes.origin.y, axes.origin.z);
+    const span = axisReach({
+      eyeToOrigin: eye.distanceTo(origin),
+      targetToOrigin: target.distanceTo(origin),
+      far,
+      viewRadius: view.projection === 'parallel' ? view.orthoHalfHeight * Math.max(aspect, 1) : far,
+    });
     this.#axes.matrix
-      .makeBasis(red.multiplyScalar(far), green.multiplyScalar(far), blue.multiplyScalar(far))
+      .makeBasis(red.multiplyScalar(span), green.multiplyScalar(span), blue.multiplyScalar(span))
       .setPosition(axes.origin.x, axes.origin.y, axes.origin.z);
     this.#axes.matrixWorldNeedsUpdate = true;
 

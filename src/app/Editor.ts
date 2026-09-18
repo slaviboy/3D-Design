@@ -76,11 +76,13 @@ import {
   DEFAULT_CAMERA,
   orbit,
   pan,
-  pointOnTargetPlane,
   setProjection,
   standardView,
   zoom,
+  zoomFocusInEmptySpace,
+  zoomLimits,
   zoomToBounds,
+  type ZoomLimits,
   type Projection,
   type ScreenPoint,
   type StandardView,
@@ -774,16 +776,25 @@ export class Editor {
     this.session.setCamera(pan(this.session.camera, dx, dy, this.#viewportSize));
   }
 
-  /** Zooms toward the view center. */
-  zoomBy(factor: number): void {
-    this.session.setCamera(zoom(this.session.camera, factor, null));
+  /** How close and how far the wheel may zoom, from the size of the model. */
+  #zoomLimits(): ZoomLimits {
+    const doc = this.session.doc;
+    return zoomLimits(definitionBounds(doc, doc.rootDefinitionId));
   }
 
-  /** Zooms toward the geometry under the cursor, or the point on the target plane when nothing is there. */
+  /** Zooms toward the view center. */
+  zoomBy(factor: number): void {
+    this.session.setCamera(zoom(this.session.camera, factor, null, this.#zoomLimits()));
+  }
+
+  /** Zooms toward the geometry under the cursor; with nothing there, toward the model along that direction. */
   zoomAtScreen(screen: ScreenPoint, factor: number): void {
+    const doc = this.session.doc;
+    const bounds = definitionBounds(doc, doc.rootDefinitionId);
+    const camera = this.session.camera;
     const focus =
-      this.pickAt(screen)?.point ?? pointOnTargetPlane(this.session.camera, screen, this.#viewportSize);
-    this.session.setCamera(zoom(this.session.camera, factor, focus));
+      this.pickAt(screen)?.point ?? zoomFocusInEmptySpace(camera, screen, this.#viewportSize, bounds);
+    this.session.setCamera(zoom(camera, factor, focus, zoomLimits(bounds)));
   }
 
   zoomExtents(): void {

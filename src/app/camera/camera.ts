@@ -166,24 +166,104 @@ export function pan(camera: CameraState, dx: number, dy: number, size: ViewportS
 }
 
 /**
- * Zooms by `factor` (> 1 zooms in) toward `focus`, keeping the focus point at the same place on screen.
- * Without a focus the view center is used.
+ * How far the camera may go while zooming. Zooming in stops before the camera reaches what it is zooming at, and
+ * zooming out stops while the model is still on screen, so the wheel can't strand the view in empty space.
+ * In parallel projection the same two numbers bound the half-height of the view.
  */
-export function zoom(camera: CameraState, factor: number, focus: Vec3 | null): CameraState {
+export interface ZoomLimits {
+  readonly minDistance: number;
+  readonly maxDistance: number;
+}
+
+/** Closest approach as a fraction of the model's radius; also keeps the model clear of the near plane. */
+const MIN_ZOOM_RADIUS_FRACTION = 1 / 2000;
+/** Farthest distance as a multiple of the model's radius; beyond this the model is a speck in an empty view. */
+const MAX_ZOOM_RADIUS_MULTIPLE = 100;
+/** With nothing under the cursor, zoom toward the model while the cursor ray passes within this many radii. */
+const EMPTY_SPACE_FOCUS_RADII = 2;
+
+/** The bounding sphere radius of `bounds`, never smaller than {@link MIN_FIT_RADIUS}. */
+function boundsRadius(bounds: Aabb): number {
+  if (aabbIsEmpty(bounds)) return MIN_FIT_RADIUS;
+  const diagonal = vec3(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY, bounds.maxZ - bounds.minZ);
+  return Math.max(length(diagonal) / 2, MIN_FIT_RADIUS);
+}
+
+/** Zoom limits for a model of this size. */
+export function zoomLimits(bounds: Aabb): ZoomLimits {
+  const radius = boundsRadius(bounds);
+  return {
+    minDistance: Math.max(MIN_CAMERA_DISTANCE, radius * MIN_ZOOM_RADIUS_FRACTION),
+    maxDistance: radius * MAX_ZOOM_RADIUS_MULTIPLE,
+  };
+}
+
+/**
+ * Where to zoom when nothing is under the cursor. While the cursor ray passes near the model, the pivot is the point
+ * of the ray closest to it, which magnifies around the cursor without throwing the camera past the model; pointing
+ * further away zooms toward the view center instead.
+ */
+export function zoomFocusInEmptySpace(
+  camera: CameraState,
+  screen: ScreenPoint,
+  size: ViewportSize,
+  bounds: Aabb,
+): Vec3 {
+  if (aabbIsEmpty(bounds)) return camera.target;
+  const center = vec3(
+    (bounds.minX + bounds.maxX) / 2,
+    (bounds.minY + bounds.maxY) / 2,
+    (bounds.minZ + bounds.maxZ) / 2,
+  );
+  const ray = rayThroughScreen(camera, screen, size);
+  const along = dot(sub(center, ray.origin), ray.direction);
+  if (along <= 0) return camera.target;
+  const closest = add(ray.origin, scale(ray.direction, along));
+  const missBy = length(sub(closest, center));
+  return missBy <= boundsRadius(bounds) * EMPTY_SPACE_FOCUS_RADII ? closest : camera.target;
+}
+
+/**
+ * Zooms by `factor` (> 1 zooms in) toward `focus`, keeping the focus point at the same place on screen.
+ * Without a focus the view center is used. `limits` bounds how close and how far the zoom may reach.
+ */
+export function zoom(
+  camera: CameraState,
+  factor: number,
+  focus: Vec3 | null,
+  limits: ZoomLimits | null = null,
+): CameraState {
   if (!(factor > 0) || !Number.isFinite(factor)) return camera;
   const pivot = focus ?? camera.target;
   if (camera.projection === 'parallel') {
-    const orthoHalfHeight = Math.max(camera.orthoHalfHeight / factor, MIN_ORTHO_HALF_HEIGHT);
+    const smallest = Math.max(limits?.minDistance ?? MIN_ORTHO_HALF_HEIGHT, MIN_ORTHO_HALF_HEIGHT);
+    const largest = Math.max(limits?.maxDistance ?? Infinity, smallest);
+    const orthoHalfHeight = clamp(camera.orthoHalfHeight / factor, smallest, largest);
+    if (orthoHalfHeight === camera.orthoHalfHeight) return camera;
     const { forward } = cameraBasis(camera);
     const toPivot = sub(pivot, camera.target);
     const lateral = sub(toPivot, scale(forward, dot(toPivot, forward)));
     const shift = scale(lateral, 1 - orthoHalfHeight / camera.orthoHalfHeight);
     return { ...camera, orthoHalfHeight, eye: add(camera.eye, shift), target: add(camera.target, shift) };
   }
-  // A homothety centered on the pivot keeps the pivot's screen position and the view direction.
-  const eye = add(pivot, scale(sub(camera.eye, pivot), 1 / factor));
-  const target = add(pivot, scale(sub(camera.target, pivot), 1 / factor));
+  // A homothety scales both the eye-to-target and the eye-to-pivot distance by 1 / factor, so the factor itself is
+  // clamped: the closer of the two may not pass `minDistance`, and the target may not go beyond `maxDistance`.
+  const applied = limits ? clampZoomFactor(camera, factor, pivot, limits) : factor;
+  if (applied === 1) return camera;
+  const eye = add(pivot, scale(sub(camera.eye, pivot), 1 / applied));
+  const target = add(pivot, scale(sub(camera.target, pivot), 1 / applied));
   return length(sub(eye, target)) < MIN_CAMERA_DISTANCE ? camera : { ...camera, eye, target };
+}
+
+function clampZoomFactor(camera: CameraState, factor: number, pivot: Vec3, limits: ZoomLimits): number {
+  const toTarget = length(sub(camera.eye, camera.target));
+  const toPivot = length(sub(camera.eye, pivot));
+  const nearest = Math.min(toTarget, toPivot > 0 ? toPivot : Infinity);
+  // Zooming in is capped where the nearest of the two reaches minDistance, zooming out where the target reaches
+  // maxDistance. A view already past a limit simply stays where it is instead of being pulled back.
+  const zoomingIn = Math.max(nearest / limits.minDistance, 1);
+  const zoomingOut = Math.min(toTarget / limits.maxDistance, 1);
+  return clamp(factor, zoomingOut, zoomingIn);
 }
 
 /** Keeps the view direction and frames `bounds` in the viewport. */
