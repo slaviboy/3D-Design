@@ -28,6 +28,7 @@ npm run dev          # http://localhost:5173
 | `npm run format` / `format:check` | Prettier |
 | `npm test` / `test:watch` / `coverage` | Vitest |
 | `npm run build` | Typecheck, then a production build into `dist/` |
+| `npm run build:local` | Build with relative asset paths and no service worker, so `dist/index.html` runs from a subfolder (VS Code Live Server, a USB stick, any static host) and always shows the files just built |
 | `npm run preview` | Serves `dist/` on port 4173 |
 | `npm run e2e` | Production build in `e2e` mode (adds the `window.__planar` test hook) plus Playwright |
 | `npm run bench` | Kernel benchmarks (`*.bench.ts`), results in `bench/results/` |

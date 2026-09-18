@@ -31,6 +31,7 @@ import { PreferencesDialog } from '../dialogs/PreferencesDialog';
 import { StartScreen, startScreenEnabled } from '../dialogs/StartScreen';
 import { Text3DDialog } from '../dialogs/Text3DDialog';
 import { useEditor, useEditorState } from '../EditorContext';
+import { FileDrop } from './FileDrop';
 import { MenuBar } from '../menubar/MenuBar';
 import { CommandPalette } from '../palette/CommandPalette';
 import { ComponentsPanel } from '../panels/ComponentsPanel';
@@ -200,6 +201,7 @@ export function App({
 
   return (
     <div className="app">
+      <FileDrop />
       <MenuBar />
       <Toolbar />
       <div className="workspace">

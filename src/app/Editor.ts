@@ -92,6 +92,8 @@ import { CommandRegistry } from './commands/CommandRegistry';
 import { registerDefaultCommands } from './commands/defaultCommands';
 import { listComponentDefinitions, type ComponentRow } from './components/componentList';
 import { definitionBounds } from './geometry/bounds';
+import { classifyDroppedFiles, describeDroppableFiles } from './io/dropFiles';
+import type { InputFile } from '../io/import/fileSet';
 import { PANEL_IDS, type PanelId, DEFAULT_OPEN_PANELS } from './panels/panels';
 import { hasLockedInstance, isInstanceLocked, LOCKED_MESSAGE } from './selection/locking';
 import { nextTagColor, uniqueTagName } from './tags/tags';
@@ -2226,6 +2228,29 @@ export class Editor {
     const loaded = this.loadFile(file.bytes, file.name, file.handle);
     if (loaded) this.#recentFiles?.record(file.name, file.handle, readPlanarThumbnail(file.bytes));
     return loaded;
+  }
+
+  /**
+   * Opens files dropped on the window: a .planar project replaces the open model, asking about unsaved changes
+   * first, and model files are imported into it through the usual import options.
+   */
+  async openDroppedFiles(files: readonly InputFile[]): Promise<void> {
+    if (files.length === 0) return;
+    const dropped = classifyDroppedFiles(files);
+    if (dropped.kind === 'unsupported') {
+      const names = dropped.names.join(', ');
+      this.notify('error', `Could not open ${names}. Drop ${describeDroppableFiles()}.`);
+      return;
+    }
+    if (dropped.kind === 'import') {
+      this.exchange.chooseImportOptions(dropped.files);
+      return;
+    }
+    if (!(await this.#confirmDiscard())) return;
+    const { file } = dropped;
+    if (this.loadFile(file.bytes, file.name)) {
+      this.#recentFiles?.record(file.name, null, readPlanarThumbnail(file.bytes));
+    }
   }
 
   async newDocument(): Promise<void> {

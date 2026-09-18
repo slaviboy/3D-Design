@@ -63,6 +63,9 @@ export default defineConfig(({ mode }) => ({
     react(),
     contentSecurityPolicy(),
     VitePWA({
+      // `static` builds (npm run build:local) leave the service worker out, so a folder served by a static server
+      // always shows the files that were just built instead of a cached earlier version.
+      disable: mode === 'static',
       registerType: 'autoUpdate',
       injectRegister: false,
       includeAssets: ['favicon.svg'],

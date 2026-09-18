@@ -708,6 +708,41 @@
   color: var(--muted-fg);
 }
 
+/* Shown while files are dragged over the window; never takes the drop itself, the window does. */
+.file-drop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgb(0 0 0 / 28%);
+  pointer-events: none;
+}
+
+.file-drop__card {
+  max-width: 460px;
+  padding: 20px 24px;
+  border: 2px dashed var(--accent);
+  border-radius: 10px;
+  background: var(--surface-bg);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 22%);
+  text-align: center;
+}
+
+.file-drop__title {
+  margin: 0 0 6px;
+  font-size: calc(1.15 * var(--ui-font-size));
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.file-drop__detail {
+  margin: 0;
+  color: var(--muted-fg);
+}
+
 .notifications {
   position: fixed;
   right: 16px;
