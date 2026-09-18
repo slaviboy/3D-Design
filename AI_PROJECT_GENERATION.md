@@ -443,6 +443,15 @@ never interacts: two groups may overlap, touch or intersect freely.
   avoids visible coplanar overlaps (z-fighting) between groups.
 - **Glass.** Use one face with the same glass material on both sides, placed in the middle of the wall opening.
   Define it once as a component and place it in every window with a transform.
+- **Never leave two visible surfaces in the same plane, or a few centimeters apart.** Both flicker as the camera
+  moves, because the depth buffer can't separate them. The usual mistakes, all of which show up in generated models:
+  - a floor sunk into the slab below it, or two paving slabs whose tops are both at z = 0;
+  - two floor patches that overlap in plan at the same height — give each room its own area, or let one tuck under;
+  - **walls whose tops are level with the top of the slab above them.** A wall carries the slab, so it stops at the
+    slab's underside: a 3.02 m wall under a slab spanning 3.02–3.20, not a 3.20 m wall.
+
+  Stack solids flush, so the touching faces are hidden between them (a floor's underside exactly on a slab's top),
+  or leave a real gap of a few tenths of a meter. Faces that touch flush are fine; faces that nearly touch are not.
 - **Sloped surfaces.** Do not round the coordinates of a sloped quad to millimeters, because that breaks planarity.
   Compute its points from one exact origin and exact axis vectors (as `prism()` does). Rounding is only safe on
   axis-aligned faces.

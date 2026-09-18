@@ -19,6 +19,7 @@ import * as THREE from 'three';
 import { DEFAULT_SHADOW_SETTINGS, type ShadowSettings } from '../../kernel/model/types';
 import { localDateTimeToUtc, parseLocalDateTime, solarPosition, sunDirection } from '../../kernel/sun/solar';
 import { AMBIENT_LIGHT_INTENSITY, SUN_DIRECTION, SUN_LIGHT_INTENSITY } from '../palette';
+import { groundReceiverDepth } from './groundReceiver';
 
 /** Shadow map resolution in texels per side. */
 const SHADOW_MAP_SIZE = 2048;
@@ -67,7 +68,14 @@ export class ShadowController {
     this.sun.position.set(SUN_DIRECTION.x, SUN_DIRECTION.y, SUN_DIRECTION.z);
     this.sun.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
     this.sun.shadow.bias = SHADOW_BIAS;
-    const material = new THREE.ShadowMaterial({ opacity: GROUND_SHADOW_OPACITY, depthWrite: false });
+    // The polygon offset keeps the receiver behind anything drawn in the same plane, whatever the view scale.
+    const material = new THREE.ShadowMaterial({
+      opacity: GROUND_SHADOW_OPACITY,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits: 1,
+    });
     this.ground = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
     this.ground.receiveShadow = true;
     this.ground.visible = false;
@@ -111,7 +119,7 @@ export class ShadowController {
     this.sun.shadow.normalBias = ((2 * radius) / SHADOW_MAP_SIZE) * NORMAL_BIAS_TEXELS;
 
     this.ground.visible = casting && settings.onGround;
-    this.ground.position.set(sphere.center.x, sphere.center.y, 0);
+    this.ground.position.set(sphere.center.x, sphere.center.y, -groundReceiverDepth(radius));
     this.ground.scale.setScalar(radius * GROUND_EXTENT_RADII);
     this.ground.material.opacity = GROUND_SHADOW_OPACITY * settings.light;
 
