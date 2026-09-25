@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { formatChord } from '../../app/shortcuts/shortcuts';
 import { useEditor, useEditorState } from '../EditorContext';
 
@@ -220,6 +220,10 @@ export const MENUS: readonly MenuDefinition[] = [
   { label: 'Help', items: ['help.commandPalette', 'help.keyboardShortcuts', 'help.touchGestures'] },
 ];
 
+/** Menus keep this far from the window's edges, and are at least this wide (see `.menu` in app.css). */
+const MENU_MARGIN_PX = 4;
+const MENU_MIN_WIDTH_PX = 240;
+
 /** WAI-ARIA menubar: arrow keys move between menus and items, Enter or Space runs, Escape closes. */
 export function MenuBar() {
   const editor = useEditor();
@@ -231,10 +235,13 @@ export function MenuBar() {
   const undoLabel = useEditorState((state) => state.undoLabel);
   const redoLabel = useEditorState((state) => state.redoLabel);
   const [openIndex, setOpenIndex] = useState<number | null>(null);
+  // Placed from its trigger in window coordinates, so a menubar that scrolls sideways (on a phone) can't clip it.
+  const [placement, setPlacement] = useState<{ left: number; top: number; maxHeight: number } | null>(null);
   const triggerRefs = useRef<(HTMLButtonElement | null)[]>([]);
   // Indexed like the menu's items, so separators leave holes: read entries with `?.`.
   const itemRefs = useRef<(HTMLButtonElement | null | undefined)[]>([]);
   const barRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (openIndex === null) return;
@@ -242,15 +249,47 @@ export function MenuBar() {
     const close = (event: PointerEvent) => {
       if (!barRef.current?.contains(event.target as Node)) setOpenIndex(null);
     };
+    // A menu is placed for its trigger where it was: resizing the window or scrolling the bar would leave it behind.
+    const closeOnMove = () => {
+      setOpenIndex(null);
+    };
+    const bar = barRef.current;
     document.addEventListener('pointerdown', close);
+    window.addEventListener('resize', closeOnMove);
+    bar?.addEventListener('scroll', closeOnMove);
     return () => {
       document.removeEventListener('pointerdown', close);
+      window.removeEventListener('resize', closeOnMove);
+      bar?.removeEventListener('scroll', closeOnMove);
     };
   }, [openIndex]);
 
+  // A menu wider than the room right of its trigger moves left, before it is drawn.
+  useLayoutEffect(() => {
+    const width = menuRef.current?.offsetWidth;
+    if (placement === null || width === undefined) return;
+    const left = Math.max(
+      MENU_MARGIN_PX,
+      Math.min(placement.left, window.innerWidth - width - MENU_MARGIN_PX),
+    );
+    if (left !== placement.left) setPlacement({ ...placement, left });
+  }, [placement, openIndex]);
+
   const openMenu = (index: number) => {
     itemRefs.current = [];
-    setOpenIndex((index + MENUS.length) % MENUS.length);
+    const next = (index + MENUS.length) % MENUS.length;
+    const rect = triggerRefs.current[next]?.getBoundingClientRect();
+    if (rect) {
+      setPlacement({
+        left: Math.max(
+          MENU_MARGIN_PX,
+          Math.min(rect.left, window.innerWidth - MENU_MIN_WIDTH_PX - MENU_MARGIN_PX),
+        ),
+        top: rect.bottom,
+        maxHeight: Math.max(window.innerHeight - rect.bottom - MENU_MARGIN_PX, MENU_MIN_WIDTH_PX / 2),
+      });
+    }
+    setOpenIndex(next);
   };
 
   const closeMenu = (focusTrigger: boolean) => {
@@ -315,7 +354,9 @@ export function MenuBar() {
               if (openIndex === menuIndex) closeMenu(false);
               else openMenu(menuIndex);
             }}
-            onPointerEnter={() => {
+            onPointerEnter={(event) => {
+              // A tap sends pointerenter before its click; switching menus then would make the click close it.
+              if (event.pointerType !== 'mouse') return;
               if (openIndex !== null && openIndex !== menuIndex) openMenu(menuIndex);
             }}
             onKeyDown={(event) => {
@@ -332,7 +373,14 @@ export function MenuBar() {
             {menu.label}
           </button>
           {openIndex === menuIndex && (
-            <div className="menu" role="menu" aria-label={menu.label} onKeyDown={onMenuKeyDown}>
+            <div
+              className="menu"
+              role="menu"
+              aria-label={menu.label}
+              ref={menuRef}
+              style={placement ?? undefined}
+              onKeyDown={onMenuKeyDown}
+            >
               {menu.items.map((commandId, itemIndex) => {
                 if (commandId === null)
                   return (

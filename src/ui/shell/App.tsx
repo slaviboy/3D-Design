@@ -16,6 +16,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState, type ComponentType } from 'react';
+import { useStore } from 'zustand';
 import { panelOrder } from '../../app/dock/dockLayout';
 import type { PanelId } from '../../app/panels/panels';
 import type { PreferencesTab } from '../../app/preferences/preferences';
@@ -32,6 +33,7 @@ import { PreferencesDialog } from '../dialogs/PreferencesDialog';
 import { StartScreen, startScreenEnabled } from '../dialogs/StartScreen';
 import { Text3DDialog } from '../dialogs/Text3DDialog';
 import { useEditor, useEditorState } from '../EditorContext';
+import { dockDrawerStore, NARROW_LAYOUT_QUERY, setDockDrawerOpen, useMediaQuery } from './dockDrawer';
 import { FileDrop } from './FileDrop';
 import { MenuBar } from '../menubar/MenuBar';
 import { CommandPalette } from '../palette/CommandPalette';
@@ -96,6 +98,9 @@ export function App({
   const preferences = useEditorState((state) => state.preferences);
   const openPanels = useEditorState((state) => state.openPanels);
   const dockLayout = useEditorState((state) => state.dockLayout);
+  const panelFocusRequest = useEditorState((state) => state.panelFocusRequest);
+  const narrow = useMediaQuery(NARROW_LAYOUT_QUERY);
+  const drawerOpen = useStore(dockDrawerStore, (state) => state.open);
   const inputRequest = useEditorState((state) => state.inputRequest);
   const exchangeRequest = useEditorState((state) => state.exchangeRequest);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -110,6 +115,32 @@ export function App({
   useEffect(() => {
     document.title = `${isDirty ? '• ' : ''}${documentName} — Planar`;
   }, [documentName, isDirty]);
+
+  // On a narrow screen the panels are a drawer over the view: showing or asking for a panel opens it, and Escape
+  // closes it. Only changes count, so turning a tablet doesn't open it.
+  const seenPanels = useRef({ open: openPanels, focus: panelFocusRequest?.serial });
+  useEffect(() => {
+    const seen = seenPanels.current;
+    const shown =
+      openPanels.some((id) => !seen.open.includes(id)) || panelFocusRequest?.serial !== seen.focus;
+    seenPanels.current = { open: openPanels, focus: panelFocusRequest?.serial };
+    if (shown && narrow) setDockDrawerOpen(true);
+  }, [openPanels, panelFocusRequest, narrow]);
+
+  useEffect(() => {
+    if (!narrow) setDockDrawerOpen(false);
+  }, [narrow]);
+
+  useEffect(() => {
+    if (!narrow || !drawerOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setDockDrawerOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [narrow, drawerOpen]);
 
   useEffect(() => {
     if (paletteRequests > 0) setPaletteOpen(true);
@@ -221,7 +252,23 @@ export function App({
             <ViewportHost />
           </ErrorBoundary>
         </main>
-        <aside className="dock" aria-label="Panels">
+        {narrow && drawerOpen && (
+          <div
+            className="dock-scrim"
+            aria-hidden="true"
+            onPointerDown={() => {
+              setDockDrawerOpen(false);
+            }}
+          />
+        )}
+        <aside
+          className="dock"
+          id="dock"
+          aria-label="Panels"
+          data-open={drawerOpen ? 'true' : undefined}
+          // A closed drawer is off screen: nothing in it can be reached.
+          inert={narrow && !drawerOpen}
+        >
           {/* Rendered in dock order, so keyboard focus moves through panels in the order the user arranged. */}
           {panelOrder(dockLayout.order)
             .filter((id) => openPanels.includes(id))

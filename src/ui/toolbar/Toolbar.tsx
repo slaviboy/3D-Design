@@ -27,6 +27,7 @@ import {
 import type { Editor } from '../../app/Editor';
 import { useEditor, useEditorState } from '../EditorContext';
 import { Icon } from '../icons/Icon';
+import { dockDrawerStore, setDockDrawerOpen } from '../shell/dockDrawer';
 import { arrangeStore, startArranging, stopArranging } from './arrangeStore';
 
 /** Holding a button this long starts arranging the toolbars. */
@@ -289,10 +290,28 @@ function Bar({ bar }: { readonly bar: ToolbarId }) {
   const arranging = useStore(arrangeStore, (state) => state.arranging);
   const target = useStore(arrangeStore, (state) => state.target);
   const instructionsId = useId();
+  const barRef = useRef<HTMLDivElement>(null);
   const items = layout[bar];
   const main = bar === 'main';
+
+  // A finger that held a button until arranging began now drags it, so the bar mustn't scroll under it. The browser
+  // settled touch-action when the finger went down; only cancelling the touch's moves stops the scroll. The listener
+  // has to be there before a touch starts, or its moves can't be cancelled.
+  useEffect(() => {
+    const element = barRef.current;
+    if (!element) return;
+    const onTouchMove = (event: TouchEvent) => {
+      if (event.cancelable && arrangeStore.getState().dragging !== null) event.preventDefault();
+    };
+    element.addEventListener('touchmove', onTouchMove, { passive: false });
+    return () => {
+      element.removeEventListener('touchmove', onTouchMove);
+    };
+  }, []);
+
   return (
     <div
+      ref={barRef}
       className={main ? 'toolbar' : 'tool-palette'}
       role="toolbar"
       aria-label={main ? 'Main toolbar' : 'Tools'}
@@ -322,6 +341,7 @@ export function Toolbar() {
   const arranging = useStore(arrangeStore, (state) => state.arranging);
   const announcement = useStore(arrangeStore, (state) => state.announcement);
   const requests = useEditorState((state) => state.arrangeToolbarRequests);
+  const drawerOpen = useStore(dockDrawerStore, (state) => state.open);
 
   // Window > Arrange Toolbars starts arranging from the keyboard, on the first tool.
   useEffect(() => {
@@ -354,6 +374,18 @@ export function Toolbar() {
           Done
         </button>
       )}
+      {/* Shown only on narrow screens, where the panels are a drawer over the view. */}
+      <button
+        type="button"
+        className="button dock-toggle"
+        aria-controls="dock"
+        aria-expanded={drawerOpen}
+        onClick={() => {
+          setDockDrawerOpen(!drawerOpen);
+        }}
+      >
+        Panels
+      </button>
       <div className="visually-hidden" role="status" aria-live="polite">
         {announcement}
       </div>

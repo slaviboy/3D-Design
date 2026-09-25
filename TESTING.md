@@ -101,10 +101,18 @@ CI runs a fast profile. `FUZZ_RUNS=10000 npm test` runs the deep profile before 
   protocol (`Input.dispatchTouchEvent` in a `hasTouch` context), which covers the browser's own gesture handling and
   checks that the page itself never zooms (`visualViewport.scale` stays 1). The gesture state machine and its
   timings are unit-tested with the `FakeClock` from `tests/app/fixtures.ts`, which only moves when told to.
+  `toolbars.spec.ts` drags a toolbar button with the finger that held it, through the same protocol, in a window
+  short enough that the tool palette scrolls.
+- **Phones and tablets** (`tests/e2e/responsive.spec.ts`). At 390 × 844 and 768 × 1024: no sideways page scroll, a
+  usable view width, the panel drawer (button, Window menu, Escape, a tap beside it), and every menu within the
+  window. With an emulated touch screen (Chromium): finger-sized buttons, and a measurements box at 16 px with
+  `enterkeyhint`. A lost WebGL context (`WEBGL_lose_context`) is restored after the view changed, and the picture must
+  match a normal render of that view, so an empty or stale canvas fails.
 - **On real devices** (not automated): on an iPad with Safari and an Android tablet with Chrome, over the local
   network (`npm run dev -- --host`), check pinch zoom, two- and three-finger taps and holds, a long press and the
   selection box after it, drawing a line by pressing, dragging and lifting, and that the system's own multi-finger
-  gestures don't get in the way. With a pen that has a side button (S Pen, Wacom, Surface Pen), check the button.
+  gestures don't get in the way. Also rearrange a toolbar button by holding and dragging it, open the panel drawer,
+  and switch to another app and back (the view must be drawn again). With a pen that has a side button (S Pen, Wacom, Surface Pen), check the button.
 
 ### Accessibility tests
 

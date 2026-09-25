@@ -101,6 +101,27 @@ body,
   margin: 0;
 }
 
+/*
+ * The page itself never zooms or bounces: pinches and double taps belong to the 3D view (which handles its own
+ * touches), and panels still scroll.
+ */
+html,
+body {
+  overscroll-behavior: none;
+  touch-action: pan-x pan-y;
+}
+
+/* Fingers need bigger targets than a mouse. */
+@media (pointer: coarse) {
+  :root {
+    --menubar-height: calc(36px * var(--ui-scale));
+    --toolbar-height: calc(48px * var(--ui-scale));
+    --statusbar-height: calc(34px * var(--ui-scale));
+    --tool-palette-width: calc(52px * var(--ui-scale));
+    --tool-button-size: calc(40px * var(--ui-scale));
+  }
+}
+
 button {
   cursor: default;
 }

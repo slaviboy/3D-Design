@@ -20,6 +20,8 @@ import { useEditorState } from '../EditorContext';
 
 /** How long the pointer rests on a button before its name appears. Short enough to feel immediate. */
 export const TOOLTIP_DELAY_MS = 250;
+/** Focus this soon after a touch comes from the tap, not from the keyboard, and shows no tooltip. */
+const TOUCH_FOCUS_QUIET_MS = 1000;
 /** Gap between the button and the tooltip, and the smallest margin to the window edge. */
 const GAP_PX = 8;
 const EDGE_PX = 8;
@@ -104,12 +106,20 @@ export function TooltipLayer() {
     };
     const targetOf = (event: Event): HTMLElement | null =>
       event.target instanceof Element ? event.target.closest<HTMLElement>('[data-tooltip]') : null;
+    // A finger has no hover: a tap would otherwise leave a tooltip standing, from the pointer or the focus it gives.
+    let lastTouch = Number.NEGATIVE_INFINITY;
     const onOver = (event: PointerEvent): void => {
+      if (event.pointerType === 'touch') {
+        lastTouch = event.timeStamp;
+        hide();
+        return;
+      }
       const element = targetOf(event);
       if (element) show(element);
       else hide();
     };
     const onFocus = (event: FocusEvent): void => {
+      if (event.timeStamp - lastTouch < TOUCH_FOCUS_QUIET_MS) return;
       const element = targetOf(event);
       if (element) show(element);
     };

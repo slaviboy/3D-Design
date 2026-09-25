@@ -13,6 +13,10 @@ and its dirty sets, and never stores model data of its own.
   perspective (a shifted-lens camera that keeps verticals vertical).
 - **Precision.** Vertex positions are stored relative to each chunk's origin, which avoids float32 jitter far from the
   model origin.
+- **Lost GPU context.** Tablets take the WebGL context away when the app goes to the background, and browsers can lose
+  it after a GPU reset. three.js keeps the loss from being final and rebuilds its state when the context comes back;
+  `Viewport` then marks the lighting dirty and draws a frame, since nothing else would ask for one. While the context
+  is lost, frames are skipped and the camera and model keep changing as usual.
 
 ## Faces
 

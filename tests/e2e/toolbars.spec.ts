@@ -106,3 +106,46 @@ test('picks a button up with a tap and puts it down with the next one', async ({
   await palette.getByRole('button', { name: 'Select', exact: true }).click();
   expect((await labels(palette)).slice(0, 2)).toEqual(['Push/Pull', 'Select']);
 });
+
+test.describe('on a touch screen', () => {
+  // Short enough that the tool palette scrolls, as on a tablet held sideways.
+  test.use({ hasTouch: true, viewport: { width: 1024, height: 600 } });
+
+  test('drags a held button with the same finger instead of scrolling the bar', async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== 'chromium', 'touches are driven through the Chromium DevTools protocol');
+    await openApp(page);
+    const palette = page.getByRole('toolbar', { name: 'Tools' });
+    const main = page.getByRole('toolbar', { name: 'Main toolbar' });
+    expect(await palette.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+    const line = await palette.getByRole('button', { name: 'Line', exact: true }).boundingBox();
+    const undo = await main.getByRole('button', { name: 'Undo' }).boundingBox();
+    if (!line || !undo) throw new Error('toolbars not laid out');
+    const client = await page.context().newCDPSession(page);
+    const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', x = 0, y = 0) =>
+      client.send('Input.dispatchTouchEvent', {
+        type,
+        touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }],
+      });
+
+    const from = { x: line.x + line.width / 2, y: line.y + line.height / 2 };
+    const to = { x: undo.x + 4, y: undo.y + undo.height / 2 };
+    await touch('touchStart', from.x, from.y);
+    await page.waitForTimeout(700);
+    await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
+    for (let step = 1; step <= 10; step++) {
+      await touch(
+        'touchMove',
+        from.x + ((to.x - from.x) * step) / 10,
+        from.y + ((to.y - from.y) * step) / 10,
+      );
+    }
+    await touch('touchEnd');
+
+    const order = await labels(main);
+    expect(order.indexOf('Line')).toBe(order.indexOf('Undo') - 1);
+    expect(await palette.evaluate((element) => element.scrollTop)).toBe(0);
+  });
+});

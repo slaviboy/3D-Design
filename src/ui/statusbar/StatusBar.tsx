@@ -33,6 +33,8 @@ function MeasurementsBox() {
         aria-label={`Measurements: ${label}`}
         spellCheck={false}
         autoComplete="off"
+        // The on-screen keyboard's return key enters the value.
+        enterKeyHint="done"
         value={text !== '' ? text : value}
         onFocus={(event) => {
           event.currentTarget.select();

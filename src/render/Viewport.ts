@@ -102,6 +102,9 @@ export class Viewport {
     this.#renderer.setClearColor(VIEW_COLORS.background);
     this.#renderer.localClippingEnabled = true;
     this.canvas = this.#renderer.domElement;
+    // Tablets drop the GPU context when the app goes to the background. three.js prevents the loss from being final
+    // and rebuilds its own state when the context returns; the view then has to be drawn again, lights included.
+    this.canvas.addEventListener('webglcontextrestored', this.#onContextRestored);
     this.canvas.style.display = 'block';
     this.canvas.style.width = '100%';
     this.canvas.style.height = '100%';
@@ -147,7 +150,13 @@ export class Viewport {
     return this.canvas.toDataURL('image/png');
   }
 
+  readonly #onContextRestored = (): void => {
+    this.#lightingDirty = true;
+    this.requestRender();
+  };
+
   dispose(): void {
+    this.canvas.removeEventListener('webglcontextrestored', this.#onContextRestored);
     if (this.#frame !== null) cancelAnimationFrame(this.#frame);
     this.#unsubscribe();
     this.#resizeObserver.disconnect();

@@ -195,7 +195,9 @@ Folders are created when they get their first real module. Placeholder files are
   order, collapsed panels) and its defensive parser. `Editor.dockLayout` owns the state and saves it through a
   `DockLayoutStorage` (localStorage `planar.dock` in the browser). The UI sets `--dock-width` from it, clamped between
   200px and half the window, and lays panels out with CSS `order`, so panels added later keep working without
-  changes to the dock markup.
+  changes to the dock markup. At 700 px wide or less the same dock becomes a drawer over the view. Whether it is open
+  is UI state (`ui/shell/dockDrawer.ts`), not editor state; the shell opens it when a panel is shown or asked for, and
+  makes it `inert` while it is closed.
 - **Context menus.** `app/contextMenu/contextMenu.ts` decides which commands apply to a selection
   (`contextMenuGroups`) and turns them into entries with only registered, enabled commands (`buildContextMenu`).
   `ui/contextmenu` renders one WAI-ARIA menu at a time for the viewport, Outliner rows and Shift+F10, and runs
