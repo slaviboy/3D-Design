@@ -113,7 +113,12 @@ import { parseText3DForm, type Text3DForm } from './text3d/text3dForm';
 import { pick, type PickHit, type PickRequest } from './picking/picker';
 import { boundsCacheFor, sessionClipping } from './tools/toolSupport';
 import { createSampleModel, SAMPLE_MODEL_NAME } from './sample/sampleModel';
-import { DEFAULT_PREFERENCES, type Preferences, type PreferenceStorage } from './preferences/preferences';
+import {
+  DEFAULT_PREFERENCES,
+  type Preferences,
+  type PreferencesTab,
+  type PreferenceStorage,
+} from './preferences/preferences';
 import { templateById } from './templates/templates';
 import { boxSelect, type BoxSelectMode, type ScreenRect } from './selection/boxSelect';
 import { WorkerBooleanEngine, type BooleanEngine } from './solids/booleanClient';
@@ -257,12 +262,12 @@ export interface RecentFilesRecorder {
   record(name: string, handle: unknown, thumbnail: Uint8Array | null): void;
 }
 
-export type UiRequest = 'command-palette' | 'backups' | 'start' | 'shortcuts' | 'preferences' | 'text3d';
+export type UiRequest = 'command-palette' | 'backups' | 'start' | 'preferences' | 'text3d';
 
 export type EditorEvent =
   | { readonly kind: 'notifications' }
   | { readonly kind: 'measurement' }
-  | { readonly kind: 'ui-request'; readonly request: UiRequest }
+  | { readonly kind: 'ui-request'; readonly request: UiRequest; readonly tab?: PreferencesTab }
   | { readonly kind: 'panels' }
   | { readonly kind: 'input-request' }
   | { readonly kind: 'shortcuts' }
@@ -545,8 +550,9 @@ export class Editor {
     this.#emit({ kind: 'notifications' });
   }
 
-  requestUi(request: UiRequest): void {
-    this.#emit({ kind: 'ui-request', request });
+  /** Asks the interface to show a dialog; for Preferences, `tab` picks the page it opens on. */
+  requestUi(request: UiRequest, options: { readonly tab?: PreferencesTab } = {}): void {
+    this.#emit({ kind: 'ui-request', request, ...(options.tab ? { tab: options.tab } : {}) });
   }
 
   /** The pending question for the user, if any. */

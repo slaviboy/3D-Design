@@ -1142,16 +1142,51 @@
   margin-right: auto;
 }
 
+/* The Keyboard page of Preferences fills the page area: the filter and buttons stay, the list scrolls. */
 .shortcuts-dialog {
-  width: min(720px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
 }
 
 .shortcuts-dialog__list {
-  max-height: min(60vh, 520px);
+  flex: 1;
+  min-height: 0;
   margin: 8px 0;
-  padding: 0;
   overflow: auto;
+}
+
+.shortcuts-dialog__category {
+  position: sticky;
+  top: 0;
+  margin: 0;
+  padding: 6px 2px 4px;
+  background: var(--surface-bg);
+  color: var(--muted-fg);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.shortcuts-dialog__rows {
+  margin: 0 0 8px;
+  padding: 0;
   list-style: none;
+}
+
+.shortcuts-dialog__changed {
+  margin-left: 6px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--pressed-bg);
+  font-size: 11px;
+}
+
+.shortcuts-dialog__footer {
+  display: flex;
+  gap: 8px;
 }
 
 .shortcuts-dialog__row {
@@ -1204,8 +1239,50 @@
 
 /* Preferences ---------------------------------------------------------------------------------------- */
 
-.preferences {
-  width: min(520px, calc(100vw - 32px));
+/* A fixed height, so switching pages doesn't make the dialog jump; the page area scrolls. */
+.dialog.preferences {
+  display: flex;
+  flex-direction: column;
+  width: min(720px, calc(100vw - 32px));
+  height: min(640px, 85vh);
+  max-height: 85vh;
+  overflow: hidden;
+}
+
+.preferences__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: 0 0 12px;
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+.preferences__tab {
+  margin-bottom: -1px;
+  padding: 6px 14px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 4px 4px 0 0;
+  background: transparent;
+  color: var(--muted-fg);
+  font: inherit;
+}
+
+.preferences__tab:hover {
+  color: var(--fg);
+}
+
+.preferences__tab[aria-selected='true'] {
+  border-color: var(--chrome-border);
+  background: var(--surface-bg);
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.preferences__panel {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 
 .preferences__group {
@@ -1552,7 +1629,8 @@
   width: 100%;
 }
 
-.exchange-dialog .dialog__footer {
+.exchange-dialog .dialog__footer,
+.preferences .dialog__footer {
   gap: 8px;
 }
 

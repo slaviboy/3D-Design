@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useRef, useState, type ComponentType } from 'react';
 import { panelOrder } from '../../app/dock/dockLayout';
 import type { PanelId } from '../../app/panels/panels';
+import type { PreferencesTab } from '../../app/preferences/preferences';
 import { isEditableTarget } from '../../app/shortcuts/shortcuts';
 import type { RecentFilesRepository } from '../../io/idb/recent';
 import type { RecoveryRepository, RecoverySnapshot } from '../../io/idb/recovery';
@@ -27,7 +28,6 @@ import { TooltipLayer } from '../common/Tooltip';
 import { ExchangeDialog } from '../dialogs/ExchangeDialogs';
 import { InputDialog } from '../dialogs/InputDialog';
 import { RecoveryDialog } from '../dialogs/RecoveryDialog';
-import { KeyboardShortcutsDialog } from '../dialogs/KeyboardShortcutsDialog';
 import { PreferencesDialog } from '../dialogs/PreferencesDialog';
 import { StartScreen, startScreenEnabled } from '../dialogs/StartScreen';
 import { Text3DDialog } from '../dialogs/Text3DDialog';
@@ -90,8 +90,8 @@ export function App({
   const paletteRequests = useEditorState((state) => state.commandPaletteRequests);
   const backupRequests = useEditorState((state) => state.backupRequests);
   const startScreenRequests = useEditorState((state) => state.startScreenRequests);
-  const shortcutsDialogRequests = useEditorState((state) => state.shortcutsDialogRequests);
   const preferencesDialogRequests = useEditorState((state) => state.preferencesDialogRequests);
+  const preferencesDialogTab = useEditorState((state) => state.preferencesDialogTab);
   const text3dDialogRequests = useEditorState((state) => state.text3dDialogRequests);
   const preferences = useEditorState((state) => state.preferences);
   const openPanels = useEditorState((state) => state.openPanels);
@@ -102,8 +102,8 @@ export function App({
   const [recoverable, setRecoverable] = useState<readonly RecoverySnapshot[]>([]);
   const [backups, setBackups] = useState<readonly RecoverySnapshot[] | null>(null);
   const [startOpen, setStartOpen] = useState(false);
-  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const [preferencesTab, setPreferencesTab] = useState<PreferencesTab>('general');
   const [text3dOpen, setText3dOpen] = useState(false);
   const startupChecked = useRef(false);
 
@@ -120,12 +120,10 @@ export function App({
   }, [startScreenRequests]);
 
   useEffect(() => {
-    if (shortcutsDialogRequests > 0) setShortcutsOpen(true);
-  }, [shortcutsDialogRequests]);
-
-  useEffect(() => {
-    if (preferencesDialogRequests > 0) setPreferencesOpen(true);
-  }, [preferencesDialogRequests]);
+    if (preferencesDialogRequests === 0) return;
+    setPreferencesTab(preferencesDialogTab);
+    setPreferencesOpen(true);
+  }, [preferencesDialogRequests, preferencesDialogTab]);
 
   useEffect(() => {
     if (text3dDialogRequests > 0) setText3dOpen(true);
@@ -261,6 +259,8 @@ export function App({
           }}
         >
           <PreferencesDialog
+            tab={preferencesTab}
+            onTabChange={setPreferencesTab}
             onClose={() => {
               setPreferencesOpen(false);
             }}
@@ -278,21 +278,6 @@ export function App({
           <Text3DDialog
             onClose={() => {
               setText3dOpen(false);
-            }}
-          />
-        </ErrorBoundary>
-      )}
-      {shortcutsOpen && (
-        <ErrorBoundary
-          area="Keyboard Shortcuts"
-          layout="overlay"
-          onDismiss={() => {
-            setShortcutsOpen(false);
-          }}
-        >
-          <KeyboardShortcutsDialog
-            onClose={() => {
-              setShortcutsOpen(false);
             }}
           />
         </ErrorBoundary>

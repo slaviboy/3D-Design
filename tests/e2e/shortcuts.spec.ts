@@ -64,9 +64,11 @@ test('changes shortcuts from the command palette, resolves conflicts, and keeps 
   await page.keyboard.press('l');
   await expect(viewport).toHaveAttribute('data-active-tool', 'tool.rectangle');
 
+  // Help > Keyboard Shortcuts… opens Preferences on its Keyboard page.
   await page.getByRole('menuitem', { name: 'Help', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Keyboard Shortcuts…' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Keyboard Shortcuts' });
+  const dialog = page.getByRole('dialog', { name: 'Preferences' });
+  await expect(dialog.getByRole('tab', { name: 'Keyboard' })).toHaveAttribute('aria-selected', 'true');
   await dialog.getByRole('button', { name: 'Reset All' }).click();
   await expect.poll(() => chordsFor(page, 'tool.line')).toEqual(['L']);
   await expect.poll(() => chordsFor(page, 'tool.polygon')).toEqual([]);

@@ -55,13 +55,18 @@ test('dialogs have no serious accessibility violations', async ({ page }) => {
 
   await page.getByRole('menuitem', { name: 'Window', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Preferences…' }).click();
-  await expect(page.getByRole('dialog', { name: 'Preferences' })).toBeVisible();
-  expect(await seriousViolations(page)).toEqual([]);
+  const preferences = page.getByRole('dialog', { name: 'Preferences' });
+  await expect(preferences).toBeVisible();
+  for (const tab of ['General', 'Navigation', 'Keyboard']) {
+    await preferences.getByRole('tab', { name: tab }).click();
+    await expect(preferences.getByRole('tab', { name: tab })).toHaveAttribute('aria-selected', 'true');
+    expect(await seriousViolations(page), tab).toEqual([]);
+  }
   await page.keyboard.press('Escape');
 
   await page.getByRole('menuitem', { name: 'Help', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Keyboard Shortcuts…' }).click();
-  await expect(page.getByRole('dialog', { name: 'Keyboard Shortcuts' })).toBeVisible();
+  await expect(preferences.getByRole('tab', { name: 'Keyboard' })).toHaveAttribute('aria-selected', 'true');
   expect(await seriousViolations(page)).toEqual([]);
 });
 

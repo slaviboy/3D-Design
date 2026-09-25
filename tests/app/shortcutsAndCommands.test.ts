@@ -21,6 +21,7 @@ import { registerDefaultCommands } from '../../src/app/commands/defaultCommands'
 import { matchScore, searchCommands } from '../../src/app/commands/search';
 import type { Editor } from '../../src/app/Editor';
 import {
+  chordFromSearchText,
   chordFromKeyboard,
   formatChord,
   isEditableTarget,
@@ -93,6 +94,19 @@ describe('keyboard chords', () => {
     const registry = new CommandRegistry<Editor>();
     registerDefaultCommands(registry);
     expect(ShortcutMap.fromCommands(registry.all()).conflicts()).toEqual([]);
+  });
+});
+
+describe('shortcut search', () => {
+  it('reads the keys a search names, on either platform', () => {
+    expect(chordFromSearchText('ctrl+z', 'other')).toBe('Mod+Z');
+    expect(chordFromSearchText('ctrl+z', 'mac')).toBe('Ctrl+Z');
+    expect(chordFromSearchText('cmd shift z', 'mac')).toBe('Mod+Shift+Z');
+    expect(chordFromSearchText('⇧⌘Z', 'mac')).toBe('Mod+Shift+Z');
+    expect(chordFromSearchText('Option+Up', 'mac')).toBe('Alt+ArrowUp');
+    expect(chordFromSearchText('l', 'other')).toBe('L');
+    expect(chordFromSearchText('push pull', 'other')).toBeNull();
+    expect(chordFromSearchText('  ', 'other')).toBeNull();
   });
 });
 

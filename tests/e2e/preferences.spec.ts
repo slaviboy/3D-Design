@@ -60,14 +60,34 @@ test('keeps keyboard focus inside Preferences, including its lists', async ({ pa
   const dialog = page.getByRole('dialog', { name: 'Preferences' });
   await expect(dialog).toBeVisible();
 
-  const theme = dialog.getByLabel('Theme');
+  // Focus starts on the page's tab; backwards from it wraps to the last control, and forwards from there back.
+  const general = dialog.getByRole('tab', { name: 'General' });
   const close = dialog.getByRole('button', { name: 'Close', exact: true });
-  await theme.focus();
-  // Backwards from the first control wraps to the last, and forwards from the last back to the first.
+  await expect(general).toBeFocused();
   await page.keyboard.press(`Shift+${tab}`);
   await expect(close).toBeFocused();
   await page.keyboard.press(tab);
-  await expect(theme).toBeFocused();
+  await expect(general).toBeFocused();
+  await page.keyboard.press(tab);
+  await expect(dialog.getByLabel('Theme')).toBeFocused();
   await page.keyboard.press(tab);
   await expect(dialog.getByLabel('Interface size')).toBeFocused();
+
+  // Arrow keys move between the pages.
+  await general.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(dialog.getByRole('tab', { name: 'Navigation' })).toBeFocused();
+  await expect(dialog.getByLabel('Invert mouse wheel zoom')).toBeVisible();
+  await page.keyboard.press('End');
+  await expect(dialog.getByRole('tab', { name: 'Keyboard' })).toHaveAttribute('aria-selected', 'true');
+  await expect(dialog.getByRole('button', { name: 'Reset All' })).toBeVisible();
+});
+
+test('finds a command on the Keyboard page by its keys', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('menuitem', { name: 'Help', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Keyboard Shortcuts…' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Preferences' });
+  await dialog.getByPlaceholder(/Filter by name or keys/).fill('shift+s');
+  await expect(dialog.getByRole('listitem').filter({ hasText: 'Search Commands…' }).first()).toBeVisible();
 });

@@ -470,8 +470,22 @@ export function registerDefaultCommands(registry: CommandRegistry<Editor>): void
       id: 'app.preferences',
       label: 'Preferences…',
       category: 'Window',
-      description: 'Theme, interface size, units, mouse wheel and autosave',
-      aliases: ['settings', 'options', 'units', 'dark mode', 'theme'],
+      description: 'Theme, interface size, units, navigation, autosave and keyboard shortcuts',
+      aliases: [
+        'settings',
+        'options',
+        'units',
+        'dark mode',
+        'theme',
+        'shortcuts',
+        'keys',
+        'keyboard',
+        'mouse',
+        'trackpad',
+        'gestures',
+        'touch',
+        'pen',
+      ],
       defaultShortcuts: ['Mod+,'],
       run: (editor) => {
         editor.requestUi('preferences');
@@ -481,10 +495,10 @@ export function registerDefaultCommands(registry: CommandRegistry<Editor>): void
       id: 'help.keyboardShortcuts',
       label: 'Keyboard Shortcuts…',
       category: 'Help',
-      description: 'See, change, reset, import and export keyboard shortcuts',
+      description: 'See, change, reset, import and export keyboard shortcuts (in Preferences)',
       aliases: ['keys', 'hotkeys', 'bindings', 'customize shortcuts'],
       run: (editor) => {
-        editor.requestUi('shortcuts');
+        editor.requestUi('preferences', { tab: 'keyboard' });
       },
     },
     {

@@ -15,23 +15,36 @@
  * limitations under the License.
  */
 
-import { useId, useState } from 'react';
+import { useId, useState, type KeyboardEvent } from 'react';
 import {
   AUTOSAVE_MINUTE_CHOICES,
+  defaultsFor,
   precisionChoices,
+  PREFERENCES_TABS,
   presetFor,
   UI_SCALES,
   UNIT_PRESETS,
+  type PreferencesTab,
   type ThemePreference,
 } from '../../app/preferences/preferences';
 import { Dialog } from '../common/Dialog';
 import { useEditor, useEditorState } from '../EditorContext';
+import { KeyboardShortcutsEditor } from './KeyboardShortcutsEditor';
 import { setStartScreenEnabled, startScreenEnabled } from './StartScreen';
 
 const CUSTOM_UNITS = 'custom';
 
-/** Settings kept on this device: appearance, units, navigation and files. Changes apply immediately. */
-export function PreferencesDialog({ onClose }: { readonly onClose: () => void }) {
+const TAB_LABELS: Readonly<Record<PreferencesTab, string>> = {
+  general: 'General',
+  navigation: 'Navigation',
+  keyboard: 'Keyboard',
+};
+
+/** The preferences each page's Restore Defaults puts back (the Keyboard page resets shortcuts itself). */
+const GENERAL_KEYS = ['theme', 'uiScale', 'toolTips', 'units', 'autosaveMinutes'] as const;
+const NAVIGATION_KEYS = ['invertWheelZoom'] as const;
+
+function GeneralPage() {
   const editor = useEditor();
   const preferences = useEditorState((state) => state.preferences);
   const [showStartScreen, setShowStartScreen] = useState(startScreenEnabled);
@@ -43,9 +56,7 @@ export function PreferencesDialog({ onClose }: { readonly onClose: () => void })
   const preset = presetFor(preferences.units);
 
   return (
-    <Dialog title="Preferences" onClose={onClose} className="preferences">
-      <h2 className="dialog__title">Preferences</h2>
-
+    <>
       <fieldset className="preferences__group">
         <legend>Appearance</legend>
         <div className="preferences__field">
@@ -129,20 +140,6 @@ export function PreferencesDialog({ onClose }: { readonly onClose: () => void })
       </fieldset>
 
       <fieldset className="preferences__group">
-        <legend>Navigation</legend>
-        <label className="preferences__check">
-          <input
-            type="checkbox"
-            checked={preferences.invertWheelZoom}
-            onChange={(event) => {
-              editor.updatePreferences({ invertWheelZoom: event.currentTarget.checked });
-            }}
-          />
-          Invert mouse wheel zoom
-        </label>
-      </fieldset>
-
-      <fieldset className="preferences__group">
         <legend>Files</legend>
         <div className="preferences__field">
           <label htmlFor={autosaveId}>Autosave</label>
@@ -172,18 +169,111 @@ export function PreferencesDialog({ onClose }: { readonly onClose: () => void })
           Show the start screen when Planar opens
         </label>
       </fieldset>
+    </>
+  );
+}
 
+function NavigationPage() {
+  const editor = useEditor();
+  const preferences = useEditorState((state) => state.preferences);
+  return (
+    <fieldset className="preferences__group">
+      <legend>Mouse</legend>
+      <label className="preferences__check">
+        <input
+          type="checkbox"
+          checked={preferences.invertWheelZoom}
+          onChange={(event) => {
+            editor.updatePreferences({ invertWheelZoom: event.currentTarget.checked });
+          }}
+        />
+        Invert mouse wheel zoom
+      </label>
+    </fieldset>
+  );
+}
+
+/**
+ * Settings kept on this device, on pages: General (appearance, units, files), Navigation and Keyboard (shortcuts).
+ * Changes apply immediately. Arrow keys move between the pages.
+ */
+export function PreferencesDialog({
+  tab,
+  onTabChange,
+  onClose,
+}: {
+  readonly tab: PreferencesTab;
+  readonly onTabChange: (tab: PreferencesTab) => void;
+  readonly onClose: () => void;
+}) {
+  const editor = useEditor();
+  const baseId = useId();
+  const tabId = (id: PreferencesTab) => `${baseId}-tab-${id}`;
+  const panelId = `${baseId}-panel`;
+
+  const onTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const last = PREFERENCES_TABS.length - 1;
+    const target =
+      event.key === 'ArrowRight'
+        ? (index + 1) % PREFERENCES_TABS.length
+        : event.key === 'ArrowLeft'
+          ? (index + last) % PREFERENCES_TABS.length
+          : event.key === 'Home'
+            ? 0
+            : event.key === 'End'
+              ? last
+              : null;
+    const next = target === null ? undefined : PREFERENCES_TABS[target];
+    if (!next) return;
+    event.preventDefault();
+    onTabChange(next);
+    document.getElementById(tabId(next))?.focus();
+  };
+
+  return (
+    <Dialog title="Preferences" onClose={onClose} className="preferences">
+      <h2 className="dialog__title">Preferences</h2>
+      <div className="preferences__tabs" role="tablist" aria-label="Preferences pages">
+        {PREFERENCES_TABS.map((id, index) => (
+          <button
+            key={id}
+            id={tabId(id)}
+            type="button"
+            role="tab"
+            className="preferences__tab"
+            aria-selected={id === tab}
+            aria-controls={panelId}
+            tabIndex={id === tab ? 0 : -1}
+            {...(id === tab ? { 'data-autofocus': '' } : {})}
+            onClick={() => {
+              onTabChange(id);
+            }}
+            onKeyDown={(event) => {
+              onTabKeyDown(event, index);
+            }}
+          >
+            {TAB_LABELS[id]}
+          </button>
+        ))}
+      </div>
+      <div className="preferences__panel" role="tabpanel" id={panelId} aria-labelledby={tabId(tab)}>
+        {tab === 'general' && <GeneralPage />}
+        {tab === 'navigation' && <NavigationPage />}
+        {tab === 'keyboard' && <KeyboardShortcutsEditor />}
+      </div>
       <p className="dialog__text">Preferences are saved on this device and apply to every model.</p>
       <div className="dialog__footer">
-        <button
-          type="button"
-          className="button"
-          onClick={() => {
-            editor.resetPreferences();
-          }}
-        >
-          Restore Defaults
-        </button>
+        {tab !== 'keyboard' && (
+          <button
+            type="button"
+            className="button"
+            onClick={() => {
+              editor.updatePreferences(defaultsFor(tab === 'general' ? GENERAL_KEYS : NAVIGATION_KEYS));
+            }}
+          >
+            Restore Defaults
+          </button>
+        )}
         <button type="button" className="button button--primary" onClick={onClose}>
           Close
         </button>

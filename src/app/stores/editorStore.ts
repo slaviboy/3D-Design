@@ -20,7 +20,7 @@ import type { AnnotationId, DefinitionId } from '../../kernel/ids';
 import type { AnnotationKind, SceneData, ShadowSettings } from '../../kernel/model/types';
 import type { EnvironmentSettings, FogSettings, NamedStyle, StyleSettings } from '../../kernel/model/types';
 import type { UnitSettings } from '../../kernel/units/units';
-import type { Preferences } from '../preferences/preferences';
+import type { Preferences, PreferencesTab } from '../preferences/preferences';
 import { collectAnnotationLabels, type AnnotationLabel } from '../annotations/annotationLabels';
 import { projectToScreen, type Projection } from '../camera/camera';
 import type { Editor, EditorNotification, InputRequest } from '../Editor';
@@ -82,12 +82,12 @@ export interface EditorViewState {
   readonly backupRequests: number;
   /** Increments each time something asks for the start screen. */
   readonly startScreenRequests: number;
-  /** Increments each time something asks for the Keyboard Shortcuts dialog. */
-  readonly shortcutsDialogRequests: number;
   /** Increments whenever shortcuts change, so labels that show them refresh. */
   readonly shortcutsVersion: number;
   /** Increments each time something asks for the Preferences dialog. */
   readonly preferencesDialogRequests: number;
+  /** The page the last request asked the Preferences dialog to show. */
+  readonly preferencesDialogTab: PreferencesTab;
   readonly preferences: Preferences;
   /** The tag new groups and components go on; null for untagged. */
   readonly activeTagId: number | null;
@@ -139,9 +139,9 @@ export function createEditorStore(editor: Editor): EditorStore {
   let commandPaletteRequests = 0;
   let backupRequests = 0;
   let startScreenRequests = 0;
-  let shortcutsDialogRequests = 0;
   let shortcutsVersion = 0;
   let preferencesDialogRequests = 0;
+  let preferencesDialogTab: PreferencesTab = 'general';
   let text3dDialogRequests = 0;
   let labelsUnits: UnitSettings | null = null;
   let labelsRevision = -1;
@@ -212,9 +212,9 @@ export function createEditorStore(editor: Editor): EditorStore {
       commandPaletteRequests,
       backupRequests,
       startScreenRequests,
-      shortcutsDialogRequests,
       shortcutsVersion,
       preferencesDialogRequests,
+      preferencesDialogTab,
       preferences: editor.preferences,
       activeTagId: session.activeTagId,
       editPath: session.editPath,
@@ -257,9 +257,10 @@ export function createEditorStore(editor: Editor): EditorStore {
       if (event.kind === 'ui-request') {
         if (event.request === 'backups') backupRequests++;
         else if (event.request === 'start') startScreenRequests++;
-        else if (event.request === 'shortcuts') shortcutsDialogRequests++;
-        else if (event.request === 'preferences') preferencesDialogRequests++;
-        else if (event.request === 'text3d') text3dDialogRequests++;
+        else if (event.request === 'preferences') {
+          preferencesDialogRequests++;
+          preferencesDialogTab = event.tab ?? 'general';
+        } else if (event.request === 'text3d') text3dDialogRequests++;
         else commandPaletteRequests++;
       }
       refresh();

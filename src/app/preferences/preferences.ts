@@ -63,6 +63,18 @@ export interface PreferenceStorage {
   save(preferences: Preferences): void;
 }
 
+/** The pages of the Preferences dialog. */
+export type PreferencesTab = 'general' | 'navigation' | 'keyboard';
+
+export const PREFERENCES_TABS: readonly PreferencesTab[] = ['general', 'navigation', 'keyboard'];
+
+/** The default values of some preferences, for restoring one page of the Preferences dialog. */
+export function defaultsFor<K extends keyof Preferences>(keys: readonly K[]): Pick<Preferences, K> {
+  const defaults: Partial<Preferences> = {};
+  for (const key of keys) Object.assign(defaults, { [key]: DEFAULT_PREFERENCES[key] });
+  return defaults as Pick<Preferences, K>;
+}
+
 export interface UnitPreset {
   readonly id: string;
   readonly label: string;

@@ -93,6 +93,43 @@ export function normalizeChord(text: string): string | null {
   return [...MODIFIER_ORDER.filter((modifier) => modifiers.has(modifier)), normalizedKey].join('+');
 }
 
+/** Words and glyphs for modifiers in a search, for each platform ("ctrl" is Command's role elsewhere). */
+const SEARCH_MODIFIERS: Readonly<Record<string, Readonly<Record<Platform, Modifier>>>> = {
+  cmd: { mac: 'Mod', other: 'Mod' },
+  command: { mac: 'Mod', other: 'Mod' },
+  '⌘': { mac: 'Mod', other: 'Mod' },
+  ctrl: { mac: 'Ctrl', other: 'Mod' },
+  control: { mac: 'Ctrl', other: 'Mod' },
+  '⌃': { mac: 'Ctrl', other: 'Ctrl' },
+  alt: { mac: 'Alt', other: 'Alt' },
+  option: { mac: 'Alt', other: 'Alt' },
+  opt: { mac: 'Alt', other: 'Alt' },
+  '⌥': { mac: 'Alt', other: 'Alt' },
+  shift: { mac: 'Shift', other: 'Shift' },
+  '⇧': { mac: 'Shift', other: 'Shift' },
+};
+
+/**
+ * The chord a search names, in canonical form: "ctrl+z", "cmd shift z", "⇧⌘Z" or a single key like "L". Null when
+ * the text doesn't read as keys.
+ */
+export function chordFromSearchText(text: string, platform: Platform): string | null {
+  // Glyphs stand alone, so "⇧⌘Z" reads like "shift cmd z".
+  const tokens = text
+    .replace(/[⌘⌃⌥⇧]/g, (glyph) => ` ${glyph} `)
+    .split(/[\s+]+/)
+    .filter((token) => token !== '');
+  const key = tokens.pop();
+  if (key === undefined) return null;
+  const modifiers: Modifier[] = [];
+  for (const token of tokens) {
+    const modifier = SEARCH_MODIFIERS[token.toLowerCase()]?.[platform];
+    if (!modifier) return null;
+    modifiers.push(modifier);
+  }
+  return normalizeChord([...modifiers, key].join('+'));
+}
+
 const MAC_GLYPHS: Readonly<Record<string, string>> = { Mod: '⌘', Ctrl: '⌃', Alt: '⌥', Shift: '⇧' };
 const KEY_LABELS: Readonly<Record<string, string>> = {
   ArrowLeft: '←',
