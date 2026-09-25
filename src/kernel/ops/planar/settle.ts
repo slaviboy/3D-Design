@@ -32,7 +32,7 @@ import { removeFace } from '../../model/mutations';
 import type { FaceAttributes } from '../../model/types';
 import { EPS_LEN } from '../../tolerance';
 import { faceRings } from './regions';
-import { resolvePlane } from './resolvePlane';
+import { NEVER_CREATE_FACES, resolvePlane } from './resolvePlane';
 
 /**
  * What happens when new geometry lands on a face that already covers the same region:
@@ -107,4 +107,34 @@ export function settleRegion(
     }
   }
   return covering;
+}
+
+/**
+ * Settles a face that was moved onto other faces in its plane, the way a push that reaches them should end
+ * (GEOMETRY.md, Push/Pull step 4): its outline is imprinted into them, and its region is settled with
+ * `cancel-opposite`. A face there facing the other way goes along with it, which leaves a hole (or joins two volumes);
+ * one facing the same way covers the region instead. Returns the faces covering the region afterwards, none where it
+ * cancelled.
+ */
+export function settleLandedFace(doc: ModelDocument, context: DefinitionId, faceId: FaceId): FaceId[] {
+  const store = doc.store(context);
+  const { attributes } = store.getFace(faceId);
+  const plane = store.getFacePlane(faceId);
+  const loops = store.faceLoops(faceId);
+  const [outer, ...inners] = loops.map((loop) => store.loopPoints(loop));
+  if (!outer) return [faceId];
+  const edges = loops.flatMap((loop) => loop.map((use) => use.edge));
+  removeFace(doc, context, faceId);
+  // Split the faces underneath along the outline first. Settling would split them itself, but it would then take the
+  // piece it split off for a face it made, and keep it.
+  resolvePlane(doc, context, plane, edges, { policy: NEVER_CREATE_FACES });
+  return settleRegion(doc, context, {
+    plane,
+    seeds: edges,
+    outer,
+    inners,
+    normal: plane.normal,
+    attributes,
+    rule: 'cancel-opposite',
+  });
 }

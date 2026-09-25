@@ -22,8 +22,9 @@ import { dot, sub, vec3, type Vec3 } from '../../../src/kernel/math/vec3';
 import type { ModelDocument } from '../../../src/kernel/model/ModelDocument';
 import { hashDocument } from '../../../src/kernel/model/snapshot';
 import { insertCurve } from '../../../src/kernel/ops/curves';
+import { removeFace } from '../../../src/kernel/model/mutations';
 import { faceArea } from '../../../src/kernel/ops/planar/regions';
-import { pushPull, pushPullMode } from '../../../src/kernel/ops/pushPull';
+import { pushPull, pushPullLimit, pushPullMode } from '../../../src/kernel/ops/pushPull';
 import {
   counts,
   draw,
@@ -32,6 +33,7 @@ import {
   orientationConsistent,
   polygon,
   rectangle,
+  segment,
 } from '../helpers';
 
 const root = (doc: ModelDocument) => doc.rootDefinitionId;
@@ -217,5 +219,134 @@ describe('behavior matrix B: Push/Pull', () => {
     const doc = newDocument();
     const top = unitBox(doc);
     expect(() => pushPull(doc, root(doc), top, Number.NaN)).toThrow(KernelError);
+  });
+
+  it('B15: pushing a pocket floor down to the bottom cuts a hole, as pushing through in one go does', () => {
+    const doc = newDocument();
+    const inner = boxWithInnerSquare(doc);
+    const floor = pushPull(doc, root(doc), inner, -0.3).face as FaceId;
+    expect(pushPullMode(doc.rootStore, floor)).toBe('stretch');
+    const pocket = hashDocument(doc);
+    const result = pushPull(doc, root(doc), floor, -0.7);
+    expect(result).toEqual({ mode: 'stretch', face: null });
+    expect(counts(doc)).toEqual({ v: 16, e: 24, f: 10 });
+    const bottom = onlyFace(doc, (normal, c) => normal.z < -0.5 && near(c.z, 0));
+    expect(doc.rootStore.getFace(bottom).inners).toHaveLength(1);
+    expect(facesWhere(doc, (normal, c) => normal.z > 0.5 && near(c.z, 0))).toEqual([]);
+    expect(orientationConsistent(doc.rootStore)).toBe(true);
+    expectValid(doc);
+    doc.undo();
+    expect(hashDocument(doc)).toBe(pocket);
+  });
+
+  it('B16: a push stops at the far side of the shape, and nothing goes past it', () => {
+    const doc = newDocument();
+    const inner = boxWithInnerSquare(doc);
+    const start = hashDocument(doc);
+    expect(() => pushPull(doc, root(doc), inner, -1.2)).toThrow(KernelError);
+    expect(hashDocument(doc)).toBe(start);
+
+    const floor = pushPull(doc, root(doc), inner, -0.3).face as FaceId;
+    const pocket = hashDocument(doc);
+    expect(() => pushPull(doc, root(doc), floor, -0.8)).toThrow(KernelError);
+    expect(hashDocument(doc)).toBe(pocket);
+    // A rounding error short of the far side still lands on it.
+    expect(pushPull(doc, root(doc), floor, -0.7 + 1e-9).face).toBeNull();
+    expectValid(doc);
+  });
+
+  it('B17: pulling a top up against the underside of a box above joins the two', () => {
+    const doc = newDocument();
+    const top = unitBox(doc);
+    draw(doc, rectangle(0, 0, 1, 1, 2));
+    const base = onlyFace(doc, (_normal, c) => near(c.z, 2));
+    pushPull(doc, root(doc), base, doc.rootStore.getFacePlane(base).normal.z > 0 ? 1 : -1);
+    expect(counts(doc)).toEqual({ v: 16, e: 24, f: 12 });
+
+    // The top's corners land on the upper box's corners, which only inserting new geometry can weld: the stretch is
+    // carried out as an extrusion, and the side walls' two parts heal back into one.
+    const result = pushPull(doc, root(doc), top, 1);
+    expect(result).toEqual({ mode: 'extrude', face: null });
+    expect(counts(doc)).toEqual({ v: 16, e: 24, f: 10 });
+    expect(facesWhere(doc, (normal, c) => Math.abs(normal.z) > 0.5 && near(c.z, 2))).toEqual([]);
+    expect(orientationConsistent(doc.rootStore)).toBe(true);
+    expectValid(doc);
+  });
+
+  /** A unit box with a slot marked at its front edge: x 0.25–0.75, y 0–0.5. Returns the slot's face. */
+  function boxWithSlot(doc: ModelDocument): FaceId {
+    unitBox(doc);
+    draw(doc, [
+      segment([0.25, 0, 1], [0.25, 0.5, 1]),
+      segment([0.25, 0.5, 1], [0.75, 0.5, 1]),
+      segment([0.75, 0.5, 1], [0.75, 0, 1]),
+    ]);
+    return onlyFace(doc, (normal, c) => normal.z > 0.5 && near(c.z, 1) && c.y < 0.3);
+  }
+
+  const facelessEdges = (doc: ModelDocument) =>
+    [...doc.rootStore.edges()].filter((edge) => edge.faces.length === 0);
+
+  it('B18: pushing a slot at the edge through leaves no lines across the opening', () => {
+    const doc = newDocument();
+    const slot = boxWithSlot(doc);
+    expect(pushPull(doc, root(doc), slot, -1)).toEqual({ mode: 'extrude', face: null });
+    expect(counts(doc)).toEqual({ v: 16, e: 24, f: 10 });
+    expect(facelessEdges(doc)).toEqual([]);
+    expectValid(doc);
+  });
+
+  it('B19: pushing a slot in, then its floor down to the bottom, cuts the same slot', () => {
+    const doc = newDocument();
+    const slot = boxWithSlot(doc);
+    pushPull(doc, root(doc), slot, -0.4);
+    const floor = onlyFace(doc, (normal, c) => normal.z > 0.5 && near(c.z, 0.6));
+    expect(pushPullMode(doc.rootStore, floor)).toBe('stretch');
+    // The floor's front edge would land on the bottom's front edge, so it goes as an extrusion.
+    expect(pushPull(doc, root(doc), floor, -0.6)).toEqual({ mode: 'extrude', face: null });
+    expect(facelessEdges(doc)).toEqual([]);
+    expect(facesWhere(doc, (normal, c) => Math.abs(normal.z) > 0.5 && near(c.z, 0.6))).toEqual([]);
+    // The walls healed across the old floor's outline, which leaves a vertex on each of their vertical edges.
+    expect(counts(doc)).toEqual({ v: 20, e: 28, f: 10 });
+    expect(orientationConsistent(doc.rootStore)).toBe(true);
+    expectValid(doc);
+  });
+
+  describe('the far side', () => {
+    it('is the depth a face can be pushed to before it meets the parallel face behind it', () => {
+      const doc = newDocument();
+      const top = unitBox(doc);
+      expect(pushPullLimit(doc.rootStore, top)).toBeCloseTo(1, 9);
+      const inner = boxWithInnerSquare(newDocument());
+      expect(inner).toBeDefined();
+
+      const pocketDoc = newDocument();
+      const square = boxWithInnerSquare(pocketDoc);
+      expect(pushPullLimit(pocketDoc.rootStore, square)).toBeCloseTo(1, 9);
+      const floor = pushPull(pocketDoc, root(pocketDoc), square, -0.3).face as FaceId;
+      expect(pushPullLimit(pocketDoc.rootStore, floor)).toBeCloseTo(0.7, 9);
+      // An outer wall beside the pocket reaches the pocket's wall first.
+      const wall = onlyFace(pocketDoc, (normal, c) => normal.x > 0.5 && near(c.x, 1));
+      expect(pushPullLimit(pocketDoc.rootStore, wall)).toBeCloseTo(0.25, 9);
+    });
+
+    it('is missing for a free-standing face and where nothing parallel lies behind', () => {
+      const flat = newDocument();
+      draw(flat, rectangle(0, 0, 1, 1, 1));
+      expect(
+        pushPullLimit(
+          flat.rootStore,
+          onlyFace(flat, () => true),
+        ),
+      ).toBeNull();
+
+      const open = newDocument();
+      const top = unitBox(open);
+      const bottom = onlyFace(open, (normal, c) => normal.z < -0.5 && near(c.z, 0));
+      open.transact('Open the bottom', () => {
+        removeFace(open, root(open), bottom);
+      });
+      expect(pushPullLimit(open.rootStore, top)).toBeNull();
+    });
   });
 });

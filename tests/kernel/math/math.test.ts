@@ -28,6 +28,7 @@ import {
   classifyPointInRing,
   interiorPoint,
   orient,
+  polygonsOverlap,
   signedArea,
   triangulatePolygon,
 } from '../../../src/kernel/math/geom2d';
@@ -234,6 +235,36 @@ describe('geom2d', () => {
         [],
       ),
     ).toBeNull();
+  });
+
+  it('tells polygons that share area from ones that only touch', () => {
+    const at = (dx: number, dy: number, size = 1) =>
+      square.map((p) => ({ x: p.x * size + dx, y: p.y * size + dy }));
+    const big = at(0, 0, 4);
+    expect(polygonsOverlap(big, [], at(1, 1), [])).toBe(true);
+    expect(polygonsOverlap(at(1, 1), [], big, [])).toBe(true);
+    expect(polygonsOverlap(at(0, 0), [], at(3, 3), [])).toBe(false);
+    // Crossing outlines, with no corner of either inside the other.
+    const tall = [
+      { x: 1, y: -1 },
+      { x: 2, y: -1 },
+      { x: 2, y: 5 },
+      { x: 1, y: 5 },
+    ];
+    const wide = [
+      { x: -1, y: 1 },
+      { x: 5, y: 1 },
+      { x: 5, y: 2 },
+      { x: -1, y: 2 },
+    ];
+    expect(polygonsOverlap(tall, [], wide, [])).toBe(true);
+    // Sharing an edge or a corner only.
+    expect(polygonsOverlap(at(0, 0), [], at(1, 0), [])).toBe(false);
+    expect(polygonsOverlap(at(0, 0), [], at(1, 1), [])).toBe(false);
+    // Inside a hole, and around a hole.
+    const hole = at(1, 1, 2);
+    expect(polygonsOverlap(big, [hole], at(1.5, 1.5), [])).toBe(false);
+    expect(polygonsOverlap(big, [hole], at(0.5, 0.5, 3), [])).toBe(true);
   });
 });
 

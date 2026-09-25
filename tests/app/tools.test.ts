@@ -16,6 +16,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { projectToScreen, type CameraState } from '../../src/app/camera/camera';
 import type { Editor } from '../../src/app/Editor';
 import {
   CIRCLE_TOOL_ID,
@@ -29,9 +30,10 @@ import {
   TAPE_MEASURE_TOOL_ID,
 } from '../../src/app/tools/Tool';
 import type { EdgeId } from '../../src/kernel/ids';
+import { AXIS_Z, vec3, type Vec3 } from '../../src/kernel/math/vec3';
 import { validateDocument } from '../../src/kernel/model/validate';
-import { counts, draw, rectangle } from '../kernel/helpers';
-import { click, createTestEditor, pointer, screenOf } from './fixtures';
+import { boxEdges, counts, draw, rectangle } from '../kernel/helpers';
+import { click, createTestEditor, pointer, screenOf, VIEW_SIZE } from './fixtures';
 
 const key = (value: string, modifiers: { shiftKey?: boolean } = {}) => ({
   key: value,
@@ -226,6 +228,91 @@ describe('Push/Pull tool', () => {
     clickAt(editor, 2, 2);
     expect(editor.handleKey(key('Escape'))).toBe(true);
     expect(counts(doc)).toEqual({ v: 4, e: 4, f: 1 });
+  });
+
+  describe('reaching the far side of a shape', () => {
+    // From the front, above: the back of a pocket's floor shows over its front wall, and points below the box appear
+    // below it, away from its edges.
+    const camera: CameraState = {
+      eye: vec3(0.5, -3, 3.5),
+      target: vec3(0.5, 0.5, 0.5),
+      up: AXIS_Z,
+      fovDegrees: 35,
+      projection: 'perspective',
+      orthoHalfHeight: 5,
+    };
+
+    const at = (point: Vec3) => {
+      const screen = projectToScreen(camera, point, VIEW_SIZE);
+      if (!screen) throw new Error('behind the camera');
+      return { x: screen.x, y: screen.y };
+    };
+
+    /** A unit box with a square marked on its top, and Push/Pull ready. */
+    function boxWithSquare(): Editor {
+      const editor = createTestEditor();
+      editor.session.setCamera(camera);
+      draw(editor.session.doc, boxEdges(0, 0, 0, 1, 1, 1));
+      draw(editor.session.doc, rectangle(0.25, 0.25, 0.75, 0.75, 1));
+      editor.activateTool(PUSH_PULL_TOOL_ID);
+      return editor;
+    }
+
+    /** Holes in each face lying on the ground. */
+    function bottomHoles(editor: Editor): number[] {
+      const store = editor.session.doc.rootStore;
+      return [...store.faces()]
+        .filter((face) => store.loopPoints(face.outer).every((p) => Math.abs(p.z) < 1e-9))
+        .map((face) => face.inners.length);
+    }
+
+    it('stops at the far side and cuts through there, when the pointer goes further', () => {
+      const editor = boxWithSquare();
+      const press = at(vec3(0.5, 0.5, 1));
+      click(editor, press.x, press.y);
+      // Where a point two metres below the box appears: three times as deep as the box.
+      const below = at(vec3(0.5, 0.5, -2));
+      editor.tools.pointerMove(pointer(below.x, below.y, { buttons: 0 }));
+      expect(editor.tools.measurement?.value).toBe('1000mm');
+      expect(editor.tools.statusHint).toMatch(/^Offset limited to 1000mm: this is the far side/);
+      expect(bottomHoles(editor)).toEqual([1]);
+      click(editor, below.x, below.y);
+      expect(bottomHoles(editor)).toEqual([1]);
+      expect(counts(editor.session.doc)).toEqual({ v: 16, e: 24, f: 10 });
+      expectValidModel(editor);
+    });
+
+    it('cuts through from the floor of a pocket too, instead of leaving two bottoms', () => {
+      const editor = boxWithSquare();
+      const press = at(vec3(0.5, 0.5, 1));
+      click(editor, press.x, press.y);
+      const shallow = at(vec3(0.5, 0.5, 0.9));
+      editor.tools.pointerMove(pointer(shallow.x, shallow.y, { buttons: 0 }));
+      type(editor, '300mm');
+      expect(extent(editor, 'z').max).toBeCloseTo(1);
+
+      const floor = at(vec3(0.5, 0.7, 0.7));
+      click(editor, floor.x, floor.y);
+      const below = at(vec3(0.5, 0.7, -2));
+      editor.tools.pointerMove(pointer(below.x, below.y, { buttons: 0 }));
+      expect(editor.tools.measurement?.value).toBe('700mm');
+      click(editor, below.x, below.y);
+      expect(bottomHoles(editor)).toEqual([1]);
+      expectValidModel(editor);
+    });
+
+    it('refuses a typed depth past the far side, and says how deep it can go', () => {
+      const editor = boxWithSquare();
+      const press = at(vec3(0.5, 0.5, 1));
+      click(editor, press.x, press.y);
+      const shallow = at(vec3(0.5, 0.5, 0.9));
+      editor.tools.pointerMove(pointer(shallow.x, shallow.y, { buttons: 0 }));
+      type(editor, '2m');
+      expect(editor.notifications.at(-1)?.message).toMatch(
+        /^Push\/Pull stops at the face on the other side, .+ away$/,
+      );
+      expect(bottomHoles(editor)).toEqual([0]);
+    });
   });
 });
 

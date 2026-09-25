@@ -173,11 +173,21 @@ and other non-face entities.
 
 Push/Pull applies to a planar face F. Let `n` be F's normal and `d` the signed distance.
 
+0. **The far side.** Pushing into F's back side (`d < 0`) stops at the far side of the shape: the nearest face behind F
+   that is parallel to it, faces the other way and overlaps it (`pushPullLimit`; free-standing faces have none).
+   Going further is refused, as the reference's "offset is limited"; a distance within `EPS_LEN` of the far side lands
+   exactly on it, where the push cuts through (step 4). The Push/Pull tool stops the pointer there and says so, and
+   refuses typed distances past it.
 1. **Choose the mode.** A vertex u of F is *movable* if every face at u other than F contains the direction `n` (that
    is, is perpendicular to F) and is not coplanar with F.
    - **Stretch:** used when Ctrl is not held, every loop vertex is movable, and F has at least one neighbor face.
    - **Extrude:** used in every other case.
-2. **Stretch.** Move all of F's vertices by `d·n`. If a neighbor face would collapse, run the imprint step.
+2. **Stretch.** Move all of F's vertices by `d·n`. A neighbor face that would collapse refuses the push.
+   - If F would come down on other geometry (a corner on a vertex or an edge, an edge on or across an edge), a stretch
+     can't weld or split what it meets. It is carried out as an extrusion from where F is (step 3), and the edges of
+     F's old outline that now only separate two coplanar faces facing the same way are healed away.
+   - If F lands inside another face in its plane, it is settled like the cap (step 4): facing the other way, both go
+     and leave a hole; facing the same way, the other face covers the region.
 3. **Extrude.**
    - Create offset vertices and an offset face F′ that copies F's attributes.
    - Create one side quad per loop edge, with its winding chosen by the sign of `d`.
@@ -186,16 +196,18 @@ Push/Pull applies to a planar face F. Let `n` be F's normal and `d` the signed d
      - **Ctrl held:** F is kept.
      - **F has no neighbors:** F is kept, flipped, as the base of a closed shell.
      - **F has neighbors (the "frame remains" case):** F is removed and F′ takes over its id.
-4. **Imprint (on commit only).** For F′ and each side face, find existing faces in the same plane whose bounding boxes
-   overlap. Imprint the boundaries in both directions with insertSegments (`autoFace` off). Then compare coincident
-   regions:
+4. **Imprint.** For F′ and each side face, find existing faces in the same plane whose bounding boxes overlap.
+   Imprint the boundaries in both directions with insertSegments (`autoFace` off). Then compare coincident regions
+   (`settleRegion`, or `settleLandedFace` for a face that was moved there):
    - **Opposite normals:** remove both regions. This is the through-cut, leaving a hole.
    - **Same normals:** heal the two regions into one.
-5. **Clean up.** Remove edges that this operation created and that are left with no faces. Then validate.
+5. **Clean up.** Remove the edges of F's outline and of the extrusion that are left bounding no face, so no lines stay
+   across an opening. Then validate.
 
 **Behavior during interaction**
 
-- **Preview.** The drag preview runs steps 1–3 in a speculative transaction and skips imprinting.
+- **Preview.** The drag preview runs the whole operation, imprinting included, in a speculative transaction, so the
+  preview is exactly what a click keeps (a hole shows as soon as the push reaches the far side).
 - **Snapping.** Inference snaps the distance to existing geometry, so flush positions are exact.
 - **Repeat.** Double-clicking reuses the last distance.
 

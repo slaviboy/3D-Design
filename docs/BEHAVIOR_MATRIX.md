@@ -61,6 +61,11 @@ tool is marked Done.
 | B12 | B1, then push/pull a side face by +0.5 | 8/12/6 | Stretch (neighbors perpendicular) |
 | B13 | Sloped neighbor: prism with a triangular cross-section, pull one rectangular face along its normal | +V ⚑ verify | Extrude mode (neighbors not perpendicular); new side faces |
 | B14 | Retype the distance `2` right after B1 | 8/12/6 | Single history entry; height 2; same face ids as the original operation |
+| B15 | B6, then push the pocket floor −0.7 (to the bottom) | 16/24/10 | The floor stretches onto the bottom and cancels with it: the same hole as B7, no second bottom |
+| B16 | B4, then push the inner face −1.2; or B6, then push the floor −0.8 | rejected | Past the far side of the shape ("offset limited"); the model is unchanged. A distance a rounding error short of the far side lands on it |
+| B17 | B1, and a unit box floating at z = 2 above it; pull the lower top +1 | 16/24/10 | The top's corners land on the upper box's, so the stretch goes as an extrusion; the faces cancel and the boxes join; the side walls heal into one face each |
+| B18 | B1 with a slot marked at its front edge (x 0.25–0.75, y 0–0.5); push the slot −1 | 16/24/10 | Cut through; no edges left bounding nothing across the opening |
+| B19 | B18's slot pushed −0.4, then its floor −0.6 | 20/28/10 | The floor would land on the bottom's edge, so it goes as an extrusion; same slot as B18, with a vertex left on each wall edge where the old floor was |
 
 ## C. Move / stretch / autofold
 

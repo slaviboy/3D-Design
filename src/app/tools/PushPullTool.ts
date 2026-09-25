@@ -18,7 +18,7 @@
 import type { FaceId } from '../../kernel/ids';
 import { dot, scale, sub, type Vec3 } from '../../kernel/math/vec3';
 import type { TransactionRecord } from '../../kernel/model/ModelDocument';
-import { pushPull } from '../../kernel/ops/pushPull';
+import { pushPull, pushPullLimit } from '../../kernel/ops/pushPull';
 import { EPS_LEN } from '../../kernel/tolerance';
 import type { MeasurementIntent } from '../../kernel/vcb/parseMeasurement';
 import { rayThroughScreen } from '../camera/camera';
@@ -60,8 +60,12 @@ interface Operation {
   readonly speculation: Speculation;
   /** The face's own outline, which the distance never snaps to. */
   readonly exclusion: InferenceExclusion;
+  /** How far the face can be pushed in (world units) before it reaches the far side of the shape, if it can. */
+  readonly limit: number | null;
   /** World distance along the normal. */
   distance: number;
+  /** The pointer is past the far side, and the push stops there. */
+  limited: boolean;
   /** The same distance in active-context units, as passed to the kernel. */
   localDistance: number;
   keepOriginal: boolean;
@@ -78,6 +82,8 @@ interface Finished {
   readonly worldDistance: number;
   readonly keepOriginal: boolean;
   readonly record: TransactionRecord | undefined;
+  /** The operation's {@link Operation.limit}, for typed values that replace it. */
+  readonly limit: number | null;
 }
 
 /**
@@ -137,14 +143,17 @@ export class PushPullTool implements Tool {
     const hit = editor.pickAt(input);
     const store = editor.session.doc.store(editor.session.activeContext);
     const plane = store.getFacePlane(face);
+    const normal = toWorldNormal(editor, plane.normal);
     this.#operation = {
       face,
       origin: hit?.point ?? editor.session.camera.target,
-      normal: toWorldNormal(editor, plane.normal),
+      normal,
       pressX: input.x,
       pressY: input.y,
       speculation: new Speculation(editor.session.doc),
       exclusion: exclusionForBoundary(store, { faces: [face] }),
+      limit: this.#limit(editor, face, normal),
+      limited: false,
       distance: 0,
       localDistance: 0,
       keepOriginal: toggleModifier(input, editor),
@@ -194,6 +203,7 @@ export class PushPullTool implements Tool {
         Math.abs(operation.distance) > EPS_LEN
           ? Math.sign(operation.distance)
           : this.#towardCamera(editor, operation.origin, operation.normal);
+      this.#refusePastFarSide(editor, operation.limit, sign * intent.value);
       this.#apply(editor, operation, sign * intent.value);
       if (operation.error !== null) throw new Error(operation.error);
       this.#commit(editor, operation);
@@ -202,8 +212,9 @@ export class PushPullTool implements Tool {
     const last = this.#last;
     const doc = editor.session.doc;
     if (!last || !canReplace(doc, last.record)) throw new Error('Click a face to push or pull first');
-    doc.rollbackLastTransaction();
     const worldDistance = Math.sign(last.worldDistance) * intent.value;
+    this.#refusePastFarSide(editor, last.limit, worldDistance);
+    doc.rollbackLastTransaction();
     const localDistance = this.#localDistance(editor, last.normal, worldDistance, last.face);
     try {
       pushPull(doc, editor.session.activeContext, last.face, localDistance, {
@@ -229,6 +240,9 @@ export class PushPullTool implements Tool {
   statusHint(editor: Editor): string {
     const operation = this.#operation;
     if (operation?.error) return operation.error;
+    if (operation?.limited) {
+      return `Offset limited to ${formatDistance(editor, Math.abs(operation.distance))}: this is the far side. Click to cut through.`;
+    }
     return operation
       ? `Move to set the distance, then click, or type a distance. ${toggleModifierName(editor)} keeps the starting face.`
       : 'Click a face to push or pull it. Double-click a face to repeat the last distance.';
@@ -239,8 +253,21 @@ export class PushPullTool implements Tool {
     return hit?.ref.kind === 'face' ? (hit.ref.id as FaceId) : null;
   }
 
+  /** A typed push deeper than the shape: say how far it can go, rather than stopping short of what was asked. */
+  #refusePastFarSide(editor: Editor, limit: number | null, worldDistance: number): void {
+    if (limit !== null && -worldDistance > limit + EPS_LEN) {
+      throw new Error(`Push/Pull stops at the face on the other side, ${formatDistance(editor, limit)} away`);
+    }
+  }
+
   #towardCamera(editor: Editor, point: Vec3, normal: Vec3): number {
     return dot(normal, sub(editor.session.camera.eye, point)) >= 0 ? 1 : -1;
+  }
+
+  /** {@link pushPullLimit} in world units: the group or component being edited may scale distances along the normal. */
+  #limit(editor: Editor, face: FaceId, worldNormal: Vec3): number | null {
+    const local = pushPullLimit(editor.session.doc.store(editor.session.activeContext), face);
+    return local === null ? null : local / this.#localDistance(editor, worldNormal, 1, face);
   }
 
   #localDistance(editor: Editor, worldNormal: Vec3, worldDistance: number, face: FaceId): number {
@@ -248,7 +275,11 @@ export class PushPullTool implements Tool {
     return dot(toLocalDirection(editor, scale(worldNormal, worldDistance)), localNormal);
   }
 
-  #apply(editor: Editor, operation: Operation, worldDistance: number): void {
+  #apply(editor: Editor, operation: Operation, requested: number): void {
+    // At or past the far side, the face stays there, where it cuts through.
+    const { limit } = operation;
+    operation.limited = limit !== null && -requested >= limit - EPS_LEN;
+    const worldDistance = limit !== null && operation.limited ? -limit : requested;
     operation.distance = worldDistance;
     operation.error = null;
     const { session } = editor;
@@ -289,6 +320,7 @@ export class PushPullTool implements Tool {
       worldDistance: operation.distance,
       keepOriginal: operation.keepOriginal,
       record,
+      limit: operation.limit,
     };
   }
 
@@ -298,17 +330,21 @@ export class PushPullTool implements Tool {
     if (!last || face === null) return;
     const { session } = editor;
     const plane = session.doc.store(session.activeContext).getFacePlane(face);
+    const normal = toWorldNormal(editor, plane.normal);
+    // Measured before the push changes the face.
+    const limit = this.#limit(editor, face, normal);
     try {
       pushPull(session.doc, session.activeContext, face, last.localDistance, {
         createNewStartFace: last.keepOriginal,
       });
       this.#last = {
         face,
-        normal: toWorldNormal(editor, plane.normal),
+        normal,
         localDistance: last.localDistance,
         worldDistance: last.worldDistance,
         keepOriginal: last.keepOriginal,
         record: session.doc.lastTransaction,
+        limit,
       };
     } catch (error) {
       editor.notify('error', errorMessage(error));

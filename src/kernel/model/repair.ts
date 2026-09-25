@@ -16,6 +16,10 @@
  */
 
 import type { ValidationProblem } from '../errors';
+import type { DefinitionId, FaceId } from '../ids';
+import { dot } from '../math/vec3';
+import { faceArea } from '../ops/planar/regions';
+import { settleLandedFace } from '../ops/planar/settle';
 import { err, ok, type Result } from '../result';
 import type { Change } from './changes';
 import type { DocumentOptions, ModelDocument } from './ModelDocument';
@@ -74,7 +78,9 @@ const SETTINGS_KEYS: ReadonlyMap<
  * - entities that can't be built (a face whose edges are missing, an edge whose vertex is missing, an instance of a
  *   missing definition) are left out, along with anything that depends on them;
  * - entities the validator reports as invalid are left out, invalid drawing axes and shadow settings return to their
- *   defaults, and only the first active section plane of a context stays active.
+ *   defaults, and only the first active section plane of a context stays active;
+ * - two faces in one plane facing opposite ways, left by a Push/Pull that reached the far side of a shape before it
+ *   learned to cut through there, are cut through as it now does.
  * Structural problems (unreadable fields, duplicate ids) and the {@link UNREPAIRABLE_PROBLEMS} still refuse the file.
  * The result always passes validation.
  */
@@ -121,12 +127,59 @@ export function restoreSnapshotWithRepair(
       }
     }
     if (!progressed) {
+      const cuts = cutThroughOpposingFaces(doc, report.problems);
+      const remaining = cuts.length > 0 ? validateDocument(doc) : report;
+      if (remaining.ok) {
+        const clearedStill = [...cleared].filter(([key]) => !removed.has(key)).map(([, text]) => text);
+        return ok({ doc, repairs: [...removed.values(), ...clearedStill, ...cuts] });
+      }
+      const left = remaining.problems.filter((problem) => keysToRemove(problem) === null);
       return err(
-        `Invalid document geometry that can't be repaired: ${describeProblems(unrepairable.length > 0 ? unrepairable : report.problems)}`,
+        `Invalid document geometry that can't be repaired: ${describeProblems(left.length > 0 ? left : remaining.problems)}`,
       );
     }
   }
   return err('The document has too many problems to repair');
+}
+
+function definitionHolding(doc: ModelDocument, faceId: FaceId): DefinitionId | null {
+  for (const definition of doc.definitions()) if (definition.store.face(faceId)) return definition.id;
+  return null;
+}
+
+/**
+ * Where two faces overlap in one plane facing opposite ways, a push reached the far side of the shape and left its
+ * face lying there. Cuts through as Push/Pull does now: the smaller face is settled onto the other. Faces overlapping
+ * the same way are left for the caller to refuse. Returns one line per cut, or none when the cuts failed.
+ */
+function cutThroughOpposingFaces(doc: ModelDocument, problems: readonly ValidationProblem[]): string[] {
+  const overlaps = problems.filter((problem) => problem.code === 'overlapping-faces');
+  if (overlaps.length === 0) return [];
+  const cuts: string[] = [];
+  try {
+    doc.transact('Repair', () => {
+      for (const { ids } of overlaps) {
+        const [a, b] = ids as readonly FaceId[];
+        if (a === undefined || b === undefined) continue;
+        const context = definitionHolding(doc, a);
+        if (context === null) continue;
+        const store = doc.store(context);
+        const first = store.face(a)?.plane;
+        const second = store.face(b)?.plane;
+        // Gone already (cut with an earlier pair), or facing the same way.
+        if (!first || !second || dot(first.normal, second.normal) >= 0) continue;
+        const [smaller, larger] = faceArea(store, a) <= faceArea(store, b) ? [a, b] : [b, a];
+        settleLandedFace(doc, context, smaller);
+        cuts.push(
+          `Cut a hole where face ${String(smaller)} lay on face ${String(larger)}, which faces the other way (a push that reached the far side)`,
+        );
+      }
+    });
+  } catch {
+    return [];
+  }
+  doc.clearHistory();
+  return cuts;
 }
 
 function buildLeniently(

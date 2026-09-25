@@ -132,6 +132,62 @@ export function triangulatePolygon(
   return earcut(coordinates, holeIndices.length > 0 ? holeIndices : undefined, 2);
 }
 
+/** Centroids of the triangles of a polygon with holes: points strictly inside it, spread over all of it. */
+function triangleCentroids(outer: readonly Point2[], holes: readonly (readonly Point2[])[]): Point2[] {
+  const all = [...outer, ...holes.flat()];
+  const indices = triangulatePolygon(outer, holes);
+  const centroids: Point2[] = [];
+  for (let i = 0; i + 2 < indices.length; i += 3) {
+    const a = all[indices[i] ?? -1];
+    const b = all[indices[i + 1] ?? -1];
+    const c = all[indices[i + 2] ?? -1];
+    if (a && b && c) centroids.push({ x: (a.x + b.x + c.x) / 3, y: (a.y + b.y + c.y) / 3 });
+  }
+  return centroids;
+}
+
+/** Whether segments `ab` and `cd` cross at a point inside both. Touching or overlapping along a line doesn't count. */
+function segmentsCrossProperly(a: Point2, b: Point2, c: Point2, d: Point2): boolean {
+  const c1 = orient(a, b, c);
+  const c2 = orient(a, b, d);
+  const c3 = orient(c, d, a);
+  const c4 = orient(c, d, b);
+  return ((c1 > 0 && c2 < 0) || (c1 < 0 && c2 > 0)) && ((c3 > 0 && c4 < 0) || (c3 < 0 && c4 > 0));
+}
+
+function ringSegments(ring: readonly Point2[]): [Point2, Point2][] {
+  const segments: [Point2, Point2][] = [];
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % ring.length];
+    if (a && b) segments.push([a, b]);
+  }
+  return segments;
+}
+
+/**
+ * Whether two polygons with holes share some area: their boundaries cross, or a corner or a triangle's centroid of
+ * one lies strictly inside the other. Polygons that only touch along their boundaries don't overlap.
+ */
+export function polygonsOverlap(
+  outerA: readonly Point2[],
+  holesA: readonly (readonly Point2[])[],
+  outerB: readonly Point2[],
+  holesB: readonly (readonly Point2[])[],
+): boolean {
+  const insideA = (p: Point2): boolean => classifyPointInPolygon(p, outerA, holesA) === 'inside';
+  const insideB = (p: Point2): boolean => classifyPointInPolygon(p, outerB, holesB) === 'inside';
+  const ringsA = [outerA, ...holesA];
+  const ringsB = [outerB, ...holesB];
+  if (ringsA.some((ring) => ring.some(insideB)) || ringsB.some((ring) => ring.some(insideA))) return true;
+  if (triangleCentroids(outerA, holesA).some(insideB)) return true;
+  if (triangleCentroids(outerB, holesB).some(insideA)) return true;
+  const segmentsB = ringsB.flatMap(ringSegments);
+  return ringsA
+    .flatMap(ringSegments)
+    .some(([a, b]) => segmentsB.some(([c, d]) => segmentsCrossProperly(a, b, c, d)));
+}
+
 /**
  * A point strictly inside a polygon with holes: the centroid of the largest triangle in its triangulation.
  * Returns `null` when the polygon has no area.
