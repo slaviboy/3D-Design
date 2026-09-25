@@ -206,6 +206,62 @@
   font-size: 12px;
 }
 
+.error-boundary {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 12px;
+}
+
+.error-boundary p {
+  margin: 0;
+}
+
+.error-boundary__actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* In a bar the message stays on one line, so the bar keeps its height. */
+.error-boundary--line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 8px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.error-boundary--line .error-boundary__detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Above dialogs and menus, so a failed overlay can still be closed. */
+.error-boundary--overlay {
+  position: fixed;
+  top: 12vh;
+  left: 50%;
+  z-index: 80;
+  width: min(420px, calc(100vw - 32px));
+  transform: translateX(-50%);
+  background: var(--surface-bg);
+  border: 1px solid var(--chrome-border);
+  box-shadow: 0 12px 36px rgb(0 0 0 / 25%);
+}
+
+.error-boundary--page {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  place-content: center;
+  justify-items: center;
+  background: var(--bg);
+  text-align: center;
+}
+
 .selection-rectangle {
   position: absolute;
   pointer-events: none;

@@ -20,9 +20,18 @@ import { createLogger } from '../../app/diagnostics/log';
 
 const uiLog = createLogger('ui');
 
+/**
+ * Where the message goes when the area fails: in its place (`block`), on one line for the bars (`line`), floating
+ * above the workspace for dialogs and layers (`overlay`), or across the whole window when nothing else is left (`page`).
+ */
+export type ErrorBoundaryLayout = 'block' | 'line' | 'overlay' | 'page';
+
 interface ErrorBoundaryProps {
   /** Short name of the area, used in the message ("the Entity Info panel"). */
   readonly area: string;
+  readonly layout?: ErrorBoundaryLayout;
+  /** Closes the failed area (a dialog, for example); offered next to Try Again when given. */
+  readonly onDismiss?: () => void;
   readonly children: ReactNode;
 }
 
@@ -45,19 +54,45 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   override render(): ReactNode {
     if (!this.state.error) return this.props.children;
+    const { area, layout = 'block', onDismiss } = this.props;
     return (
-      <div className="error-boundary" role="alert">
-        <p>Something went wrong in {this.props.area}.</p>
+      <div className={`error-boundary error-boundary--${layout}`} role="alert">
+        <p className="error-boundary__message">Something went wrong in {area}.</p>
         <p className="error-boundary__detail">{this.state.error.message}</p>
-        <button
-          type="button"
-          className="button"
-          onClick={() => {
-            this.setState({ error: null });
-          }}
-        >
-          Try again
-        </button>
+        <div className="error-boundary__actions">
+          <button
+            type="button"
+            className="button"
+            onClick={() => {
+              this.setState({ error: null });
+            }}
+          >
+            Try again
+          </button>
+          {onDismiss && (
+            <button
+              type="button"
+              className="button"
+              onClick={() => {
+                this.setState({ error: null });
+                onDismiss();
+              }}
+            >
+              Close
+            </button>
+          )}
+          {layout === 'page' && (
+            <button
+              type="button"
+              className="button button--primary"
+              onClick={() => {
+                window.location.reload();
+              }}
+            >
+              Reload
+            </button>
+          )}
+        </div>
       </div>
     );
   }

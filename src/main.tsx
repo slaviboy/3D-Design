@@ -35,6 +35,7 @@ import { createEditorStore } from './app/stores/editorStore';
 import { createBrowserFileAccess } from './io/fs/browserFileAccess';
 import { IndexedDbRecentFilesRepository, type RecentFilesRepository } from './io/idb/recent';
 import { IndexedDbRecoveryRepository, openPlanarDatabase } from './io/idb/recovery';
+import { ErrorBoundary } from './ui/common/ErrorBoundary';
 import { EditorProvider } from './ui/EditorContext';
 import { App, type RecoveryOptions } from './ui/shell/App';
 import './ui/shell/base.css';
@@ -185,7 +186,10 @@ async function start(): Promise<void> {
   createRoot(container).render(
     <StrictMode>
       <EditorProvider editor={editor} store={store}>
-        <App {...(recovery ? { recovery } : {})} {...(recent ? { recent } : {})} />
+        {/* Last line of defence: a rendering error anywhere else still leaves a way to reload, never a blank page. */}
+        <ErrorBoundary area="Planar" layout="page">
+          <App {...(recovery ? { recovery } : {})} {...(recent ? { recent } : {})} />
+        </ErrorBoundary>
       </EditorProvider>
     </StrictMode>,
   );

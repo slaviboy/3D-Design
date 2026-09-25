@@ -229,12 +229,13 @@ export function MenuBar() {
   const redoLabel = useEditorState((state) => state.redoLabel);
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const triggerRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  // Indexed like the menu's items, so separators leave holes: read entries with `?.`.
+  const itemRefs = useRef<(HTMLButtonElement | null | undefined)[]>([]);
   const barRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (openIndex === null) return;
-    itemRefs.current.find((item) => item !== null && !item.disabled)?.focus();
+    itemRefs.current.find((item) => item?.disabled === false)?.focus();
     const close = (event: PointerEvent) => {
       if (!barRef.current?.contains(event.target as Node)) setOpenIndex(null);
     };
@@ -261,9 +262,7 @@ export function MenuBar() {
   };
 
   const onMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const items = itemRefs.current.filter(
-      (item): item is HTMLButtonElement => item !== null && !item.disabled,
-    );
+    const items = itemRefs.current.filter((item): item is HTMLButtonElement => item?.disabled === false);
     const current = items.indexOf(document.activeElement as HTMLButtonElement);
     const focusAt = (index: number) => items[(index + items.length) % items.length]?.focus();
     switch (event.key) {

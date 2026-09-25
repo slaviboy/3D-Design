@@ -202,11 +202,19 @@ export function App({
 
   return (
     <div className="app">
-      <FileDrop />
-      <MenuBar />
-      <Toolbar />
+      <ErrorBoundary area="file drop" layout="overlay">
+        <FileDrop />
+      </ErrorBoundary>
+      <ErrorBoundary area="the menu bar" layout="line">
+        <MenuBar />
+      </ErrorBoundary>
+      <ErrorBoundary area="the toolbar" layout="line">
+        <Toolbar />
+      </ErrorBoundary>
       <div className="workspace">
-        <ToolPalette />
+        <ErrorBoundary area="the tool palette" layout="line">
+          <ToolPalette />
+        </ErrorBoundary>
         <main className="workspace__viewport" aria-label="Modeling workspace">
           <ErrorBoundary area="the scene tabs">
             <SceneTabs />
@@ -228,88 +236,176 @@ export function App({
               );
             })}
         </aside>
-        <DockSplitter />
+        <ErrorBoundary area="the panel splitter" layout="line">
+          <DockSplitter />
+        </ErrorBoundary>
       </div>
-      <StatusBar />
-      <TooltipLayer />
-      <Notifications />
-      <ContextMenuLayer />
+      <ErrorBoundary area="the status bar" layout="line">
+        <StatusBar />
+      </ErrorBoundary>
+      <ErrorBoundary area="tool tips" layout="overlay">
+        <TooltipLayer />
+      </ErrorBoundary>
+      <ErrorBoundary area="notifications" layout="overlay">
+        <Notifications />
+      </ErrorBoundary>
+      <ErrorBoundary area="the context menu" layout="overlay">
+        <ContextMenuLayer />
+      </ErrorBoundary>
       {preferencesOpen && (
-        <PreferencesDialog
-          onClose={() => {
+        <ErrorBoundary
+          area="Preferences"
+          layout="overlay"
+          onDismiss={() => {
             setPreferencesOpen(false);
           }}
-        />
+        >
+          <PreferencesDialog
+            onClose={() => {
+              setPreferencesOpen(false);
+            }}
+          />
+        </ErrorBoundary>
       )}
       {text3dOpen && (
-        <Text3DDialog
-          onClose={() => {
+        <ErrorBoundary
+          area="3D Text"
+          layout="overlay"
+          onDismiss={() => {
             setText3dOpen(false);
           }}
-        />
+        >
+          <Text3DDialog
+            onClose={() => {
+              setText3dOpen(false);
+            }}
+          />
+        </ErrorBoundary>
       )}
       {shortcutsOpen && (
-        <KeyboardShortcutsDialog
-          onClose={() => {
+        <ErrorBoundary
+          area="Keyboard Shortcuts"
+          layout="overlay"
+          onDismiss={() => {
             setShortcutsOpen(false);
           }}
-        />
+        >
+          <KeyboardShortcutsDialog
+            onClose={() => {
+              setShortcutsOpen(false);
+            }}
+          />
+        </ErrorBoundary>
       )}
       {startOpen && (
-        <StartScreen
-          {...(recent ? { recent } : {})}
-          onClose={() => {
+        <ErrorBoundary
+          area="the start screen"
+          layout="overlay"
+          onDismiss={() => {
             setStartOpen(false);
           }}
-        />
+        >
+          <StartScreen
+            {...(recent ? { recent } : {})}
+            onClose={() => {
+              setStartOpen(false);
+            }}
+          />
+        </ErrorBoundary>
       )}
-      {inputRequest && <InputDialog request={inputRequest} />}
-      {exchangeRequest && <ExchangeDialog request={exchangeRequest} />}
+      {inputRequest && (
+        <ErrorBoundary
+          area="the input dialog"
+          layout="overlay"
+          onDismiss={() => {
+            editor.resolveInput(null);
+          }}
+        >
+          <InputDialog request={inputRequest} />
+        </ErrorBoundary>
+      )}
+      {exchangeRequest && (
+        <ErrorBoundary
+          area="the import and export options"
+          layout="overlay"
+          onDismiss={() => {
+            editor.exchange.dismissRequest();
+          }}
+        >
+          <ExchangeDialog request={exchangeRequest} />
+        </ErrorBoundary>
+      )}
       {paletteOpen && (
-        <CommandPalette
-          onClose={() => {
+        <ErrorBoundary
+          area="the command palette"
+          layout="overlay"
+          onDismiss={() => {
             setPaletteOpen(false);
           }}
-        />
+        >
+          <CommandPalette
+            onClose={() => {
+              setPaletteOpen(false);
+            }}
+          />
+        </ErrorBoundary>
       )}
       {backups && (
-        <RecoveryDialog
-          title="Restore a backup"
-          intro="Planar keeps the previous version of a file each time you save over it. Backups are stored only on this device."
-          emptyText="There are no backups yet. One is kept the next time you save over a file."
-          snapshots={backups}
-          onRestore={(snapshot) => {
-            if (editor.loadFile(snapshot.bytes, `${snapshot.documentName} (backup)`, null, { dirty: true })) {
-              setBackups(null);
-            }
-          }}
-          onDiscard={(snapshot) => {
-            void recovery?.repository.delete(snapshot.id).then(() => {
-              setBackups((current) => current?.filter((entry) => entry.id !== snapshot.id) ?? null);
-            });
-          }}
-          onClose={() => {
+        <ErrorBoundary
+          area="backups"
+          layout="overlay"
+          onDismiss={() => {
             setBackups(null);
           }}
-        />
+        >
+          <RecoveryDialog
+            title="Restore a backup"
+            intro="Planar keeps the previous version of a file each time you save over it. Backups are stored only on this device."
+            emptyText="There are no backups yet. One is kept the next time you save over a file."
+            snapshots={backups}
+            onRestore={(snapshot) => {
+              if (
+                editor.loadFile(snapshot.bytes, `${snapshot.documentName} (backup)`, null, { dirty: true })
+              ) {
+                setBackups(null);
+              }
+            }}
+            onDiscard={(snapshot) => {
+              void recovery?.repository.delete(snapshot.id).then(() => {
+                setBackups((current) => current?.filter((entry) => entry.id !== snapshot.id) ?? null);
+              });
+            }}
+            onClose={() => {
+              setBackups(null);
+            }}
+          />
+        </ErrorBoundary>
       )}
       {recoverable.length > 0 && (
-        <RecoveryDialog
-          snapshots={recoverable}
-          onRestore={(snapshot) => {
-            if (
-              editor.loadFile(snapshot.bytes, `${snapshot.documentName} (recovered)`, null, { dirty: true })
-            ) {
-              void discard(snapshot);
-            }
-          }}
-          onDiscard={(snapshot) => {
-            void discard(snapshot);
-          }}
-          onClose={() => {
+        <ErrorBoundary
+          area="recovery"
+          layout="overlay"
+          onDismiss={() => {
             setRecoverable([]);
           }}
-        />
+        >
+          <RecoveryDialog
+            snapshots={recoverable}
+            onRestore={(snapshot) => {
+              if (
+                editor.loadFile(snapshot.bytes, `${snapshot.documentName} (recovered)`, null, { dirty: true })
+              ) {
+                void discard(snapshot);
+              }
+            }}
+            onDiscard={(snapshot) => {
+              void discard(snapshot);
+            }}
+            onClose={() => {
+              setRecoverable([]);
+            }}
+          />
+        </ErrorBoundary>
       )}
     </div>
   );

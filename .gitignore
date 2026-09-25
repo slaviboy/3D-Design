@@ -9,5 +9,6 @@ bench/results/*.tmp.json
 .DS_Store
 .vite/
 .idea/
+.vscode/
 .claude/
 *.tsbuildinfo
