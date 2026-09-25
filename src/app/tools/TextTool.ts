@@ -124,6 +124,14 @@ export class TextTool implements Tool {
     });
   }
 
+  busy(): boolean {
+    return this.#target !== null;
+  }
+
+  aims(): boolean {
+    return true;
+  }
+
   cancel(): void {
     this.#target = null;
   }

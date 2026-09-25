@@ -94,6 +94,10 @@ export class DimensionTool implements Tool {
     this.#placeLinear(editor, start, end, this.#offset(start, end, inference.point));
   }
 
+  busy(): boolean {
+    return this.#start !== null || this.#radial !== null;
+  }
+
   cancel(): void {
     this.#start = null;
     this.#end = null;

@@ -192,6 +192,10 @@ export class ArcTool implements Tool {
     if (spec) this.#draw(editor, spec);
   }
 
+  busy(): boolean {
+    return this.#points.length > 0;
+  }
+
   cancel(): void {
     this.#points = [];
     this.#plane = null;

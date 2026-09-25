@@ -101,6 +101,14 @@ export class FollowMeTool implements Tool {
     if (drag.edges.length > 0) this.#sweep(editor, drag.profile, drag.edges);
   }
 
+  busy(): boolean {
+    return this.#drag !== null;
+  }
+
+  aims(): boolean {
+    return this.#path.length > 0 && this.#drag === null;
+  }
+
   cancel(): void {
     this.#drag = null;
   }

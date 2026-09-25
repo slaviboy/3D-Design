@@ -176,6 +176,10 @@ export class OffsetTool implements Tool {
     if (operation?.dragged && input.button === PRIMARY_BUTTON) this.#commit(editor, operation);
   }
 
+  busy(): boolean {
+    return this.#operation !== null;
+  }
+
   cancel(): void {
     this.#operation?.speculation.rollback();
     this.#operation = null;

@@ -94,6 +94,10 @@ export class RotatedRectangleTool implements Tool {
     if (Math.abs(width) > EPS_LEN) this.#draw(editor, start, end, width);
   }
 
+  busy(): boolean {
+    return this.#start !== null;
+  }
+
   cancel(): void {
     this.#plane = null;
     this.#start = null;

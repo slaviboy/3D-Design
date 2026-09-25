@@ -109,6 +109,10 @@ export class SectionPlaneTool implements Tool {
     return false;
   }
 
+  aims(): boolean {
+    return true;
+  }
+
   cancel(): void {
     this.#lockKey = null;
   }

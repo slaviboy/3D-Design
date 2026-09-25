@@ -200,7 +200,7 @@ import { RotateTool } from './tools/RotateTool';
 import { ScaleTool } from './tools/ScaleTool';
 import { SelectTool } from './tools/SelectTool';
 import { TapeMeasureTool } from './tools/TapeMeasureTool';
-import { SELECT_TOOL_ID } from './tools/Tool';
+import { ORBIT_TOOL_ID, PAN_TOOL_ID, SELECT_TOOL_ID, ZOOM_TOOL_ID, type PointerKind } from './tools/Tool';
 import { ToolManager } from './tools/ToolManager';
 import { refsOfResult, scalingAbout, selectionBounds, transformSelectionOf } from './tools/transformSupport';
 import type { ImportLimits } from '../io/mesh/limits';
@@ -304,6 +304,17 @@ function attributeLabel(patch: SelectionAttributePatch & { readonly name?: strin
 }
 
 const editorLog = createLogger('editor');
+
+/** Tools that `toggleTool` sets the current tool aside for, instead of replacing it. */
+const NAVIGATION_TOOL_IDS: ReadonlySet<string> = new Set([ORBIT_TOOL_ID, PAN_TOOL_ID, ZOOM_TOOL_ID]);
+/** Tools that forget what they were placing when left, so toggling never returns to them. */
+const PLACEMENT_TOOL_IDS: ReadonlySet<string> = new Set([
+  PASTE_TOOL_ID,
+  PLACE_COMPONENT_TOOL_ID,
+  TEXT_3D_TOOL_ID,
+]);
+/** Edge pick tolerance for touch, in pixels (5 for a mouse). */
+const TOUCH_EDGE_PICK_TOLERANCE_PX = 10;
 const countOf = (count: number, noun: string): string => `${String(count)} ${noun}${count === 1 ? '' : 's'}`;
 
 export interface EditorEnvironment {
@@ -380,6 +391,8 @@ export class Editor {
   #notifications: readonly EditorNotification[] = [];
   #nextNotificationId = 1;
   #measurementText = '';
+  /** The tool `toggleTool` returns to, when it replaced one rather than setting it aside. */
+  #toolBeforeToggle: string | null = null;
   readonly #placementTool = new ComponentPlacementTool();
   readonly #pasteTool = new PasteTool();
   /** What Cut or Copy last captured; kept until the next copy, and only pasteable into its own document. */
@@ -463,7 +476,45 @@ export class Editor {
 
   activateTool(toolId: string): void {
     this.setMeasurementText('');
+    this.#toolBeforeToggle = null;
     this.tools.activate(toolId);
+  }
+
+  /**
+   * Switches to a tool, or back when it is already the active one. Orbit, Pan and Zoom set the current tool aside
+   * with its operation, so a line can be continued after looking around; other tools replace it, and toggling again
+   * returns to it (or to Select, when it was a placement tool that has nothing left to place).
+   */
+  toggleTool(toolId: string): void {
+    const { tools } = this;
+    if (tools.activeToolId === toolId) {
+      if (tools.resumeSuspended()) return;
+      const previous = this.#toolBeforeToggle;
+      this.activateTool(
+        previous !== null && tools.has(previous) && !PLACEMENT_TOOL_IDS.has(previous)
+          ? previous
+          : SELECT_TOOL_ID,
+      );
+      return;
+    }
+    this.setMeasurementText('');
+    if (NAVIGATION_TOOL_IDS.has(toolId)) {
+      tools.suspendFor(toolId);
+      return;
+    }
+    const previous = tools.activeToolId;
+    this.activateTool(toolId);
+    this.#toolBeforeToggle = previous;
+  }
+
+  /** Does what the Escape key does: cancels the operation in progress, or leaves a placement tool. */
+  escape(): void {
+    this.handleKey({ key: 'Escape', ctrlKey: false, metaKey: false, altKey: false, shiftKey: false });
+  }
+
+  /** The kind of pointer used last. */
+  get pointerKind(): PointerKind {
+    return this.tools.lastPointerType;
   }
 
   // ---------------------------------------------------------------------------------------------- measurements box
@@ -482,7 +533,7 @@ export class Editor {
   /** Parses typed text for the active tool and applies it. Returns false (and notifies) when it can't be used. */
   submitMeasurement(text: string = this.#measurementText): boolean {
     this.setMeasurementText('');
-    const tool = this.tools.activeTool;
+    const tool = this.tools.measurementTool;
     const field = this.tools.measurement;
     if (!field || !tool.onMeasurement || text.trim() === '') return false;
     const parsed = parseMeasurement(text, field.accepts, this.units);
@@ -758,6 +809,8 @@ export class Editor {
       screen: { x: screen.x, y: screen.y },
       clip: sessionClipping(this),
       boundsCache: boundsCacheFor(this),
+      // A finger covers what it points at, so edges are easier to hit by touch.
+      ...(this.pointerKind === 'touch' ? { edgeTolerancePx: TOUCH_EDGE_PICK_TOLERANCE_PX } : {}),
       ...options,
     });
   }

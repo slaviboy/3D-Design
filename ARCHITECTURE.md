@@ -118,6 +118,14 @@ Folders are created when they get their first real module. Placeholder files are
   `pointerUp`, `doubleClick`, `keyDown`, `keyUp`, `onMeasurement(intent)`, `cancel`, `statusHint` and
   `measurementLabel`. `ToolManager` routes input to the active tool. Tool logic depends only on interfaces (picker,
   camera, inference) so it can be tested with synthetic events.
+- **What a tool is doing.** `busy` says an operation is underway (what Escape would cancel) and `aims` that a press
+  acts at once (paint, place, open a dialog). Touch input uses them: a finger dragged while a tool is busy or aiming
+  moves the pointer, like a mouse between clicks, and acts where it lifts.
+- **Stand-in tools.** `ToolManager.suspendFor` sets the active tool aside, operation and all, while a navigation tool
+  is used (`Editor.toggleTool` does this for Orbit, Pan and Zoom), and `resumeSuspended` returns to it: a line can be
+  continued after looking around, its preview stays on screen, and typed values still reach it. `beginTemporary`
+  lends the pointer to another tool for one gesture (a box selection after a long press) without deactivating the
+  active one, so a pending paste keeps its clipboard. Escape, undo and choosing another tool end both.
 - **Previews.** Drawing tools show overlay geometry. Tools that modify existing geometry (push/pull, move, rotate,
   scale) run the real operation in a *speculative transaction* that is rolled back on the next pointer move and never
   enters history, so the preview always matches the committed result.

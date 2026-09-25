@@ -96,6 +96,14 @@ export class Text3DTool implements Tool {
     this.setOptions(null);
   }
 
+  busy(): boolean {
+    return this.#options !== null;
+  }
+
+  aims(): boolean {
+    return this.#options !== null;
+  }
+
   cancel(): void {
     this.#inference = null;
   }

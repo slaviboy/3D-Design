@@ -71,6 +71,10 @@ export class AxesTool implements Tool {
     });
   }
 
+  busy(): boolean {
+    return this.#origin !== null;
+  }
+
   cancel(): void {
     this.#origin = null;
     this.#red = null;

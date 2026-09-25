@@ -83,6 +83,10 @@ export class TapeMeasureTool implements Tool {
     this.#finish(editor, measure, inference.point, !toggleModifier(input, editor));
   }
 
+  busy(): boolean {
+    return this.#measure !== null;
+  }
+
   cancel(): void {
     this.#measure = null;
   }

@@ -63,6 +63,14 @@ export class PasteTool implements Tool {
     this.setClipboard(null);
   }
 
+  busy(): boolean {
+    return this.#clipboard !== null;
+  }
+
+  aims(): boolean {
+    return this.#clipboard !== null;
+  }
+
   cancel(): void {
     this.#inference = null;
   }

@@ -185,6 +185,10 @@ export class MoveTool implements Tool {
     return false;
   }
 
+  busy(): boolean {
+    return this.#operation !== null;
+  }
+
   cancel(): void {
     this.#operation?.speculation.rollback();
     this.#operation = null;

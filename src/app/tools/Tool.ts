@@ -37,6 +37,9 @@ export const MOVE_TOOL_ID = 'tool.move';
 export const PRIMARY_BUTTON = 0;
 export const MIDDLE_BUTTON = 1;
 
+/** What produced pointer input. Touch gets larger snapping tolerances, since a finger covers what it points at. */
+export type PointerKind = 'mouse' | 'pen' | 'touch';
+
 /** Pointer input in CSS pixels relative to the viewport's top-left corner. */
 export interface PointerInput {
   readonly x: number;
@@ -49,6 +52,8 @@ export interface PointerInput {
   readonly ctrlKey: boolean;
   readonly altKey: boolean;
   readonly metaKey: boolean;
+  /** Mouse when not given. */
+  readonly pointerType?: PointerKind;
 }
 
 export interface WheelInput {
@@ -121,6 +126,16 @@ export interface Tool {
   keyDown?(chord: string, editor: Editor): boolean;
   /** Abandons any operation in progress. */
   cancel?(editor: Editor): void;
+  /**
+   * True while an operation is underway (a line started, a face being pushed): what Escape would cancel. A finger
+   * dragged then moves the pointer, like a mouse between clicks, instead of pressing.
+   */
+  busy?(editor: Editor): boolean;
+  /**
+   * True when a press acts at once (paints, places, opens a dialog), so a finger dragged first aims, with the preview
+   * following it, and acts where it lifts.
+   */
+  aims?(editor: Editor): boolean;
   /** Instruction shown in the status bar. */
   statusHint(editor: Editor): string;
   overlay?(): ToolOverlay | null;

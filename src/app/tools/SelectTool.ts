@@ -131,6 +131,10 @@ export class SelectTool implements Tool {
     return true;
   }
 
+  busy(): boolean {
+    return this.#press !== null;
+  }
+
   cancel(): void {
     this.#press = null;
     this.#dragging = false;

@@ -170,6 +170,10 @@ export class PaintBucketTool implements Tool {
     });
   }
 
+  aims(): boolean {
+    return true;
+  }
+
   cancel(): void {
     this.#highlight = [];
   }

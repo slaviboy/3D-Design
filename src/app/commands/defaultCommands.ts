@@ -465,6 +465,28 @@ export function registerDefaultCommands(registry: CommandRegistry<Editor>): void
     })),
     toolCommand(ORBIT_TOOL_ID, 'Orbit', 'O', ['rotate view', 'turn']),
     toolCommand(PAN_TOOL_ID, 'Pan', 'H', ['hand', 'scroll view']),
+    {
+      id: 'tool.toggleOrbit',
+      label: 'Orbit and Back',
+      category: 'Camera',
+      description: 'Switch to Orbit; again returns to the tool you were using, operation and all',
+      aliases: ['toggle orbit', 'rotate view and back', 'pen button'],
+      isChecked: (editor) => editor.tools.activeToolId === ORBIT_TOOL_ID,
+      run: (editor) => {
+        editor.toggleTool(ORBIT_TOOL_ID);
+      },
+    },
+    {
+      id: 'tool.togglePan',
+      label: 'Pan and Back',
+      category: 'Camera',
+      description: 'Switch to Pan; again returns to the tool you were using, operation and all',
+      aliases: ['toggle pan', 'move view and back'],
+      isChecked: (editor) => editor.tools.activeToolId === PAN_TOOL_ID,
+      run: (editor) => {
+        editor.toggleTool(PAN_TOOL_ID);
+      },
+    },
     toolCommand(ZOOM_TOOL_ID, 'Zoom', 'Z', ['magnify']),
     {
       id: 'app.preferences',

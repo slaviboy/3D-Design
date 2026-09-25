@@ -60,6 +60,9 @@ export interface InferOptions {
   readonly exclude?: InferenceExclusion;
 }
 
+/** Inference tolerance for touch, in pixels (10 for a mouse): a finger covers what it points at. */
+export const TOUCH_INFERENCE_TOLERANCE_PX = 18;
+
 /** How many recently hovered points and edges linear inferences refer to. */
 const REMEMBERED_POINTS = 2;
 const REMEMBERED_EDGES = 1;
@@ -132,6 +135,7 @@ export function inferAt(editor: Editor, screen: ScreenPoint, options: InferOptio
     references: memory,
     clip: sessionClipping(editor),
     boundsCache: boundsCacheFor(editor),
+    ...(editor.pointerKind === 'touch' ? { tolerancePx: TOUCH_INFERENCE_TOLERANCE_PX } : {}),
     ...(options.anchor ? { anchor: options.anchor } : {}),
     ...(options.lockDirection ? { lockDirection: options.lockDirection } : {}),
     ...(options.fallbackPlane ? { fallbackPlane: options.fallbackPlane } : {}),

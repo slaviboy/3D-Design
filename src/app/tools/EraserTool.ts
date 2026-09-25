@@ -85,6 +85,10 @@ export class EraserTool implements Tool {
     if (refs.length > 0) this.#apply(editor, refs);
   }
 
+  busy(): boolean {
+    return this.#pressed;
+  }
+
   cancel(): void {
     this.#pressed = false;
     this.#marked.clear();

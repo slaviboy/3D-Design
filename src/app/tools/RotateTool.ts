@@ -211,6 +211,10 @@ export class RotateTool implements Tool {
     return false;
   }
 
+  busy(): boolean {
+    return this.#pivot !== null || this.#operation !== null;
+  }
+
   cancel(): void {
     this.#operation?.speculation.rollback();
     this.#operation = null;

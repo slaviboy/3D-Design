@@ -17,7 +17,7 @@
 
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { ViewCaptureRelay } from '../../app/io/viewCapture';
-import type { PointerInput } from '../../app/tools/Tool';
+import type { PointerInput, PointerKind } from '../../app/tools/Tool';
 import { Viewport } from '../../render/Viewport';
 import { useEditor, useEditorState } from '../EditorContext';
 import { AnnotationLabels } from './AnnotationLabels';
@@ -27,6 +27,10 @@ import { ClickCounter } from './clickCount';
 
 /** The right mouse button opens the context menu instead of reaching the active tool. */
 const SECONDARY_BUTTON = 2;
+
+function pointerKind(type: string): PointerKind {
+  return type === 'touch' || type === 'pen' ? type : 'mouse';
+}
 
 function pointerInput(
   event: ReactPointerEvent<HTMLElement>,
@@ -44,6 +48,7 @@ function pointerInput(
     ctrlKey: event.ctrlKey,
     altKey: event.altKey,
     metaKey: event.metaKey,
+    pointerType: pointerKind(event.pointerType),
   };
 }
 
@@ -51,6 +56,8 @@ export function ViewportHost() {
   const editor = useEditor();
   const hostRef = useRef<HTMLDivElement>(null);
   const clicksRef = useRef(new ClickCounter());
+  /** The pointer pressed on the tool, whose cancellation (by the system, mid-gesture) cancels the tool's operation. */
+  const pressRef = useRef<number | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const overlay = useEditorState((state) => state.overlay);
   const marker = useEditorState((state) => state.marker);
@@ -112,8 +119,13 @@ export function ViewportHost() {
           host.focus({ preventScroll: true });
           return;
         }
-        host.setPointerCapture(event.pointerId);
+        try {
+          host.setPointerCapture(event.pointerId);
+        } catch {
+          // Pointers the browser doesn't track (synthetic ones in tests) can't be captured; input still works.
+        }
         host.focus({ preventScroll: true });
+        pressRef.current = event.pointerId;
         editor.tools.pointerDown(pointerInput(event, host, clicksRef.current.press(event)));
       }}
       onPointerMove={(event) => {
@@ -122,10 +134,13 @@ export function ViewportHost() {
       }}
       onPointerUp={(event) => {
         if (event.button === SECONDARY_BUTTON) return;
+        if (event.pointerId === pressRef.current) pressRef.current = null;
         if (hostRef.current)
           editor.tools.pointerUp(pointerInput(event, hostRef.current, clicksRef.current.current));
       }}
-      onPointerCancel={() => {
+      onPointerCancel={(event) => {
+        if (event.pointerId !== pressRef.current) return;
+        pressRef.current = null;
         editor.tools.cancel();
       }}
       onContextMenu={(event) => {

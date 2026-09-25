@@ -108,6 +108,10 @@ export class CircleTool implements Tool {
     this.#draw(editor, placement, radius, this.#xAxis(placement, inference.point));
   }
 
+  busy(): boolean {
+    return this.#placement !== null;
+  }
+
   cancel(): void {
     this.#placement = null;
   }

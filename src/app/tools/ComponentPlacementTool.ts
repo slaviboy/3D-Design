@@ -60,6 +60,14 @@ export class ComponentPlacementTool implements Tool {
     this.setDefinition(null);
   }
 
+  busy(): boolean {
+    return this.#definition !== null;
+  }
+
+  aims(): boolean {
+    return this.#definition !== null;
+  }
+
   cancel(): void {
     this.#inference = null;
   }

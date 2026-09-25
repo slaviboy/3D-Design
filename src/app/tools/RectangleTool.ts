@@ -98,6 +98,10 @@ export class RectangleTool implements Tool {
     this.#draw(editor, frame, width, height);
   }
 
+  busy(): boolean {
+    return this.#frame !== null;
+  }
+
   cancel(): void {
     this.#frame = null;
   }

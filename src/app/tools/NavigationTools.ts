@@ -62,6 +62,10 @@ class DragNavigationTool implements Tool {
     this.#last = null;
   }
 
+  busy(): boolean {
+    return this.#last !== null;
+  }
+
   cancel(): void {
     this.#last = null;
   }

@@ -129,6 +129,10 @@ export class ProtractorTool implements Tool {
     return false;
   }
 
+  busy(): boolean {
+    return this.#pivot !== null;
+  }
+
   cancel(): void {
     this.#pivot = null;
     this.#reference = null;

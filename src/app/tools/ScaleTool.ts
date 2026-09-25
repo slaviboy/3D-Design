@@ -48,6 +48,7 @@ import { refsOfResult, scalingAbout, selectionBounds, transformSelectionOf } fro
 export const SCALE_TOOL_ID = 'tool.scale';
 
 const GRIP_PICK_PX = 10;
+const TOUCH_GRIP_PICK_PX = 20;
 const GRIP_SIZE_PX = 4;
 /** Scale factors closer to zero than this would collapse the geometry. */
 const MIN_SCALE_FACTOR = 1e-6;
@@ -191,6 +192,10 @@ export class ScaleTool implements Tool {
     return false;
   }
 
+  busy(): boolean {
+    return this.#operation !== null;
+  }
+
   cancel(): void {
     this.#operation?.speculation.rollback();
     this.#operation = null;
@@ -317,7 +322,7 @@ export class ScaleTool implements Tool {
       const screen = projectToScreen(editor.session.camera, grip.world, editor.viewportSize);
       if (!screen) continue;
       const pixels = Math.hypot(screen.x - input.x, screen.y - input.y);
-      if (pixels > GRIP_PICK_PX) continue;
+      if (pixels > (editor.pointerKind === 'touch' ? TOUCH_GRIP_PICK_PX : GRIP_PICK_PX)) continue;
       const candidate = {
         grip,
         visible: isVisibleFromCamera(editor, grip.world),

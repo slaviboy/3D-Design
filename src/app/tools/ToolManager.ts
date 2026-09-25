@@ -21,6 +21,7 @@ import {
   MIDDLE_BUTTON,
   type MeasurementField,
   type PointerInput,
+  type PointerKind,
   type Tool,
   type ToolOverlay,
   type WheelInput,
@@ -40,13 +41,20 @@ interface NavigationDrag {
 /**
  * Routes input to the active tool. Middle-button drags orbit (Shift: pan) and the wheel zooms at the cursor
  * regardless of the active tool, as temporary navigation.
+ *
+ * Two kinds of stand-in keep the active tool's operation while something else has the pointer: a tool *suspended*
+ * for navigation (switching to Orbit and back continues a line where it was), and a *temporary* tool that takes the
+ * pointer for one gesture (a box selection after a long press) without becoming the active tool.
  */
 export class ToolManager {
   readonly #editor: Editor;
   readonly #tools = new Map<string, Tool>();
   readonly #listeners = new Set<() => void>();
   #active: Tool;
+  #suspended: Tool | null = null;
+  #temporary: Tool | null = null;
   #navigation: NavigationDrag | null = null;
+  #lastPointerType: PointerKind = 'mouse';
 
   constructor(editor: Editor, tools: readonly Tool[], initialToolId: string) {
     this.#editor = editor;
@@ -64,16 +72,52 @@ export class ToolManager {
     return this.#active.id;
   }
 
+  /** The tool set aside for navigation, if any. */
+  get suspendedToolId(): string | null {
+    return this.#suspended?.id ?? null;
+  }
+
+  /** Where pointer input goes: the temporary tool while it has the pointer, otherwise the active one. */
+  get #target(): Tool {
+    return this.#temporary ?? this.#active;
+  }
+
   get overlay(): ToolOverlay | null {
-    return this.#active.overlay?.() ?? null;
+    return this.#target.overlay?.() ?? null;
   }
 
   get statusHint(): string {
     return this.#active.statusHint(this.#editor);
   }
 
+  /** The tool the measurements box talks to: the active one, or the one set aside while navigating. */
+  get measurementTool(): Tool {
+    if (!this.#active.measurement && this.#suspended?.measurement) return this.#suspended;
+    return this.#active;
+  }
+
   get measurement(): MeasurementField | null {
-    return this.#active.measurement?.(this.#editor) ?? null;
+    return this.measurementTool.measurement?.(this.#editor) ?? null;
+  }
+
+  /** The kind of pointer that moved last; touch gets larger snapping tolerances. */
+  get lastPointerType(): PointerKind {
+    return this.#lastPointerType;
+  }
+
+  /** An operation is underway in the tool that has the pointer. */
+  get busy(): boolean {
+    return this.#target.busy?.(this.#editor) ?? false;
+  }
+
+  /** A press would act at once, so touch should aim first (see `Tool.aims`). */
+  get aims(): boolean {
+    return this.#target.aims?.(this.#editor) ?? false;
+  }
+
+  /** An operation is underway, in the tool with the pointer or in one set aside for navigation. */
+  get hasOperation(): boolean {
+    return this.busy || (this.#suspended?.busy?.(this.#editor) ?? false);
   }
 
   tools(): Tool[] {
@@ -85,26 +129,70 @@ export class ToolManager {
   }
 
   activate(toolId: string): void {
-    const tool = this.#tools.get(toolId);
-    if (!tool) throw new Error(`Unknown tool "${toolId}"`);
+    const tool = this.#get(toolId);
+    if (tool === this.#active && !this.#suspended) return;
+    this.#endTemporary();
+    // Choosing a tool ends the operation set aside for navigation.
+    if (this.#suspended && this.#suspended !== tool) this.#leave(this.#suspended);
+    if (tool !== this.#active) this.#leave(this.#active);
+    const resumed = tool === this.#suspended;
+    this.#suspended = null;
+    this.#active = tool;
+    if (!resumed) tool.activate?.(this.#editor);
+    this.#changed();
+  }
+
+  /** Switches to a navigation tool for a while; the current tool keeps its operation until `resumeSuspended`. */
+  suspendFor(toolId: string): void {
+    const tool = this.#get(toolId);
     if (tool === this.#active) return;
-    this.#active.cancel?.(this.#editor);
-    this.#active.deactivate?.(this.#editor);
+    this.#endTemporary();
+    if (this.#suspended) this.#leave(this.#active);
+    else this.#suspended = this.#active;
     this.#active = tool;
     tool.activate?.(this.#editor);
     this.#changed();
   }
 
+  /** Returns to the tool set aside by `suspendFor`, operation and all. False when none is set aside. */
+  resumeSuspended(): boolean {
+    const suspended = this.#suspended;
+    if (!suspended) return false;
+    this.#endTemporary();
+    this.#leave(this.#active);
+    this.#active = suspended;
+    this.#suspended = null;
+    this.#changed();
+    return true;
+  }
+
+  /** Gives the pointer to another tool for one gesture, leaving the active tool and its state untouched. */
+  beginTemporary(toolId: string): void {
+    const tool = this.#get(toolId);
+    this.#endTemporary();
+    if (tool === this.#active) return;
+    this.#temporary = tool;
+    this.#changed();
+  }
+
+  /** Gives the pointer back to the active tool. */
+  endTemporary(): void {
+    if (this.#endTemporary()) this.#changed();
+  }
+
   pointerDown(input: PointerInput): void {
+    this.#lastPointerType = input.pointerType ?? 'mouse';
     if (input.button === MIDDLE_BUTTON) {
       this.#navigation = { mode: input.shiftKey ? 'pan' : 'orbit', lastX: input.x, lastY: input.y };
       return;
     }
-    this.#guard(() => this.#active.pointerDown?.(input, this.#editor));
+    const tool = this.#target;
+    this.#guard(() => tool.pointerDown?.(input, this.#editor));
     this.#changed();
   }
 
   pointerMove(input: PointerInput): void {
+    this.#lastPointerType = input.pointerType ?? 'mouse';
     const navigation = this.#navigation;
     if (navigation) {
       const dx = input.x - navigation.lastX;
@@ -115,7 +203,7 @@ export class ToolManager {
       else this.#editor.panBy(dx, dy);
       return;
     }
-    const tool = this.#active;
+    const tool = this.#target;
     if (tool.pointerMove) {
       this.#guard(() => tool.pointerMove?.(input, this.#editor));
       this.#changed();
@@ -127,7 +215,8 @@ export class ToolManager {
       if (input.button === MIDDLE_BUTTON) this.#navigation = null;
       return;
     }
-    this.#guard(() => this.#active.pointerUp?.(input, this.#editor));
+    const tool = this.#target;
+    this.#guard(() => tool.pointerUp?.(input, this.#editor));
     this.#changed();
   }
 
@@ -141,22 +230,28 @@ export class ToolManager {
 
   /** Offers a chord to the active tool. Escape always cancels the tool's current operation. */
   keyDown(chord: string): boolean {
-    const handled = this.#guard(() => this.#active.keyDown?.(chord, this.#editor)) ?? false;
+    const tool = this.#target;
+    const handled = this.#guard(() => tool.keyDown?.(chord, this.#editor)) ?? false;
     if (handled) {
       this.#changed();
       return true;
     }
     if (chord === 'Escape') {
+      this.#endTemporary();
       this.#active.cancel?.(this.#editor);
+      this.#suspended?.cancel?.(this.#editor);
       this.#changed();
       return true;
     }
     return false;
   }
 
+  /** Abandons every operation in progress: the active tool's, the one set aside for navigation, and any drag. */
   cancel(): void {
     this.#navigation = null;
+    this.#endTemporary();
     this.#active.cancel?.(this.#editor);
+    this.#suspended?.cancel?.(this.#editor);
     this.#changed();
   }
 
@@ -172,19 +267,40 @@ export class ToolManager {
     this.#changed();
   }
 
+  #get(toolId: string): Tool {
+    const tool = this.#tools.get(toolId);
+    if (!tool) throw new Error(`Unknown tool "${toolId}"`);
+    return tool;
+  }
+
+  #leave(tool: Tool): void {
+    tool.cancel?.(this.#editor);
+    tool.deactivate?.(this.#editor);
+  }
+
+  #endTemporary(): boolean {
+    const temporary = this.#temporary;
+    if (!temporary) return false;
+    temporary.cancel?.(this.#editor);
+    this.#temporary = null;
+    return true;
+  }
+
   /** Runs tool code, turning failures into error notifications so one bad input never breaks the editor. */
   #guard<T>(action: () => T): T | undefined {
     try {
       return action();
     } catch (error) {
-      toolLog.error(`${this.#active.id} failed`, error);
+      toolLog.error(`${this.#target.id} failed`, error);
       this.#editor.notify('error', error instanceof Error ? error.message : String(error));
       return undefined;
     }
   }
 
   #changed(): void {
-    this.#editor.session.setPreview(this.#active.preview?.(this.#editor) ?? null);
+    // A navigation tool shows nothing itself, so the operation set aside keeps showing while the view moves.
+    const preview = this.#target.preview?.(this.#editor) ?? this.#suspended?.preview?.(this.#editor) ?? null;
+    this.#editor.session.setPreview(preview);
     for (const listener of [...this.#listeners]) listener();
   }
 }

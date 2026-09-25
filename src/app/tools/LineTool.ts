@@ -85,6 +85,10 @@ export class LineTool implements Tool {
     return false;
   }
 
+  busy(): boolean {
+    return this.#start !== null;
+  }
+
   cancel(): void {
     this.#start = null;
     this.#chainStart = null;

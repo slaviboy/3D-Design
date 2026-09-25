@@ -79,6 +79,10 @@ export class FreehandTool implements Tool {
     this.#commit(editor, points);
   }
 
+  busy(): boolean {
+    return this.#plane !== null;
+  }
+
   cancel(): void {
     this.#plane = null;
     this.#points = [];
