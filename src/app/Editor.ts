@@ -229,6 +229,16 @@ import {
   type DropPlacement,
   type PanelFocusRequest,
 } from './dock/dockLayout';
+import {
+  completeToolbarLayout,
+  DEFAULT_TOOLBAR_LAYOUT,
+  moveToolbarItem,
+  moveToOtherToolbar,
+  nudgeToolbarItem,
+  type ToolbarLayout,
+  type ToolbarLayoutStorage,
+  type ToolbarSlot,
+} from './toolbars/toolbarLayout';
 
 /** Characters that start typing into the measurements box. Once typing has started, any character continues it. */
 const MEASUREMENT_START = /^[0-9.,\-[</]$/;
@@ -263,13 +273,15 @@ export interface RecentFilesRecorder {
   record(name: string, handle: unknown, thumbnail: Uint8Array | null): void;
 }
 
-export type UiRequest = 'command-palette' | 'backups' | 'start' | 'preferences' | 'text3d';
+export type UiRequest =
+  'command-palette' | 'backups' | 'start' | 'preferences' | 'text3d' | 'arrange-toolbars';
 
 export type EditorEvent =
   | { readonly kind: 'notifications' }
   | { readonly kind: 'measurement' }
   | { readonly kind: 'ui-request'; readonly request: UiRequest; readonly tab?: PreferencesTab }
   | { readonly kind: 'panels' }
+  | { readonly kind: 'toolbars' }
   | { readonly kind: 'input-request' }
   | { readonly kind: 'shortcuts' }
   | { readonly kind: 'preferences' }
@@ -2515,6 +2527,53 @@ export class Editor {
   resetDockLayout(): void {
     this.#openPanels = DEFAULT_OPEN_PANELS;
     this.#applyDockLayout(DEFAULT_DOCK_LAYOUT, true);
+  }
+
+  // ---------------------------------------------------------------------------------------------- toolbars
+
+  #toolbarLayout: ToolbarLayout = DEFAULT_TOOLBAR_LAYOUT;
+  #toolbarLayoutStorage: ToolbarLayoutStorage | null = null;
+
+  /** The buttons of the toolbar and the tool palette, as the user arranged them. */
+  get toolbarLayout(): ToolbarLayout {
+    return this.#toolbarLayout;
+  }
+
+  setToolbarLayoutStorage(storage: ToolbarLayoutStorage): void {
+    this.#toolbarLayoutStorage = storage;
+    this.#applyToolbarLayout(storage.load(), false);
+  }
+
+  /** Moves a button so it ends up just before what is at `to` now, in the same bar or the other. */
+  moveToolbarItem(from: ToolbarSlot, to: ToolbarSlot): void {
+    this.#applyToolbarLayout(moveToolbarItem(this.#toolbarLayout, from, to), true);
+  }
+
+  nudgeToolbarItem(at: ToolbarSlot, offset: -1 | 1): void {
+    this.#applyToolbarLayout(nudgeToolbarItem(this.#toolbarLayout, at, offset), true);
+  }
+
+  moveToolbarItemToOtherBar(at: ToolbarSlot): void {
+    this.#applyToolbarLayout(moveToOtherToolbar(this.#toolbarLayout, at), true);
+  }
+
+  resetToolbarLayout(): void {
+    this.#applyToolbarLayout(DEFAULT_TOOLBAR_LAYOUT, true);
+  }
+
+  #applyToolbarLayout(layout: ToolbarLayout, persist: boolean): void {
+    this.#toolbarLayout = completeToolbarLayout(
+      layout,
+      (commandId) => this.commands.get(commandId) !== undefined,
+    );
+    if (persist) {
+      try {
+        this.#toolbarLayoutStorage?.save(this.#toolbarLayout);
+      } catch (error) {
+        this.notify('error', `Could not save the toolbar layout: ${errorMessage(error)}`);
+      }
+    }
+    this.#emit({ kind: 'toolbars' });
   }
 
   #applyDockLayout(layout: DockLayout, persist: boolean): void {

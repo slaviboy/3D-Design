@@ -524,6 +524,27 @@ export function registerDefaultCommands(registry: CommandRegistry<Editor>): void
       },
     },
     {
+      id: 'window.arrangeToolbars',
+      label: 'Arrange Toolbars',
+      category: 'Window',
+      description:
+        'Move buttons within and between the toolbar and the tool palette (or press and hold a button)',
+      aliases: ['customize toolbar', 'rearrange tools', 'move buttons', 'toolbar'],
+      run: (editor) => {
+        editor.requestUi('arrange-toolbars');
+      },
+    },
+    {
+      id: 'window.resetToolbars',
+      label: 'Reset Toolbars',
+      category: 'Window',
+      description: 'Put the buttons of the toolbar and the tool palette back where they started',
+      aliases: ['default toolbar', 'restore tools'],
+      run: (editor) => {
+        editor.resetToolbarLayout();
+      },
+    },
+    {
       id: 'help.touchGestures',
       label: 'Touch Gestures…',
       category: 'Help',

@@ -208,6 +208,34 @@ function GeneralPage() {
       </fieldset>
 
       <fieldset className="preferences__group">
+        <legend>Toolbars</legend>
+        <p className="preferences__hint">
+          Press and hold a button of the toolbar or the tool palette to rearrange them: drag buttons within a
+          bar or from one bar to the other.
+        </p>
+        <div className="preferences__actions">
+          <button
+            type="button"
+            className="button"
+            onClick={() => {
+              void editor.runCommand('window.arrangeToolbars');
+            }}
+          >
+            Arrange with the Keyboard
+          </button>
+          <button
+            type="button"
+            className="button"
+            onClick={() => {
+              editor.resetToolbarLayout();
+            }}
+          >
+            Reset Toolbars
+          </button>
+        </div>
+      </fieldset>
+
+      <fieldset className="preferences__group">
         <legend>Files</legend>
         <div className="preferences__field">
           <label htmlFor={autosaveId}>Autosave</label>
@@ -708,7 +736,14 @@ export function PreferencesDialog({
           </button>
         ))}
       </div>
-      <div className="preferences__panel" role="tabpanel" id={panelId} aria-labelledby={tabId(tab)}>
+      {/* Every page has controls to Tab to; Firefox would otherwise stop on the scrolling panel itself as well. */}
+      <div
+        className="preferences__panel"
+        role="tabpanel"
+        id={panelId}
+        aria-labelledby={tabId(tab)}
+        tabIndex={-1}
+      >
         {tab === 'general' && <GeneralPage />}
         {tab === 'navigation' && <NavigationPage />}
         {tab === 'keyboard' && <KeyboardShortcutsEditor />}

@@ -44,6 +44,14 @@ test('menus have no serious accessibility violations', async ({ page }) => {
   expect(await seriousViolations(page)).toEqual([]);
 });
 
+test('arranging the toolbars has no serious accessibility violations', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('menuitem', { name: 'Window', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Arrange Toolbars' }).click();
+  await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
+  expect(await seriousViolations(page)).toEqual([]);
+});
+
 test('dialogs have no serious accessibility violations', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('menubar', { name: 'Main menu' })).toBeVisible();

@@ -29,6 +29,7 @@ import type { InferenceKind } from '../inference/inference';
 import type { PanelId } from '../panels/panels';
 import type { ToolOverlay } from '../tools/Tool';
 import type { DockLayout, PanelFocusRequest } from '../dock/dockLayout';
+import type { ToolbarLayout } from '../toolbars/toolbarLayout';
 
 /** A dimension or text label in viewport pixels. */
 export interface ScreenAnnotationLabel {
@@ -132,6 +133,9 @@ export interface EditorViewState {
   readonly environmentImageName: string | null;
   /** Width of the dock, the order of its panels and which are collapsed. */
   readonly dockLayout: DockLayout;
+  readonly toolbarLayout: ToolbarLayout;
+  /** Increments each time something asks to arrange the toolbars from the keyboard. */
+  readonly arrangeToolbarRequests: number;
   /** The latest request to bring a panel into view. */
   readonly panelFocusRequest: PanelFocusRequest | null;
   /** Increments each time something asks for the 3D Text dialog. */
@@ -151,6 +155,7 @@ export function createEditorStore(editor: Editor): EditorStore {
   let shortcutsVersion = 0;
   let preferencesDialogRequests = 0;
   let preferencesDialogTab: PreferencesTab = 'general';
+  let arrangeToolbarRequests = 0;
   let historyNotice: HistoryNotice | null = null;
   let text3dDialogRequests = 0;
   let labelsUnits: UnitSettings | null = null;
@@ -249,6 +254,8 @@ export function createEditorStore(editor: Editor): EditorStore {
       environment: doc.environment,
       environmentImageName: session.environmentImage?.name ?? null,
       dockLayout: editor.dockLayout,
+      toolbarLayout: editor.toolbarLayout,
+      arrangeToolbarRequests,
       panelFocusRequest: editor.panelFocusRequest,
       text3dDialogRequests,
     };
@@ -280,6 +287,7 @@ export function createEditorStore(editor: Editor): EditorStore {
           preferencesDialogRequests++;
           preferencesDialogTab = event.tab ?? 'general';
         } else if (event.request === 'text3d') text3dDialogRequests++;
+        else if (event.request === 'arrange-toolbars') arrangeToolbarRequests++;
         else commandPaletteRequests++;
       }
       refresh();

@@ -40,6 +40,11 @@ import { EditorProvider } from './ui/EditorContext';
 import { App, type RecoveryOptions } from './ui/shell/App';
 import './ui/shell/base.css';
 import { DEFAULT_DOCK_LAYOUT, parseDockLayout, serializeDockLayout } from './app/dock/dockLayout';
+import {
+  DEFAULT_TOOLBAR_LAYOUT,
+  parseToolbarLayout,
+  serializeToolbarLayout,
+} from './app/toolbars/toolbarLayout';
 
 const startupLog = createLogger('startup');
 
@@ -110,6 +115,20 @@ async function start(): Promise<void> {
     },
     save: (preferences) => {
       window.localStorage.setItem(preferencesKey, serializePreferences(preferences));
+    },
+  });
+
+  const toolbarsKey = 'planar.toolbars';
+  editor.setToolbarLayoutStorage({
+    load: () => {
+      try {
+        return parseToolbarLayout(window.localStorage.getItem(toolbarsKey));
+      } catch {
+        return DEFAULT_TOOLBAR_LAYOUT;
+      }
+    },
+    save: (layout) => {
+      window.localStorage.setItem(toolbarsKey, serializeToolbarLayout(layout));
     },
   });
 
