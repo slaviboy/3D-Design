@@ -15,24 +15,39 @@
  * limitations under the License.
  */
 
+import type { DefinitionId } from '../../kernel/ids';
+import type { Aabb } from '../../kernel/math/aabb';
 import { invertAffine, transformDirection, transformNormal, transformPoint } from '../../kernel/math/mat4';
 import { planeFromPointNormal, type Plane } from '../../kernel/math/plane';
 import { cross, distance, dot, normalize, scale, sub, type Vec3, add } from '../../kernel/math/vec3';
 import { EPS_LEN } from '../../kernel/tolerance';
 import type { ModelDocument, TransactionRecord } from '../../kernel/model/ModelDocument';
 import { formatLength } from '../../kernel/units/units';
-import { cameraBasis, type ScreenPoint } from '../camera/camera';
+import { cameraBasis, rayThroughScreen, type ScreenPoint } from '../camera/camera';
 import type { Editor } from '../Editor';
 import {
   axisOf,
   infer,
   type Axis,
   type Inference,
+  type InferenceKind,
   axisFrameOf,
   WORLD_AXIS_FRAME,
   type AxisFrame,
 } from '../inference/inference';
+import { exclusionForChanges, type InferenceExclusion } from '../inference/exclusion';
+import { sectionClipping, type SectionClipping } from '../picking/sectionClip';
+import { isOccluded, visibilityRules } from '../picking/visibility';
 import type { InferenceMarker, PointerInput, PreviewLineStyle } from './Tool';
+
+/** Inferences that name a point of the model; the others stand for wherever the pointer is. */
+export const POINT_INFERENCE_KINDS: ReadonlySet<InferenceKind> = new Set<InferenceKind>([
+  'endpoint',
+  'midpoint',
+  'center',
+  'on-edge',
+  'origin',
+]);
 
 /** Below this |forward·Z| the camera counts as looking sideways, and free drawing uses a vertical plane. */
 const SIDEWAYS_VIEW_Z = 0.35;
@@ -41,6 +56,8 @@ export interface InferOptions {
   readonly anchor?: Vec3;
   readonly lockDirection?: Vec3 | null;
   readonly fallbackPlane?: Plane;
+  /** Geometry the operation is changing, which the pointer doesn't snap to. */
+  readonly exclude?: InferenceExclusion;
 }
 
 /** How many recently hovered points and edges linear inferences refer to. */
@@ -81,6 +98,30 @@ function remember(memory: InferenceMemory, inference: Inference): void {
   }
 }
 
+const boundsCaches = new WeakMap<
+  ModelDocument,
+  { readonly revision: number; readonly cache: Map<DefinitionId, Aabb> }
+>();
+
+/**
+ * Definition bounds for ray queries, kept while the document is unchanged: they cost a pass over every vertex, and
+ * each pointer move makes several queries.
+ */
+export function boundsCacheFor(editor: Editor): Map<DefinitionId, Aabb> {
+  const { session } = editor;
+  const entry = boundsCaches.get(session.doc);
+  if (entry?.revision === session.revision) return entry.cache;
+  const cache = new Map<DefinitionId, Aabb>();
+  boundsCaches.set(session.doc, { revision: session.revision, cache });
+  return cache;
+}
+
+/** The section cuts picking and inference respect in the active context. */
+export function sessionClipping(editor: Editor): SectionClipping {
+  const { session } = editor;
+  return sectionClipping(session.doc, session.editPath, session.showSectionCuts);
+}
+
 export function inferAt(editor: Editor, screen: ScreenPoint, options: InferOptions = {}): Inference {
   const { session } = editor;
   const memory = memoryFor(editor);
@@ -89,12 +130,30 @@ export function inferAt(editor: Editor, screen: ScreenPoint, options: InferOptio
     size: editor.viewportSize,
     screen,
     references: memory,
+    clip: sessionClipping(editor),
+    boundsCache: boundsCacheFor(editor),
     ...(options.anchor ? { anchor: options.anchor } : {}),
     ...(options.lockDirection ? { lockDirection: options.lockDirection } : {}),
     ...(options.fallbackPlane ? { fallbackPlane: options.fallbackPlane } : {}),
+    ...(options.exclude ? { exclude: options.exclude } : {}),
   });
   remember(memory, inference);
   return inference;
+}
+
+/** Whether the camera sees a world point, or a face of the active context hides it (X-ray and wireframe hide nothing). */
+export function isVisibleFromCamera(editor: Editor, point: Vec3): boolean {
+  const { session } = editor;
+  if (!visibilityRules(session.doc.style).occlusion) return true;
+  return !isOccluded(point, {
+    doc: session.doc,
+    context: session.activeContext,
+    contextTransform: session.activeContextTransform,
+    camera: session.camera,
+    size: editor.viewportSize,
+    clip: sessionClipping(editor),
+    boundsCache: boundsCacheFor(editor),
+  });
 }
 
 function worldToLocal(editor: Editor) {
@@ -196,6 +255,15 @@ export function projectOntoPlane(plane: Plane, point: Vec3): Vec3 {
   return sub(point, scale(plane.normal, dot(plane.normal, point) - plane.offset));
 }
 
+/** Where the pointer's ray meets a world plane, or null when it runs parallel to it or points away. */
+export function pointOnPlaneUnder(editor: Editor, screen: ScreenPoint, plane: Plane): Vec3 | null {
+  const ray = rayThroughScreen(editor.session.camera, screen, editor.viewportSize);
+  const denominator = dot(plane.normal, ray.direction);
+  if (Math.abs(denominator) < 1e-12) return null;
+  const t = (plane.offset - dot(plane.normal, ray.origin)) / denominator;
+  return t > 0 && Number.isFinite(t) ? add(ray.origin, scale(ray.direction, t)) : null;
+}
+
 export function formatDistance(editor: Editor, meters: number): string {
   return formatLength(meters, editor.units);
 }
@@ -220,6 +288,11 @@ export class Speculation {
     return this.#record !== undefined;
   }
 
+  /** The current attempt, while there is one. */
+  get record(): TransactionRecord | undefined {
+    return this.#record;
+  }
+
   /** Replaces the previous attempt with `edit`. If `edit` throws, the model is left without any attempt. */
   run<T>(edit: () => T): T {
     this.rollback();
@@ -241,6 +314,25 @@ export class Speculation {
     this.#record = undefined;
     return record;
   }
+}
+
+/**
+ * What a tool's own preview put into the model: it sits under the pointer, so inference must not snap to it (see
+ * `exclusionForChanges`). It still hides what lies behind it, as it does on screen. Tools that don't take their result
+ * from the face under the pointer pass `faceTargets: false`, so the preview's faces keep showing the On Face marker.
+ */
+export function previewExclusion(
+  editor: Editor,
+  speculation: Speculation,
+  options: { readonly faceTargets?: boolean } = {},
+): InferenceExclusion {
+  const { session } = editor;
+  const exclusion = exclusionForChanges(
+    session.doc.store(session.activeContext),
+    session.activeContext,
+    speculation.record,
+  );
+  return options.faceTargets === false ? { ...exclusion, faceTargets: null } : exclusion;
 }
 
 /**

@@ -111,6 +111,7 @@ import { Text3DTool, TEXT_3D_TOOL_ID } from './tools/Text3DTool';
 import type { Text3DOptions } from '../kernel/ops/text3d';
 import { parseText3DForm, type Text3DForm } from './text3d/text3dForm';
 import { pick, type PickHit, type PickRequest } from './picking/picker';
+import { boundsCacheFor, sessionClipping } from './tools/toolSupport';
 import { createSampleModel, SAMPLE_MODEL_NAME } from './sample/sampleModel';
 import { DEFAULT_PREFERENCES, type Preferences, type PreferenceStorage } from './preferences/preferences';
 import { templateById } from './templates/templates';
@@ -749,6 +750,8 @@ export class Editor {
       camera: session.camera,
       size: this.#viewportSize,
       screen: { x: screen.x, y: screen.y },
+      clip: sessionClipping(this),
+      boundsCache: boundsCacheFor(this),
       ...options,
     });
   }

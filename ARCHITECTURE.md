@@ -147,6 +147,11 @@ Folders are created when they get their first real module. Placeholder files are
   kernel operation in a transaction, and each new attempt first rolls back the previous one with
   `ModelDocument.rollbackLastTransaction` (no redo entry). Committing keeps the last attempt as a single undo step.
   If an attempt throws, the model is left without it and the error is shown in the status bar.
+- **Inferring during a speculative edit.** The attempt stays in the model while the pointer moves, so inference sees
+  what is on screen: the preview hides what lies behind it. What the attempt added or moved (read from its transaction
+  record, `exclusionForChanges`) is never a snap target, together with the operation's own source (Push/Pull's face
+  outline, the selection Move and Rotate carry), so the preview can't catch the pointer. Move and Rotate also skip it
+  as the face under the pointer, which would feed their result back into them.
 - **Measurements box.** While the active tool reports a `MeasurementField`, `Editor.handleKey` sends typing to the
   box: digits and `. , - [ < /` start it, and after that any character continues it. Enter parses the text against
   the kinds the tool accepts (`parseMeasurement`) and calls `onMeasurement`. After an operation, typing replaces it as

@@ -187,7 +187,8 @@ test('the whole modeling journey works offline, from a new model to import and e
   await page.keyboard.press('Space');
   await page.keyboard.press('ControlOrMeta+A');
   await page.keyboard.press('m');
-  const start = { x: beforeMove.min.x, y: beforeMove.min.y, z: 0 };
+  // A top corner: inference snaps only to points the camera sees, and the top face hides the bottom corners here.
+  const start = { x: beforeMove.min.x, y: beforeMove.min.y, z: beforeMove.max.z };
   await clickAt(page, start);
   const startScreen = await onScreen(page, start);
   await page.mouse.move(startScreen.x + 80, startScreen.y, { steps: 5 });
@@ -202,8 +203,9 @@ test('the whole modeling journey works offline, from a new model to import and e
   await page.keyboard.press('Shift+Z');
   const box = await model(page);
   await openMenuItem(page, 'Tools', 'Tape Measure', 'menuitemradio');
-  await clickAt(page, { x: box.min.x, y: box.min.y, z: 0 });
-  const end = await onScreen(page, { x: box.max.x, y: box.min.y, z: 0 });
+  // Along the top, whose corners the camera sees (the top face hides the bottom corners in this view).
+  await clickAt(page, { x: box.min.x, y: box.min.y, z: box.max.z });
+  const end = await onScreen(page, { x: box.max.x, y: box.min.y, z: box.max.z });
   await page.mouse.move(end.x, end.y, { steps: 4 });
   await expect(page.getByTestId('measurements')).toHaveValue('2000mm');
   await page.keyboard.press('Escape');

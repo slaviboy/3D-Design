@@ -363,6 +363,26 @@ export function rayThroughScreen(camera: CameraState, screen: ScreenPoint, size:
   return { origin: camera.eye, direction };
 }
 
+/**
+ * The ray from the camera through a world point, and the point's distance along it. Perspective rays start at the eye;
+ * parallel rays start behind the eye along the view direction, as in {@link rayThroughScreen}, so distances along
+ * either kind of ray compare with pick distances. Null when the point is behind a perspective camera.
+ */
+export function rayToPoint(
+  camera: CameraState,
+  point: Vec3,
+): { readonly ray: Ray; readonly t: number } | null {
+  const { forward } = cameraBasis(camera);
+  const offset = sub(point, camera.eye);
+  if (camera.projection === 'parallel') {
+    const t = dot(offset, forward) + PARALLEL_RAY_BACKOFF;
+    return t > 0 ? { ray: { origin: sub(point, scale(forward, t)), direction: forward }, t } : null;
+  }
+  const t = length(offset);
+  if (dot(offset, forward) <= MIN_PROJECTION_DEPTH || t <= MIN_PROJECTION_DEPTH) return null;
+  return { ray: { origin: camera.eye, direction: scale(offset, 1 / t) }, t };
+}
+
 /** Screen position of a world point, or null when it is behind a perspective camera. */
 export function projectToScreen(
   camera: CameraState,

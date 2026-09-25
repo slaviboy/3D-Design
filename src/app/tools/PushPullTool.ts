@@ -23,6 +23,7 @@ import { EPS_LEN } from '../../kernel/tolerance';
 import type { MeasurementIntent } from '../../kernel/vcb/parseMeasurement';
 import { rayThroughScreen } from '../camera/camera';
 import type { Editor } from '../Editor';
+import { combineExclusions, exclusionForBoundary, type InferenceExclusion } from '../inference/exclusion';
 import { closestPointOnLineToRay, type Inference } from '../inference/inference';
 import { DRAG_THRESHOLD_PX } from './SelectTool';
 import {
@@ -39,14 +40,14 @@ import {
   formatDistance,
   inferAt,
   markerFor,
+  POINT_INFERENCE_KINDS,
+  previewExclusion,
   Speculation,
   toggleModifier,
   toggleModifierName,
   toLocalDirection,
   toWorldNormal,
 } from './toolSupport';
-
-const SNAPPING_KINDS = new Set(['endpoint', 'midpoint', 'center', 'on-edge', 'origin']);
 
 interface Operation {
   readonly face: FaceId;
@@ -57,6 +58,8 @@ interface Operation {
   readonly pressX: number;
   readonly pressY: number;
   readonly speculation: Speculation;
+  /** The face's own outline, which the distance never snaps to. */
+  readonly exclusion: InferenceExclusion;
   /** World distance along the normal. */
   distance: number;
   /** The same distance in active-context units, as passed to the kernel. */
@@ -100,8 +103,14 @@ export class PushPullTool implements Tool {
     if (Math.hypot(input.x - operation.pressX, input.y - operation.pressY) > DRAG_THRESHOLD_PX)
       operation.dragged = true;
     operation.keepOriginal = toggleModifier(input, editor);
-    operation.inference = inferAt(editor, input);
-    const snapped = SNAPPING_KINDS.has(operation.inference.kind)
+    operation.inference = inferAt(editor, input, {
+      // The extrusion follows the pointer and would catch it; it still hides what lies behind it.
+      exclude: combineExclusions(
+        operation.exclusion,
+        previewExclusion(editor, operation.speculation, { faceTargets: false }),
+      ),
+    });
+    const snapped = POINT_INFERENCE_KINDS.has(operation.inference.kind)
       ? operation.inference.point
       : closestPointOnLineToRay(
           operation.origin,
@@ -135,6 +144,7 @@ export class PushPullTool implements Tool {
       pressX: input.x,
       pressY: input.y,
       speculation: new Speculation(editor.session.doc),
+      exclusion: exclusionForBoundary(store, { faces: [face] }),
       distance: 0,
       localDistance: 0,
       keepOriginal: toggleModifier(input, editor),

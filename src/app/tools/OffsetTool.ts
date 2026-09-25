@@ -26,6 +26,7 @@ import { offsetEdges, offsetFace } from '../../kernel/ops/offset';
 import { EPS_LEN } from '../../kernel/tolerance';
 import type { MeasurementIntent } from '../../kernel/vcb/parseMeasurement';
 import type { Editor } from '../Editor';
+import { combineExclusions, exclusionForBoundary, type InferenceExclusion } from '../inference/exclusion';
 import type { Inference } from '../inference/inference';
 import { DRAG_THRESHOLD_PX } from './SelectTool';
 import {
@@ -42,6 +43,9 @@ import {
   inferAt,
   markerFor,
   planeAxes,
+  POINT_INFERENCE_KINDS,
+  pointOnPlaneUnder,
+  previewExclusion,
   projectOntoPlane,
   Speculation,
   toggleModifier,
@@ -70,6 +74,8 @@ interface Operation {
   readonly outline: Outline;
   readonly startDistance: number;
   readonly speculation: Speculation;
+  /** The outline being offset, which the distance never snaps to. */
+  readonly exclusion: InferenceExclusion;
   readonly pressX: number;
   readonly pressY: number;
   /** World distance: positive toward the face interior, or to the left of an edge chain. */
@@ -145,11 +151,16 @@ export class OffsetTool implements Tool {
       outline.plane,
       inferAt(editor, input, { fallbackPlane: outline.plane }).point,
     );
+    const store = editor.session.doc.store(editor.session.activeContext);
     this.#operation = {
       source,
       outline,
       startDistance: this.#signedDistance(source, outline, pressPoint),
       speculation: new Speculation(editor.session.doc),
+      exclusion: exclusionForBoundary(
+        store,
+        source.kind === 'face' ? { faces: [source.face] } : { edges: source.edges },
+      ),
       pressX: input.x,
       pressY: input.y,
       distance: 0,
@@ -275,9 +286,20 @@ export class OffsetTool implements Tool {
   }
 
   #pointOnPlane(editor: Editor, input: PointerInput, operation: Operation): Vec3 {
-    const inference = inferAt(editor, input, { fallbackPlane: operation.outline.plane });
+    const { plane } = operation.outline;
+    const inference = inferAt(editor, input, {
+      fallbackPlane: plane,
+      // The new outline follows the pointer and would catch it.
+      exclude: combineExclusions(
+        operation.exclusion,
+        previewExclusion(editor, operation.speculation, { faceTargets: false }),
+      ),
+    });
     operation.inference = inference;
-    return projectOntoPlane(operation.outline.plane, inference.point);
+    // A point of the model sets the distance where it projects onto the plane. Anything else (another face, a line,
+    // empty space) stands for the pointer itself: projecting it would move the distance away from under the pointer.
+    if (POINT_INFERENCE_KINDS.has(inference.kind)) return projectOntoPlane(plane, inference.point);
+    return pointOnPlaneUnder(editor, input, plane) ?? projectOntoPlane(plane, inference.point);
   }
 
   /** Distance from the outline: positive inside a face, or on the left of an edge chain. */

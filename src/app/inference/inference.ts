@@ -16,6 +16,7 @@
  */
 
 import type { DefinitionId, FaceId } from '../../kernel/ids';
+import type { Aabb } from '../../kernel/math/aabb';
 import { transformDirection, transformNormal, transformPoint, type Mat4 } from '../../kernel/math/mat4';
 import { planeFromPointNormal, type Plane } from '../../kernel/math/plane';
 import { closestPointsOnSegments } from '../../kernel/math/segment';
@@ -49,7 +50,10 @@ import {
 } from '../camera/camera';
 import { pick } from '../picking/picker';
 import { traverseAlongRay } from '../picking/rayTraversal';
+import { clipSegment, isClipped, NO_SECTION_CLIPPING, type SectionClipping } from '../picking/sectionClip';
+import { isOccluded, visibilityRules, type OcclusionScene } from '../picking/visibility';
 import type { EntityRef } from '../selection/Selection';
+import type { InferenceExclusion } from './exclusion';
 
 export type Axis = 'x' | 'y' | 'z';
 
@@ -106,6 +110,12 @@ export interface InferenceRequest {
   readonly tolerancePx?: number;
   /** Recently hovered points and edges for linear inferences. */
   readonly references?: InferenceReferences;
+  /** Geometry the operation is changing, which the pointer doesn't snap to. */
+  readonly exclude?: InferenceExclusion;
+  /** Section cuts: what they cut away is neither a snap target nor hides anything. */
+  readonly clip?: SectionClipping;
+  /** Definition bounds shared by the ray queries of this request (and others against the same unchanged document). */
+  readonly boundsCache?: Map<DefinitionId, Aabb>;
 }
 
 export const DEFAULT_INFERENCE_TOLERANCE_PX = 10;
@@ -161,6 +171,13 @@ const PRIORITY: Readonly<Record<InferenceKind, number>> = {
 
 /** Among linear inferences within this many pixels of each other, the lower rank wins. */
 const LINEAR_TIE_PX = 0.5;
+/** Points within this many pixels of each other count as equally close, and the one nearer the camera wins. */
+const DEPTH_TIE_PX = 0.5;
+/**
+ * Candidates tested for faces hiding them on each pointer move, nearest-ranked first. Any past this count as
+ * visible, as every candidate did before visibility was tested, so a dense model can't make the pointer lag.
+ */
+const MAX_OCCLUSION_TESTS = 16;
 const LINEAR_RANK: Partial<Record<InferenceKind, number>> = {
   'on-axis': 0,
   parallel: 1,
@@ -172,6 +189,86 @@ const LINEAR_RANK: Partial<Record<InferenceKind, number>> = {
 interface Candidate {
   readonly inference: Inference;
   readonly pixels: number;
+  /** Distance in front of the camera. */
+  readonly depth: number;
+  /** A point on an edge of the model, which Back Edges shows through faces. */
+  readonly onEdge: boolean;
+}
+
+/** Collects the candidates within `tolerance` pixels of the cursor. */
+function candidateList(
+  camera: CameraState,
+  size: ViewportSize,
+  screen: ScreenPoint,
+  tolerance: number,
+): { readonly list: Candidate[]; readonly offer: (inference: Inference, onEdge?: boolean) => void } {
+  const list: Candidate[] = [];
+  const offer = (inference: Inference, onEdge = false): void => {
+    const projected = projectToScreen(camera, inference.point, size);
+    if (!projected) return;
+    const pixels = Math.hypot(projected.x - screen.x, projected.y - screen.y);
+    if (pixels <= tolerance) list.push({ inference, pixels, depth: projected.depth, onEdge });
+  };
+  return { list, offer };
+}
+
+/**
+ * SketchUp infers only what the user can see: faces hide the points behind them, except in X-ray and wireframe, and
+ * Back Edges keeps points on edges visible. Results are remembered for the request, and past a budget candidates
+ * count as visible.
+ */
+function visibilityTest(
+  doc: ModelDocument,
+  context: DefinitionId,
+  contextTransform: Mat4,
+  request: InferenceRequest,
+  boundsCache: Map<DefinitionId, Aabb>,
+): (candidate: Candidate) => boolean {
+  const rules = visibilityRules(doc.style);
+  if (!rules.occlusion) return () => true;
+  const scene: OcclusionScene = {
+    doc,
+    context,
+    contextTransform,
+    camera: request.camera,
+    size: request.size,
+    boundsCache,
+    ...(request.clip ? { clip: request.clip } : {}),
+  };
+  const known = new Map<string, boolean>();
+  let tests = 0;
+  return (candidate) => {
+    if (candidate.onEdge && rules.edgePointsAlwaysVisible) return true;
+    const { point } = candidate.inference;
+    const key = `${String(point.x)},${String(point.y)},${String(point.z)}`;
+    let visible = known.get(key);
+    if (visible === undefined) {
+      visible = tests >= MAX_OCCLUSION_TESTS || !isOccluded(point, scene);
+      tests++;
+      known.set(key, visible);
+    }
+    return visible;
+  };
+}
+
+/**
+ * The first visible candidate of a sorted list; among the visible ones that tie with it (`ties`, and within
+ * {@link DEPTH_TIE_PX}), the one nearest the camera, so a corner beats the corner hidden right behind it.
+ */
+function firstVisible(
+  sorted: readonly Candidate[],
+  visible: (candidate: Candidate) => boolean,
+  ties: (candidate: Candidate, first: Candidate) => boolean,
+): Candidate | null {
+  const index = sorted.findIndex(visible);
+  const first = sorted[index];
+  if (!first) return null;
+  let best = first;
+  for (const other of sorted.slice(index + 1)) {
+    if (!ties(other, first) || other.pixels > first.pixels + DEPTH_TIE_PX) break;
+    if (other.depth < best.depth && visible(other)) best = other;
+  }
+  return best;
 }
 
 export function axisOf(direction: Vec3, frame: AxisFrame = WORLD_AXIS_FRAME): Axis | undefined {
@@ -204,60 +301,73 @@ export function infer(
   contextTransform: Mat4,
   request: InferenceRequest,
 ): Inference {
-  const { camera, size, screen, anchor } = request;
+  const { camera, size, screen, anchor, exclude } = request;
   const tolerance = request.tolerancePx ?? DEFAULT_INFERENCE_TOLERANCE_PX;
   const frame = axisFrameOf(doc);
   const axes = axisEntries(frame);
   const ray = rayThroughScreen(camera, screen, size);
-  const pixelsTo = (point: Vec3): number => {
-    const projected = projectToScreen(camera, point, size);
-    return projected ? Math.hypot(projected.x - screen.x, projected.y - screen.y) : Infinity;
-  };
+  const clip = request.clip ?? NO_SECTION_CLIPPING;
+  const boundsCache = request.boundsCache ?? new Map<DefinitionId, Aabb>();
+  const visible = visibilityTest(doc, context, contextTransform, request, boundsCache);
+  const { list: points, offer } = candidateList(camera, size, screen, tolerance);
 
-  let best: Candidate | null = null;
-  const offer = (inference: Inference): void => {
-    const pixels = pixelsTo(inference.point);
-    if (pixels > tolerance) return;
-    const priority = PRIORITY[inference.kind];
-    if (
-      !best ||
-      priority < PRIORITY[best.inference.kind] ||
-      (priority === PRIORITY[best.inference.kind] && pixels < best.pixels)
-    ) {
-      best = { inference, pixels };
-    }
-  };
-
+  // The axes aren't cut by sections, so the origin never is.
   offer({ point: frame.origin, kind: 'origin', label: 'Origin', inGroup: false });
-  traverseAlongRay(doc, context, contextTransform, camera, size, ray, tolerance, (visit) => {
-    const inGroup = visit.topLevel !== null;
-    const worldStart = transformPoint(visit.toWorld, visit.start);
-    const worldEnd = transformPoint(visit.toWorld, visit.end);
-    for (const edgeId of visit.store.queryEdges(visit.box)) {
-      const edge = visit.store.getEdge(edgeId);
-      if (edge.attributes.hidden || !isTagVisible(doc, edge.attributes.tagId)) continue;
-      const a = transformPoint(visit.toWorld, visit.store.position(edge.v0));
-      const b = transformPoint(visit.toWorld, visit.store.position(edge.v1));
-      const entity: EntityRef = visit.topLevel ?? { kind: 'edge', id: edgeId };
-      const common = { inGroup, edge: { a, b }, entity };
-      offer({ ...common, point: a, kind: 'endpoint', label: 'Endpoint' });
-      offer({ ...common, point: b, kind: 'endpoint', label: 'Endpoint' });
-      offer({ ...common, point: lerp(a, b, 0.5), kind: 'midpoint', label: 'Midpoint' });
-      const closest = closestPointsOnSegments(worldStart, worldEnd, a, b);
-      offer({ ...common, point: closest.pointOnSecond, kind: 'on-edge', label: 'On Edge' });
-    }
-    for (const curve of visit.store.curves()) {
-      if (curve.params.kind === 'polyline') continue;
-      const first = curve.edges[0] === undefined ? undefined : visit.store.edge(curve.edges[0]);
-      if (first && (first.attributes.hidden || !isTagVisible(doc, first.attributes.tagId))) continue;
-      offer({
-        point: transformPoint(visit.toWorld, curve.params.center),
-        kind: 'center',
-        label: 'Center',
-        inGroup,
-      });
-    }
-  });
+  traverseAlongRay(
+    doc,
+    context,
+    contextTransform,
+    {
+      camera,
+      size,
+      ray,
+      tolerancePx: tolerance,
+      boundsCache,
+      clip,
+      ...(exclude ? { skipInstances: exclude.instances } : {}),
+    },
+    (visit) => {
+      const inGroup = visit.topLevel !== null;
+      // Exclusions name entities of the active context, not of the definitions nested in it.
+      const excluded = visit.topLevel === null ? exclude : undefined;
+      const cuts = visit.clipPlanes;
+      const worldStart = transformPoint(visit.toWorld, visit.start);
+      const worldEnd = transformPoint(visit.toWorld, visit.end);
+      for (const edgeId of visit.store.queryEdges(visit.box)) {
+        const edge = visit.store.getEdge(edgeId);
+        if (edge.attributes.hidden || !isTagVisible(doc, edge.attributes.tagId)) continue;
+        if (excluded?.edges.has(edgeId) === true) continue;
+        const a = transformPoint(visit.toWorld, visit.store.position(edge.v0));
+        const b = transformPoint(visit.toWorld, visit.store.position(edge.v1));
+        const entity: EntityRef = visit.topLevel ?? { kind: 'edge', id: edgeId };
+        const common = { inGroup, edge: { a, b }, entity };
+        // An edge attached to moving geometry stretches, so only its fixed end is where the document has it.
+        const movingA = excluded?.vertices.has(edge.v0) === true;
+        const movingB = excluded?.vertices.has(edge.v1) === true;
+        if (!movingA && !isClipped(a, cuts))
+          offer({ ...common, point: a, kind: 'endpoint', label: 'Endpoint' }, true);
+        if (!movingB && !isClipped(b, cuts))
+          offer({ ...common, point: b, kind: 'endpoint', label: 'Endpoint' }, true);
+        if (movingA || movingB) continue;
+        const middle = lerp(a, b, 0.5);
+        if (!isClipped(middle, cuts))
+          offer({ ...common, point: middle, kind: 'midpoint', label: 'Midpoint' }, true);
+        const shown = clipSegment(a, b, cuts);
+        if (!shown) continue;
+        const closest = closestPointsOnSegments(worldStart, worldEnd, shown[0], shown[1]);
+        offer({ ...common, point: closest.pointOnSecond, kind: 'on-edge', label: 'On Edge' }, true);
+      }
+      for (const curve of visit.store.curves()) {
+        if (curve.params.kind === 'polyline') continue;
+        if (excluded?.curves.has(curve.id) === true) continue;
+        const first = curve.edges[0] === undefined ? undefined : visit.store.edge(curve.edges[0]);
+        if (first && (first.attributes.hidden || !isTagVisible(doc, first.attributes.tagId))) continue;
+        const center = transformPoint(visit.toWorld, curve.params.center);
+        if (isClipped(center, cuts)) continue;
+        offer({ point: center, kind: 'center', label: 'Center', inGroup });
+      }
+    },
+  );
 
   for (const guide of doc.store(context).guides()) {
     if (guide.attributes.hidden || !isTagVisible(doc, guide.attributes.tagId)) continue;
@@ -276,7 +386,12 @@ export function infer(
     }
   }
 
-  const geometric = best as Candidate | null;
+  points.sort((p, q) => PRIORITY[p.inference.kind] - PRIORITY[q.inference.kind] || p.pixels - q.pixels);
+  const geometric = firstVisible(
+    points,
+    visible,
+    (candidate, first) => PRIORITY[candidate.inference.kind] === PRIORITY[first.inference.kind],
+  );
   const withAxis = (inference: Inference): Inference => {
     if (!anchor) return inference;
     const axis = axisOf(sub(inference.point, anchor), frame);
@@ -304,7 +419,7 @@ export function infer(
 
   if (geometric && PRIORITY[geometric.inference.kind] <= 1) return withAxis(geometric.inference);
 
-  const linear = bestLinearInference(request, ray, tolerance, pixelsTo, frame);
+  const linear = bestLinearInference(request, ray, tolerance, frame, visible);
   if (linear) {
     // Lines through the anchor may win a tie with geometry; lines elsewhere only when strictly closer.
     const throughAnchor = linear.inference.kind !== 'extension' && linear.inference.kind !== 'from-point';
@@ -319,7 +434,15 @@ export function infer(
 
   if (geometric) return withAxis(geometric.inference);
 
-  const hit = pick(doc, context, contextTransform, { camera, size, screen, edgeTolerancePx: 0 });
+  const hit = pick(doc, context, contextTransform, {
+    camera,
+    size,
+    screen,
+    edgeTolerancePx: 0,
+    clip,
+    boundsCache,
+    ...(exclude?.faceTargets ? { skip: exclude.faceTargets } : {}),
+  });
   if (hit && hit.ref.kind !== 'edge') {
     let facePlane: Plane | undefined;
     if (hit.ref.kind === 'face') {
@@ -342,33 +465,20 @@ export function infer(
 }
 
 /**
- * The closest linear inference: an axis, or a line parallel or perpendicular to a recent edge, through the anchor;
- * the extension of a recent edge; or an axis line through a recent point.
+ * The closest visible linear inference: an axis, or a line parallel or perpendicular to a recent edge, through the
+ * anchor; the extension of a recent edge; or an axis line through a recent point. Among lines about as close as the
+ * closest, the lower rank wins.
  */
 function bestLinearInference(
   request: InferenceRequest,
   ray: Ray,
   tolerance: number,
-  pixelsTo: (point: Vec3) => number,
   frame: AxisFrame,
+  visible: (candidate: Candidate) => boolean,
 ): Candidate | null {
   const { anchor, references } = request;
   const axes = axisEntries(frame);
-  let best: Candidate | null = null;
-  const offer = (inference: Inference): void => {
-    const pixels = pixelsTo(inference.point);
-    if (pixels > tolerance) return;
-    const rank = LINEAR_RANK[inference.kind] ?? 0;
-    const bestRank = best ? (LINEAR_RANK[best.inference.kind] ?? 0) : 0;
-    if (
-      !best ||
-      pixels < best.pixels - LINEAR_TIE_PX ||
-      (pixels <= best.pixels + LINEAR_TIE_PX && rank < bestRank) ||
-      (Math.abs(pixels - best.pixels) <= LINEAR_TIE_PX && rank === bestRank && pixels < best.pixels)
-    ) {
-      best = { inference, pixels };
-    }
-  };
+  const { list: candidates, offer } = candidateList(request.camera, request.size, request.screen, tolerance);
 
   if (anchor) {
     for (const { axis, direction, label } of axes) {
@@ -415,6 +525,17 @@ function bestLinearInference(
         offer({ point, kind: 'from-point', label: 'From Point', inGroup: false });
       }
     }
+  }
+
+  candidates.sort((p, q) => p.pixels - q.pixels);
+  const index = candidates.findIndex(visible);
+  const first = candidates[index];
+  if (!first) return null;
+  let best = first;
+  const rankOf = (candidate: Candidate): number => LINEAR_RANK[candidate.inference.kind] ?? 0;
+  for (const other of candidates.slice(index + 1)) {
+    if (other.pixels > first.pixels + LINEAR_TIE_PX) break;
+    if (rankOf(other) < rankOf(best) && visible(other)) best = other;
   }
   return best;
 }

@@ -68,6 +68,21 @@ or line widths, so they aren't used.
 - **Window and crossing selection** use frustum containment and intersection tests against the same trees.
 - **Why not GPU id buffers:** inference needs vertices, midpoints and edges with pixel tolerance. GPU readback stalls
   the pipeline and doesn't account for section clipping or x-ray.
+- **Section cuts.** Picking and inference skip what an active section cuts away while cuts are shown, with the same
+  planes as the renderer: a context's active plane cuts itself and everything nested in it, and an open group inherits
+  the planes of the contexts around it (`src/app/picking/sectionClip.ts`). A click on a cut-away face reaches what is
+  visible behind it.
+- **Inference sees what the camera sees** (`src/app/picking/visibility.ts`). A snap candidate is dropped when a
+  visible face lies between it and the camera, tested with a ray from the camera to the candidate: the face must be
+  crossed inside its outline (more than half a pixel from its edges, so silhouettes don't hide the points just behind
+  them) and the candidate must lie off the face's plane by more than 0.75 px (points on a face stay visible). Faces
+  hide nothing in X-ray and wireframe, and Back Edges keeps points on edges visible (they're drawn dashed); the origin
+  is tested like other points, since the axes are drawn with depth testing. Candidates are tested lazily in ranking
+  order, at most 16 per pointer move, with definition bounds cached until the document changes.
+- **A tool's own preview.** Move, Rotate, Push/Pull and Offset preview by applying their operation to the model, so
+  inference sees the preview where it is on screen: it hides what lies behind it, but what it added or moved is never
+  a snap target (`exclusionForChanges` in `src/app/inference/exclusion.ts`), nor, for Move and Rotate, the face under
+  the pointer, which would feed the result back into itself.
 
 ## Styles
 
@@ -237,7 +252,10 @@ Implemented in `src/render/ModelRenderer.ts`, with pure helpers in `src/kernel/o
 
 ### Known limitations
 
-- CPU picking and inference do not respect clipping: geometry cut away by a section can still be hovered and picked.
+- Section fills don't hide points: a point inside a cut solid can be snapped to through the fill. Window and crossing
+  selection ignore cuts.
+- Translucent materials hide points behind them for inference, as they do for picking, though they are see-through on
+  screen.
 - Section planes are picked by the outline of their rectangle only, not by clicking inside it, and are not included in
   window or crossing selection or Select All. They can't yet be moved or rotated with Move and Rotate, and Align View is
   not implemented.

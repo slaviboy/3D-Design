@@ -35,7 +35,14 @@ import {
   type Tool,
   type ToolPreview,
 } from './Tool';
-import { canReplace, errorMessage, Speculation, toggleModifier, toggleModifierName } from './toolSupport';
+import {
+  canReplace,
+  errorMessage,
+  isVisibleFromCamera,
+  Speculation,
+  toggleModifier,
+  toggleModifierName,
+} from './toolSupport';
 import { refsOfResult, scalingAbout, selectionBounds, transformSelectionOf } from './transformSupport';
 
 export const SCALE_TOOL_ID = 'tool.scale';
@@ -293,21 +300,40 @@ export class ScaleTool implements Tool {
     return grips;
   }
 
+  /**
+   * The grip under the pointer. Grips the selection hides lose to visible ones, then the nearest on screen wins, then
+   * the nearest to the camera, so a corner in front beats the corner right behind it.
+   */
   #gripAt(editor: Editor, input: PointerInput): Grip | null {
     const box = selectionBounds(editor, transformSelectionOf(editor.session.selection));
     if (!box) return null;
-    let best: Grip | null = null;
-    let bestPixels = GRIP_PICK_PX;
+    let best: {
+      readonly grip: Grip;
+      readonly visible: boolean;
+      readonly pixels: number;
+      readonly depth: number;
+    } | null = null;
     for (const grip of this.#grips(editor, box)) {
       const screen = projectToScreen(editor.session.camera, grip.world, editor.viewportSize);
       if (!screen) continue;
       const pixels = Math.hypot(screen.x - input.x, screen.y - input.y);
-      if (pixels <= bestPixels) {
-        best = grip;
-        bestPixels = pixels;
-      }
+      if (pixels > GRIP_PICK_PX) continue;
+      const candidate = {
+        grip,
+        visible: isVisibleFromCamera(editor, grip.world),
+        pixels,
+        depth: screen.depth,
+      };
+      const better =
+        !best ||
+        (candidate.visible !== best.visible
+          ? candidate.visible
+          : candidate.pixels !== best.pixels
+            ? candidate.pixels < best.pixels
+            : candidate.depth < best.depth);
+      if (better) best = candidate;
     }
-    return best;
+    return best?.grip ?? null;
   }
 
   /** Factor along the line from the anchor through the grip, where the pointer ray passes closest. */

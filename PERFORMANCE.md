@@ -295,6 +295,21 @@ The medians include the first run, which is slower while the code warms up.
 - `validate-10000`: 24.1 ms
 - `snapshot-restore-10000`: 62.5 ms
 
+## Inference with visibility tests (`infer-hover-*`)
+
+Inference runs on every pointer move. Since it tests whether faces hide each snap candidate
+(`tests/bench/inferencePerformance.bench.ts`), a sweep of 64 pointer positions over the box grids, seen from the front
+right and above in perspective, measures what those tests cost. The X-ray runs skip them.
+
+| Model | Faces hide what is behind | X-ray (no visibility tests) |
+|---|---|---|
+| 10k entities | 0.115 ms per pointer move | 0.102 ms |
+| 100k entities | 0.557 ms per pointer move | 0.554 ms |
+
+- Candidates are tested lazily in ranking order, so a hover usually needs one or two rays, and never more than 16.
+- The definition bounds that every ray query needs are cached until the document changes. Before, each query
+  recomputed them (twice per pointer move), so a hover over a large model is no slower than before.
+
 ## Not measured yet
 
 - Kernel insertion of imports above the 250,000-triangle limit. It ran out of V8 heap in the Node worker before the

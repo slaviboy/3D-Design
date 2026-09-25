@@ -28,6 +28,7 @@ import {
 import type { MeasurementIntent } from '../../kernel/vcb/parseMeasurement';
 import { worldUnitsPerPixel } from '../camera/camera';
 import type { Editor } from '../Editor';
+import { combineExclusions, exclusionForMove, type InferenceExclusion } from '../inference/exclusion';
 import type { Inference } from '../inference/inference';
 import { Selection } from '../selection/Selection';
 import { DRAG_THRESHOLD_PX } from './SelectTool';
@@ -45,6 +46,7 @@ import {
   errorMessage,
   inferAt,
   markerFor,
+  previewExclusion,
   Speculation,
   toggleModifier,
   toggleModifierName,
@@ -77,6 +79,8 @@ interface Operation {
   readonly reference: Vec3;
   readonly selection: TransformSelection;
   readonly speculation: Speculation;
+  /** The rotating geometry, which the angle never snaps to. */
+  readonly exclusion: InferenceExclusion;
   readonly pressX: number;
   readonly pressY: number;
   angle: number;
@@ -127,7 +131,14 @@ export class RotateTool implements Tool {
     }
     operation.copy = toggleModifier(input, editor);
     const { center, plane } = operation.pivot;
-    const inference = inferAt(editor, input, { anchor: center, fallbackPlane: plane });
+    const preview = previewExclusion(editor, operation.speculation);
+    const inference = inferAt(editor, input, {
+      anchor: center,
+      fallbackPlane: plane,
+      // The rotated preview follows the pointer and would catch it. A copy leaves the original in place, where the
+      // pointer may snap back to it.
+      exclude: operation.copy ? preview : combineExclusions(operation.exclusion, preview),
+    });
     operation.current = inference;
     const direction = directionInPlane(plane, center, inference.point);
     if (direction) {
@@ -163,6 +174,10 @@ export class RotateTool implements Tool {
       reference,
       selection: transformSelectionOf(session.selection),
       speculation: new Speculation(session.doc),
+      exclusion: exclusionForMove(
+        session.doc.store(session.activeContext),
+        transformSelectionOf(session.selection),
+      ),
       pressX: input.x,
       pressY: input.y,
       angle: 0,

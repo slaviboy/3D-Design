@@ -15,8 +15,9 @@
  * limitations under the License.
  */
 
-import type { DefinitionId } from '../../kernel/ids';
-import { classifyPointInPolygon } from '../../kernel/math/geom2d';
+import type { DefinitionId, FaceId, InstanceId } from '../../kernel/ids';
+import type { Aabb } from '../../kernel/math/aabb';
+import { classifyPointInPolygon, type RingClassification } from '../../kernel/math/geom2d';
 import { transformPoint, type Mat4 } from '../../kernel/math/mat4';
 import { planeBasis, projectTo2D } from '../../kernel/math/plane';
 import { closestPointsOnSegments } from '../../kernel/math/segment';
@@ -35,10 +36,17 @@ import {
 } from '../camera/camera';
 import type { EntityRef } from '../selection/Selection';
 import { traverseAlongRay, type RayVisit } from './rayTraversal';
+import { clipSegment, isClipped, type SectionClipping } from './sectionClip';
 
 export const DEFAULT_EDGE_PICK_TOLERANCE_PX = 5;
 /** Faces seen this close to edge-on (|cos| of the angle to the ray) are not hit. */
 const GRAZING_COSINE = 1e-9;
+
+/** Entities of the context that picking treats as absent, such as geometry that is being moved out of its place. */
+export interface PickSkip {
+  readonly faces?: ReadonlySet<FaceId>;
+  readonly instances?: ReadonlySet<InstanceId>;
+}
 
 export interface PickRequest {
   readonly camera: CameraState;
@@ -49,6 +57,11 @@ export interface PickRequest {
   readonly includeSoftEdges?: boolean;
   /** Also pick the section planes of the context by their outlines (only the Select tool wants them). */
   readonly includeSectionPlanes?: boolean;
+  /** Section cuts: geometry they cut away can't be picked, so the pick finds what is visible behind it. */
+  readonly clip?: SectionClipping;
+  readonly skip?: PickSkip;
+  /** Definition bounds shared with other queries against the same unchanged document. */
+  readonly boundsCache?: Map<DefinitionId, Aabb>;
 }
 
 /** Length of the pick ray used against section plane outlines; longer than any parallel-projection back-off. */
@@ -86,12 +99,17 @@ export function pick(
     doc,
     context,
     contextTransform,
-    request.camera,
-    request.size,
-    worldRay,
-    tolerancePx,
+    {
+      camera: request.camera,
+      size: request.size,
+      ray: worldRay,
+      tolerancePx,
+      ...(request.boundsCache ? { boundsCache: request.boundsCache } : {}),
+      ...(request.skip?.instances ? { skipInstances: request.skip.instances } : {}),
+      ...(request.clip ? { clip: request.clip } : {}),
+    },
     (visit) => {
-      pickFaces(doc, visit, candidates);
+      pickFaces(doc, visit, candidates, request.skip?.faces);
       pickEdges(doc, visit, request, tolerancePx, worldRay, candidates);
     },
   );
@@ -142,28 +160,54 @@ function pickSectionPlanes(
   }
 }
 
-function pickFaces(doc: ModelDocument, visit: RayVisit, candidates: Candidate[]): void {
-  const { store, origin, direction, toWorld, topLevel } = visit;
+/** Where the ray of a visit meets a visible face, in the visit's local coordinates, or null when it misses. */
+export interface FaceHit {
+  readonly t: number;
+  readonly local: Vec3;
+  readonly position: Exclude<RingClassification, 'outside'>;
+}
+
+export function rayFaceHit(
+  doc: ModelDocument,
+  visit: RayVisit,
+  faceId: FaceId,
+  maxT = Infinity,
+): FaceHit | null {
+  const { store, origin, direction } = visit;
+  const face = store.getFace(faceId);
+  if (face.attributes.hidden || !face.plane || !isTagVisible(doc, face.attributes.tagId)) return null;
+  const denominator = dot(face.plane.normal, direction);
+  if (Math.abs(denominator) < GRAZING_COSINE * length(direction)) return null;
+  const t = (face.plane.offset - dot(face.plane.normal, origin)) / denominator;
+  if (t <= 0 || t >= maxT) return null;
+  const local = add(origin, scale(direction, t));
+  const basis = planeBasis(face.plane.normal);
+  const project = (loop: Loop) => store.loopPoints(loop).map((p) => projectTo2D(basis, p));
+  const position = classifyPointInPolygon(
+    projectTo2D(basis, local),
+    project(face.outer),
+    face.inners.map(project),
+  );
+  return position === 'outside' ? null : { t, local, position };
+}
+
+function pickFaces(
+  doc: ModelDocument,
+  visit: RayVisit,
+  candidates: Candidate[],
+  skipFaces: ReadonlySet<FaceId> | undefined,
+): void {
+  const { store, toWorld, topLevel } = visit;
   for (const faceId of store.queryFaces(visit.box)) {
-    const face = store.getFace(faceId);
-    if (face.attributes.hidden || !face.plane || !isTagVisible(doc, face.attributes.tagId)) continue;
-    const denominator = dot(face.plane.normal, direction);
-    if (Math.abs(denominator) < GRAZING_COSINE * length(direction)) continue;
-    const t = (face.plane.offset - dot(face.plane.normal, origin)) / denominator;
-    if (t <= 0) continue;
-    const local = add(origin, scale(direction, t));
-    const basis = planeBasis(face.plane.normal);
-    const project = (loop: Loop) => store.loopPoints(loop).map((p) => projectTo2D(basis, p));
-    const position = classifyPointInPolygon(
-      projectTo2D(basis, local),
-      project(face.outer),
-      face.inners.map(project),
-    );
-    if (position === 'outside') continue;
+    if (topLevel === null && skipFaces?.has(faceId) === true) continue;
+    const hit = rayFaceHit(doc, visit, faceId);
+    if (!hit) continue;
+    const point = transformPoint(toWorld, hit.local);
+    if (isClipped(point, visit.clipPlanes)) continue;
     candidates.push({
       ref: topLevel ?? { kind: 'face', id: faceId },
-      distance: t,
-      point: transformPoint(toWorld, local),
+      distance: hit.t,
+      point,
       bias: 0,
     });
   }
@@ -178,20 +222,23 @@ function pickEdges(
   candidates: Candidate[],
 ): void {
   const { store, toWorld, topLevel } = visit;
+  const rayStart = transformPoint(toWorld, visit.start);
+  const rayEnd = transformPoint(toWorld, visit.end);
   for (const edgeId of store.queryEdges(visit.box)) {
     const edge = store.getEdge(edgeId);
     if (edge.attributes.hidden || (edge.attributes.soft && request.includeSoftEdges !== true)) continue;
     if (!isTagVisible(doc, edge.attributes.tagId)) continue;
-    const closest = closestPointsOnSegments(
-      visit.start,
-      visit.end,
-      store.position(edge.v0),
-      store.position(edge.v1),
+    // Only the part of the edge that no section cuts away can be picked.
+    const visible = clipSegment(
+      transformPoint(toWorld, store.position(edge.v0)),
+      transformPoint(toWorld, store.position(edge.v1)),
+      visit.clipPlanes,
     );
-    const onRay = transformPoint(toWorld, closest.pointOnFirst);
-    const onEdge = transformPoint(toWorld, closest.pointOnSecond);
+    if (!visible) continue;
+    const closest = closestPointsOnSegments(rayStart, rayEnd, visible[0], visible[1]);
+    const onEdge = closest.pointOnSecond;
     const toleranceWorld = tolerancePx * worldUnitsPerPixel(request.camera, onEdge, request.size);
-    if (distance(onRay, onEdge) > toleranceWorld) continue;
+    if (distance(closest.pointOnFirst, onEdge) > toleranceWorld) continue;
     candidates.push({
       ref: topLevel ?? { kind: 'edge', id: edgeId },
       distance: dot(sub(onEdge, worldRay.origin), worldRay.direction),

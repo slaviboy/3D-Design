@@ -28,6 +28,7 @@ import {
 import { EPS_LEN } from '../../kernel/tolerance';
 import type { MeasurementIntent } from '../../kernel/vcb/parseMeasurement';
 import type { Editor } from '../Editor';
+import { combineExclusions, exclusionForMove, type InferenceExclusion } from '../inference/exclusion';
 import type { Inference } from '../inference/inference';
 import { refuseLocked } from '../selection/locking';
 import { Selection, type EntityRef } from '../selection/Selection';
@@ -53,6 +54,7 @@ import {
   toLocalDirection,
   lineStyleFor,
   modelPoint,
+  previewExclusion,
 } from './toolSupport';
 
 interface Operation {
@@ -61,6 +63,8 @@ interface Operation {
   readonly pressX: number;
   readonly pressY: number;
   readonly speculation: Speculation;
+  /** The moving geometry, which the destination never snaps to. */
+  readonly exclusion: InferenceExclusion;
   offset: Vec3;
   copy: boolean;
   /** Entities produced by the current attempt. */
@@ -119,7 +123,14 @@ export class MoveTool implements Tool {
     if (Math.hypot(input.x - operation.pressX, input.y - operation.pressY) > DRAG_THRESHOLD_PX)
       operation.dragged = true;
     operation.copy = toggleModifier(input, editor);
-    const inference = inferAt(editor, input, { anchor: operation.start, lockDirection: this.#lock });
+    const preview = previewExclusion(editor, operation.speculation);
+    const inference = inferAt(editor, input, {
+      anchor: operation.start,
+      lockDirection: this.#lock,
+      // The moved preview follows the pointer and would catch it. A copy leaves the original in place, where the
+      // pointer may snap back to it.
+      exclude: operation.copy ? preview : combineExclusions(operation.exclusion, preview),
+    });
     operation.inference = inference;
     this.#apply(editor, operation, sub(inference.point, operation.start));
   }
@@ -139,12 +150,14 @@ export class MoveTool implements Tool {
     }
     if (refuseLocked(editor, session.selection.refs())) return;
     const start = inferAt(editor, input);
+    const selection = transformSelectionOf(session.selection);
     this.#operation = {
-      selection: transformSelectionOf(session.selection),
+      selection,
       start: start.point,
       pressX: input.x,
       pressY: input.y,
       speculation: new Speculation(session.doc),
+      exclusion: exclusionForMove(session.doc.store(session.activeContext), selection),
       offset: ZERO,
       copy: toggleModifier(input, editor),
       result: null,

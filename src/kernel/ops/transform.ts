@@ -60,6 +60,38 @@ export interface TransformResult {
 
 const byId = (a: number, b: number): number => a - b;
 
+/** Everything a transform of a selection moves. */
+export interface MovingParts {
+  /** Selected faces that exist, by id. */
+  readonly faces: readonly FaceId[];
+  /** Selected edges and the edges of the selected faces. */
+  readonly edges: ReadonlySet<EdgeId>;
+  /** Selected vertices and the ends of every moving edge. */
+  readonly vertices: ReadonlySet<VertexId>;
+  /** Selected instances that exist, by id. */
+  readonly instances: readonly InstanceId[];
+  /**
+   * True when no other geometry shares a vertex or an edge with the moving geometry, so it moves as a whole; otherwise
+   * the faces attached to it stretch.
+   */
+  readonly detached: boolean;
+}
+
+/** The entities a transform of `selection` moves, as {@link transformEntities} works them out. */
+export function movingParts(store: EntityStore, selection: TransformSelection): MovingParts {
+  const faces = [...new Set(selection.faces ?? [])].filter((id) => store.face(id)).sort(byId);
+  const edges = new Set((selection.edges ?? []).filter((id) => store.edge(id)));
+  for (const faceId of faces) for (const edgeId of store.faceEdges(faceId)) edges.add(edgeId);
+  const vertices = new Set((selection.vertices ?? []).filter((id) => store.vertex(id)));
+  for (const edgeId of edges) {
+    const edge = store.getEdge(edgeId);
+    vertices.add(edge.v0);
+    vertices.add(edge.v1);
+  }
+  const instances = [...new Set(selection.instances ?? [])].filter((id) => store.instance(id)).sort(byId);
+  return { faces, edges, vertices, instances, detached: isDetached(store, new Set(faces), edges, vertices) };
+}
+
 /**
  * Moves or copies entities by an affine transform.
  *
@@ -85,20 +117,11 @@ export function transformEntities(
   }
   return doc.transact(options.copy === true ? 'Copy' : 'Move', () => {
     const store = doc.store(context);
-    const faces = [...new Set(selection.faces ?? [])].filter((id) => store.face(id)).sort(byId);
-    const edges = new Set((selection.edges ?? []).filter((id) => store.edge(id)));
-    for (const faceId of faces) for (const edgeId of store.faceEdges(faceId)) edges.add(edgeId);
-    const vertices = new Set((selection.vertices ?? []).filter((id) => store.vertex(id)));
-    for (const edgeId of edges) {
-      const edge = store.getEdge(edgeId);
-      vertices.add(edge.v0);
-      vertices.add(edge.v1);
-    }
-    const instances = [...new Set(selection.instances ?? [])].filter((id) => store.instance(id)).sort(byId);
+    const { faces, edges, vertices, instances, detached } = movingParts(store, selection);
 
     let geometry: { faces: readonly FaceId[]; edges: readonly EdgeId[] } = { faces: [], edges: [] };
     if (vertices.size > 0) {
-      if (options.copy === true || isDetached(store, new Set(faces), edges, vertices)) {
+      if (options.copy === true || detached) {
         const fragment = captureFragment(store, { faces, edges: [...edges].sort(byId), instances: [] });
         if (options.copy !== true) {
           for (const faceId of faces) removeFace(doc, context, faceId);
