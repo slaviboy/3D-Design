@@ -1893,3 +1893,26 @@
 .text3d-dialog__footer {
   gap: 8px;
 }
+
+.preferences__hint {
+  margin: 0;
+  color: var(--muted-fg);
+  font-size: 12px;
+}
+
+.preferences__slider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.preferences__slider input {
+  flex: 1;
+  min-width: 0;
+}
+
+.preferences__slider output {
+  min-width: 3.5em;
+  color: var(--muted-fg);
+  font-variant-numeric: tabular-nums;
+}

@@ -56,10 +56,16 @@ export interface PointerInput {
   readonly pointerType?: PointerKind;
 }
 
+/** A wheel or trackpad scroll, with its deltas in pixels. */
 export interface WheelInput {
   readonly x: number;
   readonly y: number;
   readonly deltaY: number;
+  /** Sideways scroll, which trackpads report along with the vertical one. */
+  readonly deltaX?: number;
+  /** Browsers report a trackpad pinch as a wheel with Ctrl held. */
+  readonly ctrlKey?: boolean;
+  readonly shiftKey?: boolean;
 }
 
 export interface SelectionRectangleOverlay {

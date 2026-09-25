@@ -40,6 +40,15 @@ describe('preferences', () => {
       uiScale: 1.25,
       toolTips: false,
       invertWheelZoom: true,
+      navigation: {
+        device: 'trackpad',
+        swipe: 'pan',
+        invertOrbit: true,
+        invertPan: false,
+        zoomSpeed: 2,
+        orbitSpeed: 0.5,
+        panSpeed: 1,
+      },
       autosaveMinutes: 10,
       units: architectural ?? IMPERIAL_UNIT_SETTINGS,
     };
@@ -52,7 +61,10 @@ describe('preferences', () => {
     broken.preferences.theme = 'neon';
     broken.preferences.autosaveMinutes = -3;
     broken.preferences.units = { ...IMPERIAL_UNIT_SETTINGS, precision: 99 };
+    broken.preferences.navigation = { device: 'joystick', swipe: 'pan', orbitSpeed: 40, invertPan: 'yes' };
     const parsed = parsePreferences(JSON.stringify(broken));
+    // Within the navigation settings too, each invalid one falls back on its own.
+    expect(parsed.navigation).toEqual({ ...DEFAULT_PREFERENCES.navigation, swipe: 'pan' });
     expect(parsed).toMatchObject({
       theme: 'system',
       autosaveMinutes: 5,

@@ -22,9 +22,13 @@ import {
   precisionChoices,
   PREFERENCES_TABS,
   presetFor,
+  NAVIGATION_SPEED_RANGE,
   UI_SCALES,
   UNIT_PRESETS,
+  type NavigationSettings,
+  type PointingDevice,
   type PreferencesTab,
+  type SwipeAction,
   type ThemePreference,
 } from '../../app/preferences/preferences';
 import { Dialog } from '../common/Dialog';
@@ -42,7 +46,47 @@ const TAB_LABELS: Readonly<Record<PreferencesTab, string>> = {
 
 /** The preferences each page's Restore Defaults puts back (the Keyboard page resets shortcuts itself). */
 const GENERAL_KEYS = ['theme', 'uiScale', 'toolTips', 'units', 'autosaveMinutes'] as const;
-const NAVIGATION_KEYS = ['invertWheelZoom'] as const;
+const NAVIGATION_KEYS = ['invertWheelZoom', 'navigation'] as const;
+
+/** Speed sliders move in quarter steps of a doubling, so the middle is the usual speed. */
+const SPEED_STEPS_PER_DOUBLING = 4;
+
+function speedLabel(speed: number): string {
+  return `×${String(Math.round(speed * 100) / 100)}`;
+}
+
+function SpeedSlider({
+  label,
+  value,
+  onChange,
+}: {
+  readonly label: string;
+  readonly value: number;
+  readonly onChange: (speed: number) => void;
+}) {
+  const id = useId();
+  const steps = (speed: number) => Math.round(Math.log2(speed) * SPEED_STEPS_PER_DOUBLING);
+  return (
+    <div className="preferences__field">
+      <label htmlFor={id}>{label}</label>
+      <span className="preferences__slider">
+        <input
+          id={id}
+          type="range"
+          min={steps(NAVIGATION_SPEED_RANGE.min)}
+          max={steps(NAVIGATION_SPEED_RANGE.max)}
+          step={1}
+          value={steps(value)}
+          aria-valuetext={speedLabel(value)}
+          onChange={(event) => {
+            onChange(2 ** (Number(event.currentTarget.value) / SPEED_STEPS_PER_DOUBLING));
+          }}
+        />
+        <output htmlFor={id}>{speedLabel(value)}</output>
+      </span>
+    </div>
+  );
+}
 
 function GeneralPage() {
   const editor = useEditor();
@@ -176,20 +220,117 @@ function GeneralPage() {
 function NavigationPage() {
   const editor = useEditor();
   const preferences = useEditorState((state) => state.preferences);
+  const navigation = preferences.navigation;
+  const deviceId = useId();
+  const swipeId = useId();
+  const set = (patch: Partial<NavigationSettings>) => {
+    editor.updatePreferences({ navigation: { ...navigation, ...patch } });
+  };
+  const trackpad = navigation.device === 'trackpad';
+  const other = navigation.swipe === 'orbit' ? 'pans' : 'orbits';
+
   return (
-    <fieldset className="preferences__group">
-      <legend>Mouse</legend>
-      <label className="preferences__check">
-        <input
-          type="checkbox"
-          checked={preferences.invertWheelZoom}
-          onChange={(event) => {
-            editor.updatePreferences({ invertWheelZoom: event.currentTarget.checked });
+    <>
+      <fieldset className="preferences__group">
+        <legend>Mouse and trackpad</legend>
+        <div className="preferences__field">
+          <label htmlFor={deviceId}>Pointing device</label>
+          <select
+            id={deviceId}
+            value={navigation.device}
+            onChange={(event) => {
+              set({ device: event.currentTarget.value as PointingDevice });
+            }}
+          >
+            <option value="mouse">Mouse</option>
+            <option value="trackpad">Trackpad</option>
+          </select>
+        </div>
+        {trackpad && (
+          <div className="preferences__field">
+            <label htmlFor={swipeId}>Two-finger swipe</label>
+            <select
+              id={swipeId}
+              value={navigation.swipe}
+              onChange={(event) => {
+                set({ swipe: event.currentTarget.value as SwipeAction });
+              }}
+            >
+              <option value="orbit">Orbits</option>
+              <option value="pan">Pans</option>
+            </select>
+          </div>
+        )}
+        <p className="preferences__hint">
+          {trackpad
+            ? `Pinch to zoom. A two-finger swipe with Shift held ${other}.`
+            : 'The wheel zooms at the pointer. Drag with the middle button to orbit, with Shift to pan.'}
+        </p>
+      </fieldset>
+
+      <fieldset className="preferences__group">
+        <legend>Direction</legend>
+        <label className="preferences__check">
+          <input
+            type="checkbox"
+            checked={preferences.invertWheelZoom}
+            onChange={(event) => {
+              editor.updatePreferences({ invertWheelZoom: event.currentTarget.checked });
+            }}
+          />
+          Invert mouse wheel zoom
+        </label>
+        <label className="preferences__check">
+          <input
+            type="checkbox"
+            checked={navigation.invertOrbit}
+            onChange={(event) => {
+              set({ invertOrbit: event.currentTarget.checked });
+            }}
+          />
+          Invert orbit
+        </label>
+        <label className="preferences__check">
+          <input
+            type="checkbox"
+            checked={navigation.invertPan}
+            onChange={(event) => {
+              set({ invertPan: event.currentTarget.checked });
+            }}
+          />
+          Invert pan
+        </label>
+      </fieldset>
+
+      <fieldset className="preferences__group">
+        <legend>Speed</legend>
+        <SpeedSlider
+          label="Zoom"
+          value={navigation.zoomSpeed}
+          onChange={(zoomSpeed) => {
+            set({ zoomSpeed });
           }}
         />
-        Invert mouse wheel zoom
-      </label>
-    </fieldset>
+        <SpeedSlider
+          label="Orbit"
+          value={navigation.orbitSpeed}
+          onChange={(orbitSpeed) => {
+            set({ orbitSpeed });
+          }}
+        />
+        <SpeedSlider
+          label="Pan"
+          value={navigation.panSpeed}
+          onChange={(panSpeed) => {
+            set({ panSpeed });
+          }}
+        />
+        <p className="preferences__hint">
+          Direction and speed apply to the mouse wheel, middle-button drags and trackpad gestures, not to the
+          Orbit, Pan and Zoom tools.
+        </p>
+      </fieldset>
+    </>
   );
 }
 

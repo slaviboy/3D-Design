@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 
+import type { ScreenPoint } from '../camera/camera';
 import { createLogger } from '../diagnostics/log';
 import type { Editor } from '../Editor';
 import {
@@ -31,6 +32,8 @@ const toolLog = createLogger('tools');
 
 /** Wheel zoom: factor = exp(-deltaY × this). A typical mouse notch (deltaY 100) zooms by about 16%. */
 export const WHEEL_ZOOM_SENSITIVITY = 0.0015;
+/** Trackpad pinch zoom: factor = exp(-deltaY × this), for the small deltas pinches report. */
+export const TRACKPAD_PINCH_SENSITIVITY = 0.01;
 
 interface NavigationDrag {
   readonly mode: 'orbit' | 'pan';
@@ -199,8 +202,7 @@ export class ToolManager {
       const dy = input.y - navigation.lastY;
       navigation.lastX = input.x;
       navigation.lastY = input.y;
-      if (navigation.mode === 'orbit') this.#editor.orbitBy(dx, dy);
-      else this.#editor.panBy(dx, dy);
+      this.#navigate(navigation.mode, dx, dy);
       return;
     }
     const tool = this.#target;
@@ -220,12 +222,36 @@ export class ToolManager {
     this.#changed();
   }
 
+  /**
+   * The wheel zooms at the cursor. With a trackpad, a pinch (reported with Ctrl) zooms and a two-finger swipe orbits
+   * or pans as the preferences say, the other one with Shift; the view follows the fingers.
+   */
   wheel(input: WheelInput): void {
-    const direction = this.#editor.preferences.invertWheelZoom ? -1 : 1;
+    const { navigation, invertWheelZoom } = this.#editor.preferences;
+    const point = { x: input.x, y: input.y };
+    if (navigation.device === 'trackpad') {
+      if (input.ctrlKey === true) {
+        this.#editor.zoomAtScreen(
+          point,
+          Math.exp(-input.deltaY * TRACKPAD_PINCH_SENSITIVITY * navigation.zoomSpeed),
+        );
+        return;
+      }
+      const other = navigation.swipe === 'orbit' ? 'pan' : 'orbit';
+      this.#navigate(input.shiftKey === true ? other : navigation.swipe, -(input.deltaX ?? 0), -input.deltaY);
+      return;
+    }
+    const direction = invertWheelZoom ? -1 : 1;
     this.#editor.zoomAtScreen(
-      { x: input.x, y: input.y },
-      Math.exp(-direction * input.deltaY * WHEEL_ZOOM_SENSITIVITY),
+      point,
+      Math.exp(-direction * input.deltaY * WHEEL_ZOOM_SENSITIVITY * navigation.zoomSpeed),
     );
+  }
+
+  /** A pinch that the browser reports as a gesture with a scale (Safari), by its scale since the last report. */
+  pinch(point: ScreenPoint, factor: number): void {
+    if (!(factor > 0) || !Number.isFinite(factor)) return;
+    this.#editor.zoomAtScreen(point, factor ** this.#editor.preferences.navigation.zoomSpeed);
   }
 
   /** Offers a chord to the active tool. Escape always cancels the tool's current operation. */
@@ -265,6 +291,18 @@ export class ToolManager {
   /** Call after something outside the tool manager changed what the active tool shows. */
   refresh(): void {
     this.#changed();
+  }
+
+  /** Orbits or pans for a drag of (dx, dy) pixels, at the speed and in the direction the preferences set. */
+  #navigate(mode: 'orbit' | 'pan', dx: number, dy: number): void {
+    const { navigation } = this.#editor.preferences;
+    if (mode === 'orbit') {
+      const factor = navigation.orbitSpeed * (navigation.invertOrbit ? -1 : 1);
+      this.#editor.orbitBy(dx * factor, dy * factor);
+    } else {
+      const factor = navigation.panSpeed * (navigation.invertPan ? -1 : 1);
+      this.#editor.panBy(dx * factor, dy * factor);
+    }
   }
 
   #get(toolId: string): Tool {

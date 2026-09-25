@@ -28,8 +28,18 @@ import { ClickCounter } from './clickCount';
 /** The right mouse button opens the context menu instead of reaching the active tool. */
 const SECONDARY_BUTTON = 2;
 
+/** Wheel deltas in lines (Firefox with a mouse) are converted at this many pixels a line. */
+const WHEEL_LINE_HEIGHT_PX = 16;
+
 function pointerKind(type: string): PointerKind {
   return type === 'touch' || type === 'pen' ? type : 'mouse';
+}
+
+/** Safari's pinch gesture events (not in the standard DOM types). */
+interface GestureEvent extends UIEvent {
+  readonly scale: number;
+  readonly clientX: number;
+  readonly clientY: number;
 }
 
 function pointerInput(
@@ -58,6 +68,8 @@ export function ViewportHost() {
   const clicksRef = useRef(new ClickCounter());
   /** The pointer pressed on the tool, whose cancellation (by the system, mid-gesture) cancels the tool's operation. */
   const pressRef = useRef<number | null>(null);
+  /** Fingers on the view: Safari reports their pinches as gestures too, which touch input already handles. */
+  const touchesRef = useRef(new Set<number>());
   const [failure, setFailure] = useState<string | null>(null);
   const overlay = useEditorState((state) => state.overlay);
   const marker = useEditorState((state) => state.marker);
@@ -81,15 +93,56 @@ export function ViewportHost() {
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
       const rect = host.getBoundingClientRect();
-      editor.tools.wheel({ x: event.clientX - rect.left, y: event.clientY - rect.top, deltaY: event.deltaY });
+      const unit =
+        event.deltaMode === WheelEvent.DOM_DELTA_LINE
+          ? WHEEL_LINE_HEIGHT_PX
+          : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+            ? rect.height
+            : 1;
+      editor.tools.wheel({
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+        deltaX: event.deltaX * unit,
+        deltaY: event.deltaY * unit,
+        ctrlKey: event.ctrlKey,
+        shiftKey: event.shiftKey,
+      });
     };
     host.addEventListener('wheel', onWheel, { passive: false });
+    // Safari zooms the page on a pinch unless its gesture events are cancelled; a trackpad pinch over the view
+    // zooms the model instead.
+    let lastScale = 1;
+    const preventPageZoom = (event: Event) => {
+      event.preventDefault();
+    };
+    const onGestureStart = (event: Event) => {
+      event.preventDefault();
+      lastScale = 1;
+    };
+    const onGestureChange = (event: Event) => {
+      event.preventDefault();
+      const gesture = event as GestureEvent;
+      if (touchesRef.current.size === 0 && gesture.scale > 0) {
+        const rect = host.getBoundingClientRect();
+        editor.tools.pinch(
+          { x: gesture.clientX - rect.left, y: gesture.clientY - rect.top },
+          gesture.scale / lastScale,
+        );
+      }
+      lastScale = gesture.scale;
+    };
+    document.addEventListener('gesturestart', preventPageZoom);
+    host.addEventListener('gesturestart', onGestureStart);
+    host.addEventListener('gesturechange', onGestureChange);
     const relay = editor.exchange.viewCapture;
     const detachCapture =
       relay instanceof ViewCaptureRelay ? relay.attach((options) => viewport.capture(options)) : null;
     return () => {
       detachCapture?.();
       host.removeEventListener('wheel', onWheel);
+      document.removeEventListener('gesturestart', preventPageZoom);
+      host.removeEventListener('gesturestart', onGestureStart);
+      host.removeEventListener('gesturechange', onGestureChange);
       viewport.dispose();
     };
   }, [editor]);
@@ -115,6 +168,7 @@ export function ViewportHost() {
       onPointerDown={(event) => {
         const host = hostRef.current;
         if (!host) return;
+        if (event.pointerType === 'touch') touchesRef.current.add(event.pointerId);
         if (event.button === SECONDARY_BUTTON) {
           host.focus({ preventScroll: true });
           return;
@@ -133,12 +187,14 @@ export function ViewportHost() {
           editor.tools.pointerMove(pointerInput(event, hostRef.current, clicksRef.current.current));
       }}
       onPointerUp={(event) => {
+        touchesRef.current.delete(event.pointerId);
         if (event.button === SECONDARY_BUTTON) return;
         if (event.pointerId === pressRef.current) pressRef.current = null;
         if (hostRef.current)
           editor.tools.pointerUp(pointerInput(event, hostRef.current, clicksRef.current.current));
       }}
       onPointerCancel={(event) => {
+        touchesRef.current.delete(event.pointerId);
         if (event.pointerId !== pressRef.current) return;
         pressRef.current = null;
         editor.tools.cancel();

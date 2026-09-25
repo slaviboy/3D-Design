@@ -29,6 +29,38 @@ import {
 
 export type ThemePreference = 'system' | 'light' | 'dark';
 
+export type PointingDevice = 'mouse' | 'trackpad';
+export type SwipeAction = 'orbit' | 'pan';
+
+/**
+ * How the mouse wheel, middle-button drags and trackpad gestures move the view. The Orbit, Pan and Zoom tools are
+ * not affected.
+ */
+export interface NavigationSettings {
+  /** With a trackpad, a two-finger swipe orbits or pans instead of zooming, and a pinch zooms. */
+  readonly device: PointingDevice;
+  /** What a two-finger swipe does with a trackpad; with Shift held, it does the other. */
+  readonly swipe: SwipeAction;
+  readonly invertOrbit: boolean;
+  readonly invertPan: boolean;
+  /** Multiples of the usual speed, within {@link NAVIGATION_SPEED_RANGE}. */
+  readonly zoomSpeed: number;
+  readonly orbitSpeed: number;
+  readonly panSpeed: number;
+}
+
+export const NAVIGATION_SPEED_RANGE = Object.freeze({ min: 0.25, max: 4 });
+
+export const DEFAULT_NAVIGATION: NavigationSettings = Object.freeze({
+  device: 'mouse',
+  swipe: 'orbit',
+  invertOrbit: false,
+  invertPan: false,
+  zoomSpeed: 1,
+  orbitSpeed: 1,
+  panSpeed: 1,
+});
+
 /** Settings that belong to this device rather than to a model. */
 export interface Preferences {
   readonly theme: ThemePreference;
@@ -38,6 +70,7 @@ export interface Preferences {
   readonly toolTips: boolean;
   /** Zoom in when scrolling toward you instead of away. */
   readonly invertWheelZoom: boolean;
+  readonly navigation: NavigationSettings;
   /** Minutes between autosaves of unsaved work; 0 turns autosave off. */
   readonly autosaveMinutes: number;
   /** How lengths and angles are shown and how typed values are read. */
@@ -54,6 +87,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
   uiScale: 1,
   toolTips: true,
   invertWheelZoom: false,
+  navigation: DEFAULT_NAVIGATION,
   autosaveMinutes: 5,
   units: METRIC_UNIT_SETTINGS,
 });
@@ -165,6 +199,31 @@ function readUnits(value: unknown): UnitSettings | null {
   };
 }
 
+function readNavigation(value: unknown): NavigationSettings {
+  if (typeof value !== 'object' || value === null) return DEFAULT_NAVIGATION;
+  const stored = value as Record<string, unknown>;
+  const flag = (key: 'invertOrbit' | 'invertPan'): boolean =>
+    typeof stored[key] === 'boolean' ? stored[key] : DEFAULT_NAVIGATION[key];
+  const speed = (key: 'zoomSpeed' | 'orbitSpeed' | 'panSpeed'): number => {
+    const speedValue = stored[key];
+    return typeof speedValue === 'number' &&
+      speedValue >= NAVIGATION_SPEED_RANGE.min &&
+      speedValue <= NAVIGATION_SPEED_RANGE.max
+      ? speedValue
+      : DEFAULT_NAVIGATION[key];
+  };
+  return {
+    device:
+      stored.device === 'mouse' || stored.device === 'trackpad' ? stored.device : DEFAULT_NAVIGATION.device,
+    swipe: stored.swipe === 'orbit' || stored.swipe === 'pan' ? stored.swipe : DEFAULT_NAVIGATION.swipe,
+    invertOrbit: flag('invertOrbit'),
+    invertPan: flag('invertPan'),
+    zoomSpeed: speed('zoomSpeed'),
+    orbitSpeed: speed('orbitSpeed'),
+    panSpeed: speed('panSpeed'),
+  };
+}
+
 /** Reads stored preferences. Each invalid or missing setting falls back to its default. */
 export function parsePreferences(text: string | null): Preferences {
   if (text === null) return DEFAULT_PREFERENCES;
@@ -190,6 +249,8 @@ export function parsePreferences(text: string | null): Preferences {
     toolTips: typeof p.toolTips === 'boolean' ? p.toolTips : DEFAULT_PREFERENCES.toolTips,
     invertWheelZoom:
       typeof p.invertWheelZoom === 'boolean' ? p.invertWheelZoom : DEFAULT_PREFERENCES.invertWheelZoom,
+    // Settings saved before the navigation settings existed get the defaults: a mouse at the usual speeds.
+    navigation: readNavigation(p.navigation),
     autosaveMinutes: isInteger(p.autosaveMinutes, 0, MAX_AUTOSAVE_MINUTES)
       ? p.autosaveMinutes
       : DEFAULT_PREFERENCES.autosaveMinutes,
