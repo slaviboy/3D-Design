@@ -193,6 +193,11 @@
   outline: none;
 }
 
+/* The view takes focus from the pointer, not from Tab, so it never shows the focus ring (base.css loads later). */
+.viewport:focus-visible {
+  outline: none;
+}
+
 .viewport--failed {
   display: grid;
   place-content: center;
@@ -1945,4 +1950,170 @@
 
 .inference-tooltip--touch {
   transform: translate(-50%, calc(-100% - 36px));
+}
+
+/* Corner zones --------------------------------------------------------------------------------------- */
+
+.corner-zone {
+  position: absolute;
+  z-index: 2;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  pointer-events: none;
+}
+
+.corner-zone--top-left {
+  top: 0;
+  left: 0;
+  border-bottom-right-radius: 100%;
+}
+
+.corner-zone--top-right {
+  top: 0;
+  right: 0;
+  border-bottom-left-radius: 100%;
+}
+
+.corner-zone--bottom-left {
+  bottom: 0;
+  left: 0;
+  border-top-right-radius: 100%;
+}
+
+.corner-zone--bottom-right {
+  right: 0;
+  bottom: 0;
+  border-top-left-radius: 100%;
+}
+
+.corner-zone__icon {
+  position: absolute;
+  display: grid;
+  color: var(--muted-fg);
+  opacity: 0.75;
+}
+
+.corner-zone--top-left .corner-zone__icon {
+  top: 14%;
+  left: 14%;
+}
+
+.corner-zone--top-right .corner-zone__icon {
+  top: 14%;
+  right: 14%;
+}
+
+.corner-zone--bottom-left .corner-zone__icon {
+  bottom: 14%;
+  left: 14%;
+}
+
+.corner-zone--bottom-right .corner-zone__icon {
+  right: 14%;
+  bottom: 14%;
+}
+
+.corner-flash {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.corner-flash--top-left {
+  top: 0;
+  left: 0;
+}
+
+.corner-flash--top-right {
+  top: 0;
+  right: 0;
+}
+
+.corner-flash--bottom-left {
+  bottom: 0;
+  left: 0;
+}
+
+.corner-flash--bottom-right {
+  right: 0;
+  bottom: 0;
+}
+
+.corner-flash__ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+  animation: corner-ripple 600ms ease-out forwards;
+}
+
+.corner-flash--top-left .corner-flash__ripple {
+  top: 0;
+  left: 0;
+  transform: translate(-50%, -50%);
+}
+
+.corner-flash--top-right .corner-flash__ripple {
+  top: 0;
+  right: 0;
+  transform: translate(50%, -50%);
+}
+
+.corner-flash--bottom-left .corner-flash__ripple {
+  bottom: 0;
+  left: 0;
+  transform: translate(-50%, 50%);
+}
+
+.corner-flash--bottom-right .corner-flash__ripple {
+  right: 0;
+  bottom: 0;
+  transform: translate(50%, 50%);
+}
+
+@keyframes corner-ripple {
+  from {
+    opacity: 0.8;
+    scale: 0.2;
+  }
+
+  to {
+    opacity: 0;
+    scale: 1;
+  }
+}
+
+.corner-flash__label {
+  position: absolute;
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: rgb(20 24 30 / 78%);
+  color: #fff;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.corner-flash--top-left .corner-flash__label {
+  top: 12px;
+  left: 12px;
+}
+
+.corner-flash--top-right .corner-flash__label {
+  top: 12px;
+  right: 12px;
+}
+
+.corner-flash--bottom-left .corner-flash__label {
+  bottom: 12px;
+  left: 12px;
+}
+
+.corner-flash--bottom-right .corner-flash__label {
+  right: 12px;
+  bottom: 12px;
+}
+
+.preferences__corner {
+  display: grid;
+  gap: 4px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--chrome-border);
 }

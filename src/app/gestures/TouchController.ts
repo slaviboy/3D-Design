@@ -27,8 +27,15 @@ import {
 } from '../camera/camera';
 import type { Editor } from '../Editor';
 import { definitionBounds } from '../geometry/bounds';
-import { SELECT_TOOL_ID, type PointerInput } from '../tools/Tool';
-import { gestureCommand, gestureTool, type GestureAction, type TouchSettings } from './gestureSettings';
+import { SELECT_TOOL_ID, type PointerInput, type PointerKind } from '../tools/Tool';
+import {
+  cornerAt,
+  gestureCommand,
+  gestureTool,
+  type CornerId,
+  type GestureAction,
+  type TouchSettings,
+} from './gestureSettings';
 import { TouchRecognizer, type GestureClock, type TouchGesture } from './touchRecognizer';
 
 /** What touch input needs from the interface. */
@@ -36,7 +43,12 @@ export interface TouchUiPort {
   /** Opens the context menu for what is at a viewport point, as a right-click there would. */
   openContextMenu(point: ScreenPoint): void;
   closeContextMenu(): void;
+  /** A corner zone ran its action; `label` names the tool now in use, or the command that ran. */
+  cornerTriggered(corner: CornerId, label: string): void;
 }
+
+/** A corner set to double tap waits this long for the second tap before taking the first as an ordinary tap. */
+export const CORNER_DOUBLE_TAP_MS = 300;
 
 /** Holding repeats the action this long after the first time, then each time sooner, down to the minimum. */
 const REPEAT_FIRST_MS = 150;
@@ -67,6 +79,12 @@ export class TouchController {
   #pinch: Pinch | null = null;
   #slide: ScreenPoint | null = null;
   #repeat: number | null = null;
+  #cornerWait: {
+    readonly corner: CornerId;
+    readonly point: ScreenPoint;
+    readonly pointerType: PointerKind;
+    readonly timer: number;
+  } | null = null;
 
   constructor(editor: Editor, clock: GestureClock) {
     this.#editor = editor;
@@ -78,6 +96,7 @@ export class TouchController {
         holdDelayMs: () => (this.#settings.holdRepeat ? this.#settings.holdDelayMs : null),
         pinches: () => this.#settings.pinchZoom,
         slides: () => this.#settings.twoFingerSlide !== 'none',
+        corner: (point) => this.cornerAt(point),
       },
       (gesture) => {
         this.#handle(gesture);
@@ -100,6 +119,8 @@ export class TouchController {
   }
 
   pointerDown(id: number, point: ScreenPoint): void {
+    // Touching anywhere but the corner that waits for a second tap makes its first tap an ordinary one.
+    if (this.#cornerWait && this.cornerAt(point) !== this.#cornerWait.corner) this.#flushCornerWait();
     this.#recognizer.down(id, point);
   }
 
@@ -118,8 +139,48 @@ export class TouchController {
   reset(): void {
     this.#recognizer.reset();
     this.#stopRepeat();
+    if (this.#cornerWait) this.#clock.clearTimer(this.#cornerWait.timer);
+    this.#cornerWait = null;
     this.#pinch = null;
     this.#slide = null;
+  }
+
+  /** The active corner zone a viewport point lies in, or null. */
+  cornerAt(point: ScreenPoint): CornerId | null {
+    return cornerAt(this.#settings, this.#editor.viewportSize, point);
+  }
+
+  /**
+   * A tap in a corner zone, with a finger or a pen: runs the corner's action, or, for a corner set to double tap,
+   * waits for the second tap and otherwise passes the tap on to the tool.
+   */
+  cornerTap(corner: CornerId, point: ScreenPoint, pointerType: PointerKind): void {
+    const setting = this.#settings.corners[corner];
+    if (setting.trigger === 'tap') {
+      this.#runCorner(corner, setting.action, point);
+      return;
+    }
+    const waiting = this.#cornerWait;
+    if (waiting?.corner === corner) {
+      this.#clock.clearTimer(waiting.timer);
+      this.#cornerWait = null;
+      this.#runCorner(corner, setting.action, point);
+      return;
+    }
+    this.#flushCornerWait();
+    this.#cornerWait = {
+      corner,
+      point,
+      pointerType,
+      timer: this.#clock.setTimer(() => {
+        this.#flushCornerWait();
+      }, CORNER_DOUBLE_TAP_MS),
+    };
+  }
+
+  /** The pen's side button was pressed at a viewport point. */
+  penButton(point: ScreenPoint): void {
+    this.#perform(this.#settings.penButton, point);
   }
 
   get #settings(): TouchSettings {
@@ -131,6 +192,9 @@ export class TouchController {
     switch (gesture.kind) {
       case 'tap':
         this.#click(gesture.point, gesture.count);
+        return;
+      case 'corner-tap':
+        this.cornerTap(gesture.corner, gesture.point, 'touch');
         return;
       case 'press-start':
         tools.pointerMove(this.#input(gesture.point, { buttons: 0 }));
@@ -219,11 +283,32 @@ export class TouchController {
   }
 
   /** A mouse click where the finger is: the pointer moves there first, so the tool infers at that spot. */
-  #click(point: ScreenPoint, count: number): void {
+  #click(point: ScreenPoint, count: number, pointerType: PointerKind = 'touch'): void {
     const { tools } = this.#editor;
-    tools.pointerMove(this.#input(point, { buttons: 0 }));
-    tools.pointerDown(this.#input(point, { detail: count }));
-    tools.pointerUp(this.#input(point, { buttons: 0, detail: count }));
+    tools.pointerMove(this.#input(point, { buttons: 0, pointerType }));
+    tools.pointerDown(this.#input(point, { detail: count, pointerType }));
+    tools.pointerUp(this.#input(point, { buttons: 0, detail: count, pointerType }));
+  }
+
+  #flushCornerWait(): void {
+    const waiting = this.#cornerWait;
+    if (!waiting) return;
+    this.#clock.clearTimer(waiting.timer);
+    this.#cornerWait = null;
+    this.#click(waiting.point, 1, waiting.pointerType);
+  }
+
+  #runCorner(corner: CornerId, action: GestureAction, point: ScreenPoint): void {
+    const editor = this.#editor;
+    this.#perform(action, point);
+    const command = gestureCommand(action);
+    const label =
+      gestureTool(action) !== null
+        ? editor.tools.activeTool.label
+        : command !== null
+          ? (editor.commands.get(command)?.label ?? '')
+          : '';
+    if (label !== '') this.#ui?.cornerTriggered(corner, label);
   }
 
   #tapAction(fingers: number): GestureAction {

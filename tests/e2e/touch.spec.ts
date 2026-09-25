@@ -155,6 +155,44 @@ test('pushes a face by tapping it, dragging and lifting', async ({ page }) => {
     .toBeGreaterThan(0.1);
 });
 
+test('switches to Orbit and back from a corner, and with the pen button', async ({ page }) => {
+  await openApp(page);
+  const viewport = page.getByRole('application', { name: '3D viewport' });
+  const box = await viewport.boundingBox();
+  if (!box) throw new Error('viewport not laid out');
+  const corner = { x: 20, y: box.height - 20 };
+
+  await tap(page, corner);
+  await expect(viewport).toHaveAttribute('data-active-tool', 'tool.orbit');
+  await page.waitForTimeout(400);
+  await tap(page, corner, 2);
+  await expect(viewport).toHaveAttribute('data-active-tool', 'tool.select');
+
+  // The pen's side button reports as the secondary button; it switches tools instead of opening a menu.
+  await page.evaluate(() => {
+    const host = document.querySelector('.viewport');
+    if (!host) throw new Error('no viewport');
+    const rect = host.getBoundingClientRect();
+    const init = {
+      pointerId: 7,
+      pointerType: 'pen',
+      isPrimary: true,
+      clientX: rect.left + rect.width / 2,
+      clientY: rect.top + rect.height / 2,
+      button: 2,
+      buttons: 2,
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+    };
+    host.dispatchEvent(new PointerEvent('pointerdown', init));
+    host.dispatchEvent(new MouseEvent('contextmenu', { ...init, bubbles: true, cancelable: true }));
+    host.dispatchEvent(new PointerEvent('pointerup', { ...init, buttons: 0 }));
+  });
+  await expect(viewport).toHaveAttribute('data-active-tool', 'tool.orbit');
+  await expect(page.getByRole('menu')).toHaveCount(0);
+});
+
 test.describe('real multi-touch', () => {
   test.use({ hasTouch: true });
 
@@ -200,4 +238,21 @@ test.describe('real multi-touch', () => {
     await touch('touchEnd', []);
     await expect.poll(() => faces(page)).toBe(0);
   });
+
+  test('shows the corners on a touch screen', async ({ page, browserName }) => {
+    test.skip(browserName !== 'chromium', 'touch screens are emulated in Chromium');
+    await openApp(page);
+    await expect(page.getByTestId('corner-zone-bottomLeft')).toBeVisible();
+    await expect(page.getByTestId('corner-zone-bottomRight')).toBeVisible();
+    await expect(page.getByTestId('corner-zone-topLeft')).toHaveCount(0);
+    const box = await page.getByRole('application', { name: '3D viewport' }).boundingBox();
+    if (!box) throw new Error('viewport not laid out');
+    await page.touchscreen.tap(box.x + 20, box.y + box.height - 20);
+    await expect(page.getByTestId('corner-flash')).toContainText('Orbit');
+  });
+});
+
+test('hides the corners without a touch screen', async ({ page }) => {
+  await openApp(page);
+  await expect(page.getByTestId('corner-zone-bottomLeft')).toHaveCount(0);
 });

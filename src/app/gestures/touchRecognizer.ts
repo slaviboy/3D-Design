@@ -16,6 +16,7 @@
  */
 
 import type { ScreenPoint } from '../camera/camera';
+import type { CornerId } from './gestureSettings';
 
 /** Finger travel up to this is jitter, not a drag, in pixels. */
 export const TOUCH_SLOP_PX = 8;
@@ -51,12 +52,16 @@ export interface TouchProbe {
   pinches(): boolean;
   /** Whether two fingers moving together do something. */
   slides(): boolean;
+  /** The active corner zone a point lies in, or null. */
+  corner(point: ScreenPoint): CornerId | null;
 }
 
 /** A gesture found in the touches, in viewport pixels. */
 export type TouchGesture =
   /** One finger tapped; `count` is 2 for a double tap. */
   | { readonly kind: 'tap'; readonly point: ScreenPoint; readonly count: number }
+  /** One finger tapped inside a corner zone, landing and lifting in the same one. */
+  | { readonly kind: 'corner-tap'; readonly corner: CornerId; readonly point: ScreenPoint }
   /** One finger pressed and dragged: a mouse press, moves and release. */
   | { readonly kind: 'press-start'; readonly point: ScreenPoint }
   | { readonly kind: 'press-move'; readonly point: ScreenPoint }
@@ -235,11 +240,17 @@ export class TouchRecognizer {
     this.#fingers.delete(id);
     const state = this.#state;
     switch (state.kind) {
-      case 'pending':
+      case 'pending': {
         this.#clock.clearTimer(state.timer);
         this.#state = { kind: 'idle' };
+        const corner = this.#probe.corner(finger.start);
+        if (corner !== null && corner === this.#probe.corner(point)) {
+          this.#emit({ kind: 'corner-tap', corner, point: finger.start });
+          return;
+        }
         this.#tap(finger.start);
         return;
+      }
       case 'pressing':
         this.#emit({ kind: 'press-end', point });
         this.#settle();

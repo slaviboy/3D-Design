@@ -23,11 +23,20 @@ import { useEditor, useEditorState } from '../EditorContext';
 import { AnnotationLabels } from './AnnotationLabels';
 import { selectForContextMenu } from '../../app/contextMenu/contextMenu';
 import { closeContextMenu, contextMenuJustOpened, showContextMenu } from '../contextmenu/contextMenuStore';
+import type { CornerId } from '../../app/gestures/gestureSettings';
 import { ClickCounter } from './clickCount';
+import { CornerZones, isTouchDevice, type CornerFlash } from './CornerZones';
 import { UndoBanner } from './UndoBanner';
 
 /** The right mouse button opens the context menu instead of reaching the active tool. */
 const SECONDARY_BUTTON = 2;
+
+/** Pen travel up to this is jitter, not a drag, when a pen press in a corner zone is held back. */
+const PEN_CORNER_SLOP_PX = 8;
+/** The pen's side button reports as the secondary button. */
+const PEN_SIDE_BUTTONS = 2;
+/** How long after a touch or a pen's side button the browser's own context menu is ignored. */
+const NATIVE_MENU_QUIET_MS = 1000;
 
 /** Wheel deltas in lines (Firefox with a mouse) are converted at this many pixels a line. */
 const WHEEL_LINE_HEIGHT_PX = 16;
@@ -83,8 +92,16 @@ export function ViewportHost() {
   const clicksRef = useRef(new ClickCounter());
   /** The pointer pressed on the tool, whose cancellation (by the system, mid-gesture) cancels the tool's operation. */
   const pressRef = useRef<number | null>(null);
-  /** When the last touch ended: the browser's own long-press context menu then is ignored, as touch opens its own. */
+  /** When the last touch or pen side button was: the browser's own context menu then is ignored. */
   const lastTouchRef = useRef(Number.NEGATIVE_INFINITY);
+  /** A pen press in a corner zone, held back until it is known to be a tap (the corner's) or a drag (the tool's). */
+  const penCornerRef = useRef<{
+    readonly id: number;
+    readonly corner: CornerId;
+    readonly start: { readonly x: number; readonly y: number };
+    readonly down: PointerInput;
+  } | null>(null);
+  const [cornerFlash, setCornerFlash] = useState<CornerFlash | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const overlay = useEditorState((state) => state.overlay);
   const marker = useEditorState((state) => state.marker);
@@ -156,6 +173,9 @@ export function ViewportHost() {
         showContextMenu(editor, { x: rect.left + point.x, y: rect.top + point.y }, host);
       },
       closeContextMenu,
+      cornerTriggered: (corner, label) => {
+        setCornerFlash((previous) => ({ corner, label, serial: (previous?.serial ?? 0) + 1 }));
+      },
     });
     const relay = editor.exchange.viewCapture;
     const detachCapture =
@@ -198,6 +218,26 @@ export function ViewportHost() {
           editor.touch.pointerDown(event.pointerId, localPoint(event, host));
           return;
         }
+        if (event.pointerType === 'pen') {
+          const point = localPoint(event, host);
+          if (event.button === SECONDARY_BUTTON || (event.buttons & PEN_SIDE_BUTTONS) !== 0) {
+            lastTouchRef.current = event.timeStamp;
+            editor.touch.penButton(point);
+            return;
+          }
+          const corner = isTouchDevice() ? editor.touch.cornerAt(point) : null;
+          if (corner !== null) {
+            capture(host, event.pointerId);
+            host.focus({ preventScroll: true });
+            penCornerRef.current = {
+              id: event.pointerId,
+              corner,
+              start: point,
+              down: pointerInput(event, host, clicksRef.current.press(event)),
+            };
+            return;
+          }
+        }
         if (event.button === SECONDARY_BUTTON) {
           host.focus({ preventScroll: true });
           return;
@@ -214,6 +254,15 @@ export function ViewportHost() {
           editor.touch.pointerMove(event.pointerId, localPoint(event, host));
           return;
         }
+        const held = penCornerRef.current;
+        if (held?.id === event.pointerId) {
+          const point = localPoint(event, host);
+          if (Math.hypot(point.x - held.start.x, point.y - held.start.y) <= PEN_CORNER_SLOP_PX) return;
+          // A drag that starts in a corner zone is an ordinary one.
+          penCornerRef.current = null;
+          pressRef.current = event.pointerId;
+          editor.tools.pointerDown(held.down);
+        }
         editor.tools.pointerMove(pointerInput(event, host, clicksRef.current.current));
       }}
       onPointerUp={(event) => {
@@ -221,6 +270,12 @@ export function ViewportHost() {
         if (event.pointerType === 'touch') {
           lastTouchRef.current = event.timeStamp;
           if (host) editor.touch.pointerUp(event.pointerId, localPoint(event, host));
+          return;
+        }
+        const held = penCornerRef.current;
+        if (held?.id === event.pointerId) {
+          penCornerRef.current = null;
+          editor.touch.cornerTap(held.corner, held.start, 'pen');
           return;
         }
         if (event.button === SECONDARY_BUTTON) return;
@@ -234,6 +289,7 @@ export function ViewportHost() {
           editor.touch.pointerCancel(event.pointerId);
           return;
         }
+        if (penCornerRef.current?.id === event.pointerId) penCornerRef.current = null;
         if (event.pointerId !== pressRef.current) return;
         pressRef.current = null;
         editor.tools.cancel();
@@ -243,7 +299,8 @@ export function ViewportHost() {
         const host = hostRef.current;
         // A long press on a touch screen opens the menu through touch input, which also handles what comes after.
         const fromTouch =
-          editor.touch.activePointerCount > 0 || event.timeStamp - lastTouchRef.current < 1000;
+          editor.touch.activePointerCount > 0 ||
+          event.timeStamp - lastTouchRef.current < NATIVE_MENU_QUIET_MS;
         if (!host || fromTouch || contextMenuJustOpened()) return;
         const rect = host.getBoundingClientRect();
         selectForContextMenu(editor, { x: event.clientX - rect.left, y: event.clientY - rect.top });
@@ -252,6 +309,7 @@ export function ViewportHost() {
     >
       <AnnotationLabels />
       <UndoBanner />
+      <CornerZones flash={cornerFlash} />
       {marker && (
         <>
           <span

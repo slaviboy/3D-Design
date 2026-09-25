@@ -48,6 +48,7 @@ function setup(probe: Partial<TouchProbe> = {}): Setup {
       holdDelayMs: () => 500,
       pinches: () => true,
       slides: () => false,
+      corner: () => null,
       ...probe,
     },
     (gesture) => events.push(gesture),

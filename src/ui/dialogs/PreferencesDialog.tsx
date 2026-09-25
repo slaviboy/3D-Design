@@ -18,9 +18,13 @@
 import { useId, useMemo, useState, type KeyboardEvent } from 'react';
 import type { CommandCategory } from '../../app/commands/CommandRegistry';
 import {
+  CORNER_IDS,
+  CORNER_SIZE_RANGE,
   isGestureAction,
   MAX_HOLD_DELAY_MS,
   MIN_HOLD_DELAY_MS,
+  type CornerId,
+  type CornerSetting,
   type GestureAction,
   type TouchSettings,
   type TwoFingerSlide,
@@ -59,6 +63,14 @@ const GENERAL_KEYS = ['theme', 'uiScale', 'toolTips', 'units', 'autosaveMinutes'
 const NAVIGATION_KEYS = ['invertWheelZoom', 'navigation'] as const;
 const TOUCH_KEYS = ['touch'] as const;
 const HOLD_DELAY_STEP_MS = 50;
+const CORNER_SIZE_STEP_PX = 8;
+
+const CORNER_LABELS: Readonly<Record<CornerId, string>> = {
+  topLeft: 'Top left',
+  topRight: 'Top right',
+  bottomLeft: 'Bottom left',
+  bottomRight: 'Bottom right',
+};
 
 /** Speed sliders move in quarter steps of a doubling, so the middle is the usual speed. */
 const SPEED_STEPS_PER_DOUBLING = 4;
@@ -413,12 +425,56 @@ function GestureActionSelect({
   );
 }
 
+function CornerRow({
+  corner,
+  setting,
+  onChange,
+}: {
+  readonly corner: CornerId;
+  readonly setting: CornerSetting;
+  readonly onChange: (setting: CornerSetting) => void;
+}) {
+  const triggerId = useId();
+  const label = CORNER_LABELS[corner];
+  return (
+    <div className="preferences__corner">
+      <GestureActionSelect
+        label={`${label} corner`}
+        value={setting.action}
+        onChange={(action) => {
+          onChange({ ...setting, action });
+        }}
+      />
+      <div className="preferences__field">
+        <label htmlFor={triggerId}>
+          <span className="visually-hidden">{label} corner </span>Runs on
+        </label>
+        <select
+          id={triggerId}
+          value={setting.trigger}
+          disabled={setting.action === 'none'}
+          onChange={(event) => {
+            onChange({
+              ...setting,
+              trigger: event.currentTarget.value === 'doubleTap' ? 'doubleTap' : 'tap',
+            });
+          }}
+        >
+          <option value="tap">A tap</option>
+          <option value="doubleTap">A double tap</option>
+        </select>
+      </div>
+    </div>
+  );
+}
+
 function TouchPage() {
   const editor = useEditor();
   const preferences = useEditorState((state) => state.preferences);
   const touch = preferences.touch;
   const delayId = useId();
   const slideId = useId();
+  const cornerSizeId = useId();
   const set = (patch: Partial<TouchSettings>) => {
     editor.updatePreferences({ touch: { ...touch, ...patch } });
   };
@@ -522,6 +578,52 @@ function TouchPage() {
             <option value="orbit">Orbits the view</option>
           </select>
         </div>
+      </fieldset>
+
+      <fieldset className="preferences__group">
+        <legend>Corners</legend>
+        <p className="preferences__hint">
+          Tapping a corner of the view with a finger or a pen runs what it is set to; a drag that starts there
+          is an ordinary one. With a mouse the corners do nothing.
+        </p>
+        {CORNER_IDS.map((corner) => (
+          <CornerRow
+            key={corner}
+            corner={corner}
+            setting={touch.corners[corner]}
+            onChange={(setting) => {
+              set({ corners: { ...touch.corners, [corner]: setting } });
+            }}
+          />
+        ))}
+        <div className="preferences__field">
+          <label htmlFor={cornerSizeId}>Corner size</label>
+          <span className="preferences__slider">
+            <input
+              id={cornerSizeId}
+              type="range"
+              min={CORNER_SIZE_RANGE.min}
+              max={CORNER_SIZE_RANGE.max}
+              step={CORNER_SIZE_STEP_PX}
+              value={touch.cornerSizePx}
+              aria-valuetext={`${String(touch.cornerSizePx)} pixels`}
+              onChange={(event) => {
+                set({ cornerSizePx: Number(event.currentTarget.value) });
+              }}
+            />
+            <output htmlFor={cornerSizeId}>{`${String(touch.cornerSizePx)} px`}</output>
+          </span>
+        </div>
+        <label className="preferences__check">
+          <input
+            type="checkbox"
+            checked={touch.showCornerHints}
+            onChange={(event) => {
+              set({ showCornerHints: event.currentTarget.checked });
+            }}
+          />
+          Show the corners on the view
+        </label>
       </fieldset>
 
       <fieldset className="preferences__group">

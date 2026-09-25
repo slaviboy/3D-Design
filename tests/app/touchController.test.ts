@@ -30,6 +30,7 @@ interface Setup {
   readonly editor: Editor;
   readonly clock: FakeClock;
   readonly menus: ScreenPoint[];
+  readonly corners: string[];
 }
 
 function setup(touch: Partial<TouchSettings> = {}): Setup {
@@ -37,12 +38,14 @@ function setup(touch: Partial<TouchSettings> = {}): Setup {
   const editor = createTestEditor({ clock });
   editor.updatePreferences({ touch: { ...DEFAULT_TOUCH_SETTINGS, ...touch } });
   const menus: ScreenPoint[] = [];
+  const corners: string[] = [];
   const port: TouchUiPort = {
     openContextMenu: (point) => menus.push(point),
     closeContextMenu: () => undefined,
+    cornerTriggered: (corner, label) => corners.push(`${corner}: ${label}`),
   };
   editor.touch.attach(port);
-  return { editor, clock, menus };
+  return { editor, clock, menus, corners };
 }
 
 /** A finger: down, moves in small steps, up. */
@@ -242,5 +245,66 @@ describe('touch and hold', () => {
     editor.touch.pointerUp(1, screenOf(3, 3));
     expect(menus).toEqual([]);
     expect(faces(editor)).toBe(2);
+  });
+});
+
+describe('corner zones and the pen button', () => {
+  const bottomLeft = { x: 20, y: 180 };
+  const bottomRight = { x: 180, y: 180 };
+
+  it('switches to Orbit and back with a tap in the bottom-left corner', () => {
+    const { editor, clock, corners } = setup();
+    tap(editor, bottomLeft);
+    expect(editor.tools.activeToolId).toBe(ORBIT_TOOL_ID);
+    clock.advance(500);
+    tap(editor, bottomLeft, 2);
+    expect(editor.tools.activeToolId).toBe('tool.select');
+    expect(corners).toEqual(['bottomLeft: Orbit', 'bottomLeft: Select']);
+  });
+
+  it('lets a drag that starts in a corner reach the tool', () => {
+    const { editor } = setup();
+    editor.activateTool(LINE_TOOL_ID);
+    drag(editor, 1, bottomLeft, { x: 100, y: 180 });
+    expect(edges(editor)).toBe(1);
+    expect(editor.tools.activeToolId).toBe(LINE_TOOL_ID);
+  });
+
+  it('waits for the second tap on a double-tap corner, and otherwise passes the tap on', () => {
+    const { editor, clock } = setup({
+      corners: {
+        ...DEFAULT_TOUCH_SETTINGS.corners,
+        bottomRight: { action: 'toggleTool:tool.orbit', trigger: 'doubleTap' },
+      },
+    });
+    editor.activateTool(LINE_TOOL_ID);
+    tap(editor, bottomRight);
+    expect(editor.tools.busy).toBe(false);
+    clock.advance(350);
+    // No second tap came: the tap was the Line tool's first click after all.
+    expect(editor.tools.busy).toBe(true);
+    editor.escape();
+
+    tap(editor, bottomRight, 2);
+    clock.advance(100);
+    tap(editor, bottomRight, 3);
+    expect(editor.tools.activeToolId).toBe(ORBIT_TOOL_ID);
+  });
+
+  it('only answers in corners that do something, within their size', () => {
+    const { editor } = setup();
+    expect(editor.touch.cornerAt({ x: 10, y: 10 })).toBeNull();
+    expect(editor.touch.cornerAt({ x: 50, y: 150 })).toBe('bottomLeft');
+    editor.updatePreferences({ touch: { ...editor.preferences.touch, cornerSizePx: 40 } });
+    expect(editor.touch.cornerAt({ x: 50, y: 150 })).toBeNull();
+  });
+
+  it('switches to Orbit and back with the pen button', () => {
+    const { editor } = setup();
+    editor.activateTool(LINE_TOOL_ID);
+    editor.touch.penButton({ x: 100, y: 100 });
+    expect(editor.tools.activeToolId).toBe(ORBIT_TOOL_ID);
+    editor.touch.penButton({ x: 100, y: 100 });
+    expect(editor.tools.activeToolId).toBe(LINE_TOOL_ID);
   });
 });
