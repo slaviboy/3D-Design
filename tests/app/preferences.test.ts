@@ -27,6 +27,7 @@ import {
   type Preferences,
 } from '../../src/app/preferences/preferences';
 import { LINE_TOOL_ID } from '../../src/app/tools/Tool';
+import { DEFAULT_TOUCH_SETTINGS } from '../../src/app/gestures/gestureSettings';
 import { IMPERIAL_UNIT_SETTINGS } from '../../src/kernel/units/units';
 import { click, createTestEditor, MemoryRecoveryRepository, pointer, screenOf, TOP_CAMERA } from './fixtures';
 
@@ -48,6 +49,12 @@ describe('preferences', () => {
         zoomSpeed: 2,
         orbitSpeed: 0.5,
         panSpeed: 1,
+      },
+      touch: {
+        ...DEFAULT_TOUCH_SETTINGS,
+        twoFingerTap: 'toggleTool:tool.orbit',
+        holdDelayMs: 900,
+        twoFingerSlide: 'pan',
       },
       autosaveMinutes: 10,
       units: architectural ?? IMPERIAL_UNIT_SETTINGS,

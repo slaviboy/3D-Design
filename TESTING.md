@@ -95,6 +95,16 @@ CI runs a fast profile. `FUZZ_RUNS=10000 npm test` runs the deep profile before 
   state is checked through a test hook that exists only in development and test builds, and screenshots are used as a
   sanity check.
 - **Browsers.** Chromium is the primary target. WebKit and Firefox run a smoke suite in the hardening phase.
+- **Touch** (`tests/e2e/touch.spec.ts`). In every browser, fingers are synthetic `PointerEvent`s with
+  `pointerType: 'touch'` dispatched on `.viewport` (with `bubbles`, since React listens at the root; capture is
+  skipped for pointers the browser doesn't track). Chromium also drives real multi-touch through the DevTools
+  protocol (`Input.dispatchTouchEvent` in a `hasTouch` context), which covers the browser's own gesture handling and
+  checks that the page itself never zooms (`visualViewport.scale` stays 1). The gesture state machine and its
+  timings are unit-tested with the `FakeClock` from `tests/app/fixtures.ts`, which only moves when told to.
+- **On real devices** (not automated): on an iPad with Safari and an Android tablet with Chrome, over the local
+  network (`npm run dev -- --host`), check pinch zoom, two- and three-finger taps and holds, a long press and the
+  selection box after it, drawing a line by pressing, dragging and lifting, and that the system's own multi-finger
+  gestures don't get in the way. With a pen that has a side button (S Pen, Wacom, Surface Pen), check the button.
 
 ### Accessibility tests
 

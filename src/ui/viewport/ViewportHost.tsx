@@ -22,14 +22,29 @@ import { Viewport } from '../../render/Viewport';
 import { useEditor, useEditorState } from '../EditorContext';
 import { AnnotationLabels } from './AnnotationLabels';
 import { selectForContextMenu } from '../../app/contextMenu/contextMenu';
-import { contextMenuJustOpened, showContextMenu } from '../contextmenu/contextMenuStore';
+import { closeContextMenu, contextMenuJustOpened, showContextMenu } from '../contextmenu/contextMenuStore';
 import { ClickCounter } from './clickCount';
+import { UndoBanner } from './UndoBanner';
 
 /** The right mouse button opens the context menu instead of reaching the active tool. */
 const SECONDARY_BUTTON = 2;
 
 /** Wheel deltas in lines (Firefox with a mouse) are converted at this many pixels a line. */
 const WHEEL_LINE_HEIGHT_PX = 16;
+
+/** Captures a pointer, so moves outside the view still reach it; synthetic pointers in tests can't be captured. */
+function capture(host: HTMLElement, pointerId: number): void {
+  try {
+    host.setPointerCapture(pointerId);
+  } catch {
+    // Input still works, only without capture.
+  }
+}
+
+function localPoint(event: ReactPointerEvent<HTMLElement>, element: HTMLElement): { x: number; y: number } {
+  const rect = element.getBoundingClientRect();
+  return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+}
 
 function pointerKind(type: string): PointerKind {
   return type === 'touch' || type === 'pen' ? type : 'mouse';
@@ -68,8 +83,8 @@ export function ViewportHost() {
   const clicksRef = useRef(new ClickCounter());
   /** The pointer pressed on the tool, whose cancellation (by the system, mid-gesture) cancels the tool's operation. */
   const pressRef = useRef<number | null>(null);
-  /** Fingers on the view: Safari reports their pinches as gestures too, which touch input already handles. */
-  const touchesRef = useRef(new Set<number>());
+  /** When the last touch ended: the browser's own long-press context menu then is ignored, as touch opens its own. */
+  const lastTouchRef = useRef(Number.NEGATIVE_INFINITY);
   const [failure, setFailure] = useState<string | null>(null);
   const overlay = useEditorState((state) => state.overlay);
   const marker = useEditorState((state) => state.marker);
@@ -122,7 +137,7 @@ export function ViewportHost() {
     const onGestureChange = (event: Event) => {
       event.preventDefault();
       const gesture = event as GestureEvent;
-      if (touchesRef.current.size === 0 && gesture.scale > 0) {
+      if (editor.touch.activePointerCount === 0 && gesture.scale > 0) {
         const rect = host.getBoundingClientRect();
         editor.tools.pinch(
           { x: gesture.clientX - rect.left, y: gesture.clientY - rect.top },
@@ -134,10 +149,19 @@ export function ViewportHost() {
     document.addEventListener('gesturestart', preventPageZoom);
     host.addEventListener('gesturestart', onGestureStart);
     host.addEventListener('gesturechange', onGestureChange);
+    const detachTouch = editor.touch.attach({
+      openContextMenu: (point) => {
+        const rect = host.getBoundingClientRect();
+        selectForContextMenu(editor, point);
+        showContextMenu(editor, { x: rect.left + point.x, y: rect.top + point.y }, host);
+      },
+      closeContextMenu,
+    });
     const relay = editor.exchange.viewCapture;
     const detachCapture =
       relay instanceof ViewCaptureRelay ? relay.attach((options) => viewport.capture(options)) : null;
     return () => {
+      detachTouch();
       detachCapture?.();
       host.removeEventListener('wheel', onWheel);
       document.removeEventListener('gesturestart', preventPageZoom);
@@ -168,33 +192,48 @@ export function ViewportHost() {
       onPointerDown={(event) => {
         const host = hostRef.current;
         if (!host) return;
-        if (event.pointerType === 'touch') touchesRef.current.add(event.pointerId);
+        if (event.pointerType === 'touch') {
+          capture(host, event.pointerId);
+          host.focus({ preventScroll: true });
+          editor.touch.pointerDown(event.pointerId, localPoint(event, host));
+          return;
+        }
         if (event.button === SECONDARY_BUTTON) {
           host.focus({ preventScroll: true });
           return;
         }
-        try {
-          host.setPointerCapture(event.pointerId);
-        } catch {
-          // Pointers the browser doesn't track (synthetic ones in tests) can't be captured; input still works.
-        }
+        capture(host, event.pointerId);
         host.focus({ preventScroll: true });
         pressRef.current = event.pointerId;
         editor.tools.pointerDown(pointerInput(event, host, clicksRef.current.press(event)));
       }}
       onPointerMove={(event) => {
-        if (hostRef.current)
-          editor.tools.pointerMove(pointerInput(event, hostRef.current, clicksRef.current.current));
+        const host = hostRef.current;
+        if (!host) return;
+        if (event.pointerType === 'touch') {
+          editor.touch.pointerMove(event.pointerId, localPoint(event, host));
+          return;
+        }
+        editor.tools.pointerMove(pointerInput(event, host, clicksRef.current.current));
       }}
       onPointerUp={(event) => {
-        touchesRef.current.delete(event.pointerId);
+        const host = hostRef.current;
+        if (event.pointerType === 'touch') {
+          lastTouchRef.current = event.timeStamp;
+          if (host) editor.touch.pointerUp(event.pointerId, localPoint(event, host));
+          return;
+        }
         if (event.button === SECONDARY_BUTTON) return;
         if (event.pointerId === pressRef.current) pressRef.current = null;
         if (hostRef.current)
           editor.tools.pointerUp(pointerInput(event, hostRef.current, clicksRef.current.current));
       }}
       onPointerCancel={(event) => {
-        touchesRef.current.delete(event.pointerId);
+        if (event.pointerType === 'touch') {
+          lastTouchRef.current = event.timeStamp;
+          editor.touch.pointerCancel(event.pointerId);
+          return;
+        }
         if (event.pointerId !== pressRef.current) return;
         pressRef.current = null;
         editor.tools.cancel();
@@ -202,13 +241,17 @@ export function ViewportHost() {
       onContextMenu={(event) => {
         event.preventDefault();
         const host = hostRef.current;
-        if (!host || contextMenuJustOpened()) return;
+        // A long press on a touch screen opens the menu through touch input, which also handles what comes after.
+        const fromTouch =
+          editor.touch.activePointerCount > 0 || event.timeStamp - lastTouchRef.current < 1000;
+        if (!host || fromTouch || contextMenuJustOpened()) return;
         const rect = host.getBoundingClientRect();
         selectForContextMenu(editor, { x: event.clientX - rect.left, y: event.clientY - rect.top });
         showContextMenu(editor, { x: event.clientX, y: event.clientY }, host);
       }}
     >
       <AnnotationLabels />
+      <UndoBanner />
       {marker && (
         <>
           <span
@@ -218,8 +261,13 @@ export function ViewportHost() {
           />
           {marker.label !== '' && (
             <span
-              className="inference-tooltip"
-              style={{ left: marker.x + 12, top: marker.y + 12 }}
+              // A finger covers the point it touches, so for touch the label sits above it.
+              className={`inference-tooltip${editor.pointerKind === 'touch' ? ' inference-tooltip--touch' : ''}`}
+              style={
+                editor.pointerKind === 'touch'
+                  ? { left: marker.x, top: marker.y }
+                  : { left: marker.x + 12, top: marker.y + 12 }
+              }
               data-testid="inference-label"
             >
               {marker.label}

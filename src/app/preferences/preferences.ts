@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 
+import { DEFAULT_TOUCH_SETTINGS, readTouchSettings, type TouchSettings } from '../gestures/gestureSettings';
 import {
   IMPERIAL_UNIT_SETTINGS,
   MAX_ANGLE_PRECISION,
@@ -71,6 +72,8 @@ export interface Preferences {
   /** Zoom in when scrolling toward you instead of away. */
   readonly invertWheelZoom: boolean;
   readonly navigation: NavigationSettings;
+  /** Gestures on touch screens and the pen's side button. */
+  readonly touch: TouchSettings;
   /** Minutes between autosaves of unsaved work; 0 turns autosave off. */
   readonly autosaveMinutes: number;
   /** How lengths and angles are shown and how typed values are read. */
@@ -88,6 +91,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
   toolTips: true,
   invertWheelZoom: false,
   navigation: DEFAULT_NAVIGATION,
+  touch: DEFAULT_TOUCH_SETTINGS,
   autosaveMinutes: 5,
   units: METRIC_UNIT_SETTINGS,
 });
@@ -98,9 +102,9 @@ export interface PreferenceStorage {
 }
 
 /** The pages of the Preferences dialog. */
-export type PreferencesTab = 'general' | 'navigation' | 'keyboard';
+export type PreferencesTab = 'general' | 'navigation' | 'keyboard' | 'touch';
 
-export const PREFERENCES_TABS: readonly PreferencesTab[] = ['general', 'navigation', 'keyboard'];
+export const PREFERENCES_TABS: readonly PreferencesTab[] = ['general', 'navigation', 'keyboard', 'touch'];
 
 /** The default values of some preferences, for restoring one page of the Preferences dialog. */
 export function defaultsFor<K extends keyof Preferences>(keys: readonly K[]): Pick<Preferences, K> {
@@ -251,6 +255,7 @@ export function parsePreferences(text: string | null): Preferences {
       typeof p.invertWheelZoom === 'boolean' ? p.invertWheelZoom : DEFAULT_PREFERENCES.invertWheelZoom,
     // Settings saved before the navigation settings existed get the defaults: a mouse at the usual speeds.
     navigation: readNavigation(p.navigation),
+    touch: readTouchSettings(p.touch),
     autosaveMinutes: isInteger(p.autosaveMinutes, 0, MAX_AUTOSAVE_MINUTES)
       ? p.autosaveMinutes
       : DEFAULT_PREFERENCES.autosaveMinutes,

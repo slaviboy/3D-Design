@@ -17,7 +17,6 @@
 
 import { describe, expect, it } from 'vitest';
 import { Editor } from '../../src/app/Editor';
-import type { AnimationClock } from '../../src/app/scenes/scenes';
 import { describeSelection } from '../../src/app/selection/entityInfo';
 import { splitShadowDateTime, sunForSettings } from '../../src/app/shadows/shadowSettings';
 import { createEditorStore } from '../../src/app/stores/editorStore';
@@ -30,54 +29,7 @@ import { DEFAULT_SHADOW_SETTINGS } from '../../src/kernel/model/types';
 import { validateDocument } from '../../src/kernel/model/validate';
 import { contextContentBounds, sectionRectangle } from '../../src/kernel/ops/sections';
 import { boxEdges, counts, draw } from '../kernel/helpers';
-import { click, createTestEditor, pointer, screenOf, TOP_CAMERA, VIEW_SIZE } from './fixtures';
-
-/** A clock that only moves when told to, running frames every 16 ms and timers when they fall due. */
-class FakeClock implements AnimationClock {
-  time = 0;
-  #nextHandle = 1;
-  readonly #frames = new Map<number, () => void>();
-  readonly #timers = new Map<number, { readonly at: number; readonly callback: () => void }>();
-
-  now(): number {
-    return this.time;
-  }
-
-  requestFrame(callback: () => void): number {
-    const handle = this.#nextHandle++;
-    this.#frames.set(handle, callback);
-    return handle;
-  }
-
-  cancelFrame(handle: number): void {
-    this.#frames.delete(handle);
-  }
-
-  setTimer(callback: () => void, milliseconds: number): number {
-    const handle = this.#nextHandle++;
-    this.#timers.set(handle, { at: this.time + milliseconds, callback });
-    return handle;
-  }
-
-  clearTimer(handle: number): void {
-    this.#timers.delete(handle);
-  }
-
-  advance(milliseconds: number): void {
-    const end = this.time + milliseconds;
-    while (this.time < end) {
-      this.time = Math.min(end, this.time + 16);
-      for (const [handle, timer] of [...this.#timers]) {
-        if (timer.at > this.time) continue;
-        this.#timers.delete(handle);
-        timer.callback();
-      }
-      const frames = [...this.#frames];
-      this.#frames.clear();
-      for (const [, frame] of frames) frame();
-    }
-  }
-}
+import { click, createTestEditor, FakeClock, pointer, screenOf, TOP_CAMERA, VIEW_SIZE } from './fixtures';
 
 function editorWithClock(reducedMotion = false): { editor: Editor; clock: FakeClock } {
   const clock = new FakeClock();

@@ -1916,3 +1916,33 @@
   color: var(--muted-fg);
   font-variant-numeric: tabular-nums;
 }
+
+/* Undo and redo notice ------------------------------------------------------------------------------ */
+
+.undo-banner {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  z-index: 3;
+  max-width: calc(100% - 32px);
+  padding: 6px 14px;
+  overflow: hidden;
+  border-radius: 16px;
+  background: rgb(20 24 30 / 78%);
+  color: #fff;
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  transform: translateX(-50%);
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.undo-banner[data-visible='true'] {
+  opacity: 1;
+}
+
+.inference-tooltip--touch {
+  transform: translate(-50%, calc(-100% - 36px));
+}

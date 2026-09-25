@@ -79,6 +79,9 @@ test('keeps keyboard focus inside Preferences, including its lists', async ({ pa
   await expect(dialog.getByRole('tab', { name: 'Navigation' })).toBeFocused();
   await expect(dialog.getByLabel('Invert mouse wheel zoom')).toBeVisible();
   await page.keyboard.press('End');
+  await expect(dialog.getByRole('tab', { name: 'Touch & Pen' })).toHaveAttribute('aria-selected', 'true');
+  await expect(dialog.getByLabel('Two-finger tap')).toBeVisible();
+  await page.keyboard.press('ArrowLeft');
   await expect(dialog.getByRole('tab', { name: 'Keyboard' })).toHaveAttribute('aria-selected', 'true');
   await expect(dialog.getByRole('button', { name: 'Reset All' })).toBeVisible();
 });
@@ -90,4 +93,21 @@ test('finds a command on the Keyboard page by its keys', async ({ page }) => {
   const dialog = page.getByRole('dialog', { name: 'Preferences' });
   await dialog.getByPlaceholder(/Filter by name or keys/).fill('shift+s');
   await expect(dialog.getByRole('listitem').filter({ hasText: 'Search Commands…' }).first()).toBeVisible();
+});
+
+test('reassigns a gesture on the Touch & Pen page and keeps it after reloading', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('menuitem', { name: 'Help', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Touch Gestures…' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Preferences' });
+  await expect(dialog.getByRole('tab', { name: 'Touch & Pen' })).toHaveAttribute('aria-selected', 'true');
+  await expect(dialog.getByLabel('Two-finger tap')).toHaveValue('command:edit.undo');
+  await dialog.getByLabel('Four-finger tap').selectOption('toggleTool:tool.orbit');
+  await dialog.getByLabel('Moving together').selectOption('pan');
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+
+  await page.reload();
+  await expect(page.getByRole('menubar', { name: 'Main menu' })).toBeVisible();
+  const touch = await page.evaluate(() => window.__planar?.editor.preferences.touch);
+  expect(touch).toMatchObject({ fourFingerTap: 'toggleTool:tool.orbit', twoFingerSlide: 'pan' });
 });

@@ -214,7 +214,7 @@ export const MENUS: readonly MenuDefinition[] = [
       'window.resetPanels',
     ],
   },
-  { label: 'Help', items: ['help.commandPalette', 'help.keyboardShortcuts'] },
+  { label: 'Help', items: ['help.commandPalette', 'help.keyboardShortcuts', 'help.touchGestures'] },
 ];
 
 /** WAI-ARIA menubar: arrow keys move between menus and items, Enter or Space runs, Escape closes. */

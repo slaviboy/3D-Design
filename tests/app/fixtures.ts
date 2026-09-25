@@ -26,6 +26,7 @@ import {
   type RecoverySnapshot,
   type RetentionPolicy,
 } from '../../src/io/idb/recovery';
+import type { AnimationClock } from '../../src/app/scenes/scenes';
 import type { PointerInput } from '../../src/app/tools/Tool';
 
 export const VIEW_SIZE: ViewportSize = { width: 200, height: 200 };
@@ -104,10 +105,60 @@ export class MemoryRecoveryRepository implements RecoveryRepository {
   }
 }
 
-export function createTestEditor(options: { fileAccess?: FileAccess; confirm?: boolean } = {}): Editor {
+/** A clock that only moves when told to, running frames every 16 ms and timers when they fall due. */
+export class FakeClock implements AnimationClock {
+  time = 0;
+  #nextHandle = 1;
+  readonly #frames = new Map<number, () => void>();
+  readonly #timers = new Map<number, { readonly at: number; readonly callback: () => void }>();
+
+  now(): number {
+    return this.time;
+  }
+
+  requestFrame(callback: () => void): number {
+    const handle = this.#nextHandle++;
+    this.#frames.set(handle, callback);
+    return handle;
+  }
+
+  cancelFrame(handle: number): void {
+    this.#frames.delete(handle);
+  }
+
+  setTimer(callback: () => void, milliseconds: number): number {
+    const handle = this.#nextHandle++;
+    this.#timers.set(handle, { at: this.time + milliseconds, callback });
+    return handle;
+  }
+
+  clearTimer(handle: number): void {
+    this.#timers.delete(handle);
+  }
+
+  advance(milliseconds: number): void {
+    const end = this.time + milliseconds;
+    while (this.time < end) {
+      this.time = Math.min(end, this.time + 16);
+      for (const [handle, timer] of [...this.#timers]) {
+        if (timer.at > this.time) continue;
+        this.#timers.delete(handle);
+        timer.callback();
+      }
+      const frames = [...this.#frames];
+      this.#frames.clear();
+      for (const [, frame] of frames) frame();
+    }
+  }
+}
+
+export function createTestEditor(
+  options: { fileAccess?: FileAccess; confirm?: boolean; clock?: AnimationClock } = {},
+): Editor {
   const editor = new Editor({
     platform: 'other',
     appVersion: '0.0.0-test',
+    ...(options.clock ? { clock: options.clock } : {}),
     ...(options.fileAccess ? { fileAccess: options.fileAccess } : {}),
     ...(options.confirm !== undefined
       ? { confirmDiscardChanges: () => Promise.resolve(options.confirm === true) }

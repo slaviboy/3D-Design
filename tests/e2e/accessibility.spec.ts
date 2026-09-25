@@ -57,7 +57,7 @@ test('dialogs have no serious accessibility violations', async ({ page }) => {
   await page.getByRole('menuitem', { name: 'Preferences…' }).click();
   const preferences = page.getByRole('dialog', { name: 'Preferences' });
   await expect(preferences).toBeVisible();
-  for (const tab of ['General', 'Navigation', 'Keyboard']) {
+  for (const tab of ['General', 'Navigation', 'Keyboard', 'Touch & Pen']) {
     await preferences.getByRole('tab', { name: tab }).click();
     await expect(preferences.getByRole('tab', { name: tab })).toHaveAttribute('aria-selected', 'true');
     expect(await seriousViolations(page), tab).toEqual([]);

@@ -202,6 +202,7 @@ import { SelectTool } from './tools/SelectTool';
 import { TapeMeasureTool } from './tools/TapeMeasureTool';
 import { ORBIT_TOOL_ID, PAN_TOOL_ID, SELECT_TOOL_ID, ZOOM_TOOL_ID, type PointerKind } from './tools/Tool';
 import { ToolManager } from './tools/ToolManager';
+import { TouchController } from './gestures/TouchController';
 import { refsOfResult, scalingAbout, selectionBounds, transformSelectionOf } from './tools/transformSupport';
 import type { ImportLimits } from '../io/mesh/limits';
 import type { ImportEngine } from './io/importEngine';
@@ -380,6 +381,8 @@ export class Editor {
   #shortcutOverrides: ShortcutOverrides = {};
   #shortcutStorage: ShortcutStorage | null = null;
   readonly tools: ToolManager;
+  /** Gestures on touch screens. */
+  readonly touch: TouchController;
   /** Import, 3D export and image export. */
   readonly exchange: ModelExchange;
   #preferences: Preferences = DEFAULT_PREFERENCES;
@@ -466,6 +469,7 @@ export class Editor {
       ],
       SELECT_TOOL_ID,
     );
+    this.touch = new TouchController(this, this.#clock);
   }
 
   /** The engine the solid tools use for booleans. */

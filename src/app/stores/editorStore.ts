@@ -50,6 +50,13 @@ export interface ScreenMarker {
 }
 
 /** Flat, UI-facing snapshot of editor state. Components subscribe to individual fields. */
+/** An undo or redo to show; `serial` grows with each one, so repeating the same step shows again. */
+export interface HistoryNotice {
+  readonly kind: 'undo' | 'redo';
+  readonly label: string;
+  readonly serial: number;
+}
+
 export interface EditorViewState {
   readonly revision: number;
   readonly documentName: string;
@@ -88,6 +95,8 @@ export interface EditorViewState {
   readonly preferencesDialogRequests: number;
   /** The page the last request asked the Preferences dialog to show. */
   readonly preferencesDialogTab: PreferencesTab;
+  /** The last undo or redo, from any source, for the notice at the top of the view. */
+  readonly historyNotice: HistoryNotice | null;
   readonly preferences: Preferences;
   /** The tag new groups and components go on; null for untagged. */
   readonly activeTagId: number | null;
@@ -142,6 +151,7 @@ export function createEditorStore(editor: Editor): EditorStore {
   let shortcutsVersion = 0;
   let preferencesDialogRequests = 0;
   let preferencesDialogTab: PreferencesTab = 'general';
+  let historyNotice: HistoryNotice | null = null;
   let text3dDialogRequests = 0;
   let labelsUnits: UnitSettings | null = null;
   let labelsRevision = -1;
@@ -215,6 +225,7 @@ export function createEditorStore(editor: Editor): EditorStore {
       shortcutsVersion,
       preferencesDialogRequests,
       preferencesDialogTab,
+      historyNotice,
       preferences: editor.preferences,
       activeTagId: session.activeTagId,
       editPath: session.editPath,
@@ -249,6 +260,14 @@ export function createEditorStore(editor: Editor): EditorStore {
   const unsubscribers = [
     editor.session.subscribe((event) => {
       if (event.kind === 'selection' || event.kind === 'document') selectionVersion++;
+      const modelEvent = event.kind === 'model' ? event.modelEvent : undefined;
+      if (modelEvent && (modelEvent.kind === 'undo' || modelEvent.kind === 'redo')) {
+        historyNotice = {
+          kind: modelEvent.kind,
+          label: modelEvent.label,
+          serial: (historyNotice?.serial ?? 0) + 1,
+        };
+      }
       refresh();
     }),
     editor.tools.subscribe(refresh),

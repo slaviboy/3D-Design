@@ -126,6 +126,14 @@ Folders are created when they get their first real module. Placeholder files are
   continued after looking around, its preview stays on screen, and typed values still reach it. `beginTemporary`
   lends the pointer to another tool for one gesture (a box selection after a long press) without deactivating the
   active one, so a pending paste keeps its clipboard. Escape, undo and choosing another tool end both.
+- **Touch** (`src/app/gestures/`). The viewport sends fingers to `editor.touch` and mouse and pen input to the tools.
+  `TouchRecognizer` is a pure state machine (timers from the editor's clock) that turns fingers into gestures. It
+  holds the first finger back until it is clearly a tap, a drag or a long press, or a second finger joins, so a
+  multi-finger gesture never leaks a click into a tool (a speculative edit would also clear redo). `TouchController`
+  maps the gestures onto the editor: one finger becomes mouse input for the active tool, using `busy` and `aims` to
+  decide between pressing and moving the pointer; pinches zoom about the point picked where they start, computed from
+  the camera at the start so nothing drifts; taps and holds run the actions in `Preferences.touch`. The interface
+  side is a small port for opening and closing the context menu.
 - **Previews.** Drawing tools show overlay geometry. Tools that modify existing geometry (push/pull, move, rotate,
   scale) run the real operation in a *speculative transaction* that is rolled back on the next pointer move and never
   enters history, so the preview always matches the committed result.

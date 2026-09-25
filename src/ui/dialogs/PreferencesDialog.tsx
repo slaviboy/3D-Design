@@ -15,7 +15,16 @@
  * limitations under the License.
  */
 
-import { useId, useState, type KeyboardEvent } from 'react';
+import { useId, useMemo, useState, type KeyboardEvent } from 'react';
+import type { CommandCategory } from '../../app/commands/CommandRegistry';
+import {
+  isGestureAction,
+  MAX_HOLD_DELAY_MS,
+  MIN_HOLD_DELAY_MS,
+  type GestureAction,
+  type TouchSettings,
+  type TwoFingerSlide,
+} from '../../app/gestures/gestureSettings';
 import {
   AUTOSAVE_MINUTE_CHOICES,
   defaultsFor,
@@ -42,11 +51,14 @@ const TAB_LABELS: Readonly<Record<PreferencesTab, string>> = {
   general: 'General',
   navigation: 'Navigation',
   keyboard: 'Keyboard',
+  touch: 'Touch & Pen',
 };
 
 /** The preferences each page's Restore Defaults puts back (the Keyboard page resets shortcuts itself). */
 const GENERAL_KEYS = ['theme', 'uiScale', 'toolTips', 'units', 'autosaveMinutes'] as const;
 const NAVIGATION_KEYS = ['invertWheelZoom', 'navigation'] as const;
+const TOUCH_KEYS = ['touch'] as const;
+const HOLD_DELAY_STEP_MS = 50;
 
 /** Speed sliders move in quarter steps of a doubling, so the middle is the usual speed. */
 const SPEED_STEPS_PER_DOUBLING = 4;
@@ -334,6 +346,203 @@ function NavigationPage() {
   );
 }
 
+/** A choice of what a gesture does: nothing, the context menu, switching to a tool and back, or any command. */
+function GestureActionSelect({
+  label,
+  value,
+  onChange,
+  contextMenu = false,
+}: {
+  readonly label: string;
+  readonly value: GestureAction;
+  readonly onChange: (action: GestureAction) => void;
+  readonly contextMenu?: boolean;
+}) {
+  const editor = useEditor();
+  const id = useId();
+  const { tools, groups } = useMemo(() => {
+    const commands = editor.commands.all();
+    const byCategory = new Map<CommandCategory, { readonly id: string; readonly label: string }[]>();
+    for (const command of commands) {
+      const group = byCategory.get(command.category) ?? [];
+      group.push({ id: command.id, label: command.label });
+      byCategory.set(command.category, group);
+    }
+    // The tools a user can choose, in the order their commands are listed.
+    const choosable = commands.filter((command) => editor.tools.has(command.id));
+    return { tools: choosable, groups: [...byCategory] };
+  }, [editor]);
+  const known = new Set<string>([
+    'none',
+    ...(contextMenu ? ['contextMenu'] : []),
+    ...tools.map((tool) => `toggleTool:${tool.id}`),
+    ...groups.flatMap(([, commands]) => commands.map((command) => `command:${command.id}`)),
+  ]);
+  return (
+    <div className="preferences__field">
+      <label htmlFor={id}>{label}</label>
+      <select
+        id={id}
+        value={value}
+        onChange={(event) => {
+          const next = event.currentTarget.value;
+          if (isGestureAction(next)) onChange(next);
+        }}
+      >
+        <option value="none">Nothing</option>
+        {contextMenu && <option value="contextMenu">Open the context menu</option>}
+        {!known.has(value) && <option value={value}>(no longer available)</option>}
+        <optgroup label="Switch to a tool and back">
+          {tools.map((tool) => (
+            <option key={tool.id} value={`toggleTool:${tool.id}`}>
+              {`${tool.label} and back`}
+            </option>
+          ))}
+        </optgroup>
+        {groups.map(([category, commands]) => (
+          <optgroup key={category} label={category}>
+            {commands.map((command) => (
+              <option key={command.id} value={`command:${command.id}`}>
+                {command.label}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function TouchPage() {
+  const editor = useEditor();
+  const preferences = useEditorState((state) => state.preferences);
+  const touch = preferences.touch;
+  const delayId = useId();
+  const slideId = useId();
+  const set = (patch: Partial<TouchSettings>) => {
+    editor.updatePreferences({ touch: { ...touch, ...patch } });
+  };
+
+  return (
+    <>
+      <p className="preferences__hint">
+        One finger uses the active tool, like a mouse: a tap clicks and a drag presses and drags. With Orbit
+        it turns the view, with Pan it moves it.
+      </p>
+      <fieldset className="preferences__group">
+        <legend>Gestures</legend>
+        <GestureActionSelect
+          label="Two-finger tap"
+          value={touch.twoFingerTap}
+          onChange={(twoFingerTap) => {
+            set({ twoFingerTap });
+          }}
+        />
+        <GestureActionSelect
+          label="Three-finger tap"
+          value={touch.threeFingerTap}
+          onChange={(threeFingerTap) => {
+            set({ threeFingerTap });
+          }}
+        />
+        <GestureActionSelect
+          label="Four-finger tap"
+          value={touch.fourFingerTap}
+          onChange={(fourFingerTap) => {
+            set({ fourFingerTap });
+          }}
+        />
+        <GestureActionSelect
+          label="Touch and hold"
+          value={touch.longPress}
+          contextMenu
+          onChange={(longPress) => {
+            set({ longPress });
+          }}
+        />
+        <label className="preferences__check">
+          <input
+            type="checkbox"
+            checked={touch.holdRepeat}
+            onChange={(event) => {
+              set({ holdRepeat: event.currentTarget.checked });
+            }}
+          />
+          Hold two or three fingers to repeat their tap, like rapid undo and redo
+        </label>
+        <div className="preferences__field">
+          <label htmlFor={delayId}>Delay before repeating</label>
+          <span className="preferences__slider">
+            <input
+              id={delayId}
+              type="range"
+              min={MIN_HOLD_DELAY_MS}
+              max={MAX_HOLD_DELAY_MS}
+              step={HOLD_DELAY_STEP_MS}
+              value={touch.holdDelayMs}
+              disabled={!touch.holdRepeat}
+              aria-valuetext={`${String(touch.holdDelayMs / 1000)} seconds`}
+              onChange={(event) => {
+                set({ holdDelayMs: Number(event.currentTarget.value) });
+              }}
+            />
+            <output htmlFor={delayId}>{`${String(touch.holdDelayMs / 1000)} s`}</output>
+          </span>
+        </div>
+        <p className="preferences__hint">
+          Undo takes back an operation that is underway first, like Escape. Some systems keep multi-finger
+          gestures for themselves (three-finger undo on iPad, for one); turn those off in the system settings,
+          or choose other gestures here.
+        </p>
+      </fieldset>
+
+      <fieldset className="preferences__group">
+        <legend>Two fingers</legend>
+        <label className="preferences__check">
+          <input
+            type="checkbox"
+            checked={touch.pinchZoom}
+            onChange={(event) => {
+              set({ pinchZoom: event.currentTarget.checked });
+            }}
+          />
+          Pinch to zoom about the spot between the fingers
+        </label>
+        <div className="preferences__field">
+          <label htmlFor={slideId}>Moving together</label>
+          <select
+            id={slideId}
+            value={touch.twoFingerSlide}
+            onChange={(event) => {
+              set({ twoFingerSlide: event.currentTarget.value as TwoFingerSlide });
+            }}
+          >
+            <option value="none">Does nothing</option>
+            <option value="pan">Pans the view</option>
+            <option value="orbit">Orbits the view</option>
+          </select>
+        </div>
+      </fieldset>
+
+      <fieldset className="preferences__group">
+        <legend>Pen</legend>
+        <GestureActionSelect
+          label="Side button"
+          value={touch.penButton}
+          contextMenu
+          onChange={(penButton) => {
+            set({ penButton });
+          }}
+        />
+        <p className="preferences__hint">
+          For pens with a side button, such as the S Pen, Wacom pens and the Surface Pen. A pen otherwise
+          works like a mouse. Apple Pencil's double-tap and squeeze aren't available to web pages.
+        </p>
+      </fieldset>
+    </>
+  );
+}
+
 /**
  * Settings kept on this device, on pages: General (appearance, units, files), Navigation and Keyboard (shortcuts).
  * Changes apply immediately. Arrow keys move between the pages.
@@ -401,6 +610,7 @@ export function PreferencesDialog({
         {tab === 'general' && <GeneralPage />}
         {tab === 'navigation' && <NavigationPage />}
         {tab === 'keyboard' && <KeyboardShortcutsEditor />}
+        {tab === 'touch' && <TouchPage />}
       </div>
       <p className="dialog__text">Preferences are saved on this device and apply to every model.</p>
       <div className="dialog__footer">
@@ -409,7 +619,13 @@ export function PreferencesDialog({
             type="button"
             className="button"
             onClick={() => {
-              editor.updatePreferences(defaultsFor(tab === 'general' ? GENERAL_KEYS : NAVIGATION_KEYS));
+              editor.updatePreferences(
+                tab === 'general'
+                  ? defaultsFor(GENERAL_KEYS)
+                  : tab === 'navigation'
+                    ? defaultsFor(NAVIGATION_KEYS)
+                    : defaultsFor(TOUCH_KEYS),
+              );
             }}
           >
             Restore Defaults

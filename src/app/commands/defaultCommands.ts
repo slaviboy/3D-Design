@@ -524,6 +524,16 @@ export function registerDefaultCommands(registry: CommandRegistry<Editor>): void
       },
     },
     {
+      id: 'help.touchGestures',
+      label: 'Touch Gestures…',
+      category: 'Help',
+      description: 'See and change what gestures and the pen button do (in Preferences)',
+      aliases: ['gestures', 'touch', 'tablet', 'phone', 'fingers', 'pen', 'stylus', 'pencil'],
+      run: (editor) => {
+        editor.requestUi('preferences', { tab: 'touch' });
+      },
+    },
+    {
       id: 'help.commandPalette',
       label: 'Search Commands…',
       category: 'Help',
