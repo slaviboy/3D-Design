@@ -139,6 +139,8 @@ export function insertCurve(
     });
     const result = insertSegments(doc, context, segments, {
       autoFace: true,
+      // Drawn by a tool: drawing over existing edges fills what they close, as lines do.
+      retrace: true,
       ...(options.faceAttributes ? { faceAttributes: options.faceAttributes } : {}),
       ...(options.orientationHint ? { orientationHint: options.orientationHint } : {}),
     });

@@ -169,7 +169,7 @@ export class LineTool implements Tool {
       session.doc,
       session.activeContext,
       [{ a: toLocalPoint(editor, start), b: toLocalPoint(editor, end) }],
-      { autoFace: true },
+      { autoFace: true, retrace: true },
     );
     const closed = this.#chainStart !== null && distance(this.#chainStart, end) <= EPS_LEN;
     if (closed || result.createdFaces.length > 0) {

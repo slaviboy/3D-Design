@@ -464,7 +464,7 @@ export class ArcTool implements Tool {
             { a: center, b: toLocalPoint(editor, start) },
             { a: center, b: toLocalPoint(editor, end) },
           ],
-          { autoFace: true },
+          { autoFace: true, retrace: true },
         );
       }
     });

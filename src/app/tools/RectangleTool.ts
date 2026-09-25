@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import type { Plane } from '../../kernel/math/plane';
+import { planeFromPointNormal, signedDistanceToPlane, type Plane } from '../../kernel/math/plane';
 import { add, dot, scale, sub, type Vec3 } from '../../kernel/math/vec3';
 import type { TransactionRecord } from '../../kernel/model/ModelDocument';
 import { insertSegments } from '../../kernel/ops/insertSegments';
@@ -48,6 +48,8 @@ interface Frame {
   readonly plane: Plane;
   readonly u: Vec3;
   readonly v: Vec3;
+  /** The first corner was clicked on a face, which keeps the rectangle on it. */
+  readonly onFace: boolean;
 }
 
 interface Drawn {
@@ -68,7 +70,16 @@ function corners(frame: Frame, width: number, height: number): Vec3[] {
   ];
 }
 
-/** Draws a rectangle from two corners, aligned with the axes of the plane it's drawn on. */
+function frameOn(editor: Editor, corner: Vec3, plane: Plane, onFace: boolean): Frame {
+  return { corner, plane, ...planeAxes(plane.normal, modelFrame(editor)), onFace };
+}
+
+/**
+ * Draws a rectangle from two corners, aligned with the axes of the plane it's drawn on. A first corner clicked on a
+ * face keeps the rectangle on that face. Otherwise the plane follows the opposite corner: the face under the pointer
+ * when the first corner lies on it, else the plane of the drawing axes that holds both corners (so two corners of a
+ * wall make a vertical rectangle), else the plane chosen at the first click.
+ */
 export class RectangleTool implements Tool {
   readonly id = RECTANGLE_TOOL_ID;
   readonly label = 'Rectangle';
@@ -76,6 +87,8 @@ export class RectangleTool implements Tool {
 
   #frame: Frame | null = null;
   #current: Inference | null = null;
+  /** The frame the rectangle lies in for the current pointer position. */
+  #currentFrame: Frame | null = null;
   #last: Drawn | null = null;
 
   pointerMove(input: PointerInput, editor: Editor): void {
@@ -86,10 +99,15 @@ export class RectangleTool implements Tool {
     if (input.button !== PRIMARY_BUTTON) return;
     const inference = this.#infer(input, editor);
     this.#current = inference;
-    const frame = this.#frame;
-    if (!frame) {
-      const plane = drawingPlane(editor, inference);
-      this.#frame = { corner: inference.point, plane, ...planeAxes(plane.normal, modelFrame(editor)) };
+    const frame = this.#currentFrame;
+    if (!this.#frame || !frame) {
+      this.#frame = frameOn(
+        editor,
+        inference.point,
+        drawingPlane(editor, inference),
+        inference.facePlane !== undefined,
+      );
+      this.#currentFrame = this.#frame;
       return;
     }
     const { width, height } = this.#size(frame, inference.point);
@@ -104,6 +122,7 @@ export class RectangleTool implements Tool {
 
   cancel(): void {
     this.#frame = null;
+    this.#currentFrame = null;
   }
 
   keyDown(chord: string): boolean {
@@ -115,7 +134,7 @@ export class RectangleTool implements Tool {
   }
 
   measurement(editor: Editor): MeasurementField {
-    const frame = this.#frame;
+    const frame = this.#currentFrame;
     let value = '';
     if (frame && this.#current) {
       const { width, height } = this.#size(frame, this.#current.point);
@@ -133,7 +152,7 @@ export class RectangleTool implements Tool {
     const signed = (typed: number | null, current: number): number =>
       typed === null ? current : (current < 0 ? -1 : 1) * typed;
 
-    const frame = this.#frame;
+    const frame = this.#currentFrame;
     if (frame) {
       const current = this.#current ? this.#size(frame, this.#current.point) : { width: 0, height: 0 };
       this.#draw(editor, frame, signed(first, current.width), signed(second, current.height));
@@ -149,7 +168,7 @@ export class RectangleTool implements Tool {
   }
 
   preview(): ToolPreview {
-    const frame = this.#frame;
+    const frame = this.#currentFrame;
     const current = this.#current;
     if (!frame || !current) return { lines: [], highlight: [], marker: markerFor(current) };
     const { width, height } = this.#size(frame, current.point);
@@ -176,7 +195,25 @@ export class RectangleTool implements Tool {
     if (!frame) return inferAt(editor, input);
     // No anchor: axis inferences through the first corner would only ever produce a flat rectangle.
     const inference = inferAt(editor, input, { fallbackPlane: frame.plane });
-    return { ...inference, point: projectOntoPlane(frame.plane, inference.point) };
+    const chosen = this.#frameFor(editor, frame, inference);
+    this.#currentFrame = chosen;
+    return { ...inference, point: projectOntoPlane(chosen.plane, inference.point) };
+  }
+
+  /** The plane the rectangle lies in with its opposite corner at `inference` (see the class comment). */
+  #frameFor(editor: Editor, frame: Frame, inference: Inference): Frame {
+    if (frame.onFace) return frame;
+    const { corner } = frame;
+    const face = inference.facePlane;
+    if (face && Math.abs(signedDistanceToPlane(face, corner)) <= EPS_LEN)
+      return frameOn(editor, corner, face, false);
+    const diagonal = sub(inference.point, corner);
+    const axes = modelFrame(editor);
+    const holding = [axes.z, axes.x, axes.y].filter((normal) => Math.abs(dot(diagonal, normal)) <= EPS_LEN);
+    const [only] = holding;
+    return holding.length === 1 && only
+      ? frameOn(editor, corner, planeFromPointNormal(corner, only), false)
+      : frame;
   }
 
   #size(frame: Frame, point: Vec3): { width: number; height: number } {
@@ -196,11 +233,12 @@ export class RectangleTool implements Tool {
         doc,
         session.activeContext,
         points.map((a, i) => ({ a, b: points[(i + 1) % points.length] ?? a })),
-        { autoFace: true },
+        { autoFace: true, retrace: true },
       ),
     );
     const record = doc.lastTransaction;
     this.#frame = null;
+    this.#currentFrame = null;
     this.#last = record ? { frame, width, height, record } : null;
   }
 }

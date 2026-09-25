@@ -124,7 +124,7 @@ export class FreehandTool implements Tool {
     const doc = session.doc;
     const context = session.activeContext;
     doc.transact('Freehand', () => {
-      const result = insertSegments(doc, context, segments, { autoFace: true });
+      const result = insertSegments(doc, context, segments, { autoFace: true, retrace: true });
       const edges = result.segmentEdges.flat();
       const store = doc.store(context);
       const unique = new Set(edges).size === edges.length;

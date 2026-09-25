@@ -259,7 +259,7 @@ export class RotatedRectangleTool implements Tool {
         doc,
         session.activeContext,
         points.map((a, i) => ({ a, b: points[(i + 1) % points.length] ?? a })),
-        { autoFace: true },
+        { autoFace: true, retrace: true },
       ),
     );
     const record = doc.lastTransaction;

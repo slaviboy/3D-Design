@@ -50,6 +50,12 @@ export interface SegmentInput {
 export interface InsertSegmentsOptions {
   /** Create faces for closed coplanar regions that no face covers yet (drawing tools set this). */
   readonly autoFace: boolean;
+  /**
+   * With `autoFace`: the existing edges the segments run over count as drawn too, so the regions they bound get faces
+   * as they would from new edges. Drawing over the outline of an empty region fills it, as in the reference. Drawing
+   * tools set this; operations that insert computed edges don't.
+   */
+  readonly retrace?: boolean;
   /** Attributes for automatically created faces. */
   readonly faceAttributes?: FaceAttributes;
   /** Preferred normal direction for new faces with no neighbours to agree with. */
@@ -103,13 +109,18 @@ export function insertSegments(
     }
 
     const liveEdges = createdEdges.filter((id) => store.edge(id) !== undefined);
+    const segmentEdges = endpoints.map((pair) => (pair ? chainBetween(store, pair[0], pair[1]) : []));
+    const drawn =
+      options.autoFace && options.retrace === true
+        ? [...new Set([...liveEdges, ...segmentEdges.flat()])].sort(byId)
+        : liveEdges;
     const policy: RegionPolicy = options.autoFace
       ? { decide: () => ({ attributes: options.faceAttributes ?? DEFAULT_FACE_ATTRIBUTES }) }
       : NEVER_CREATE_FACES;
     const createdFaces: FaceId[] = [];
     const splitFaces: FaceId[] = [];
-    for (const plane of collectCandidatePlanes(store, liveEdges, options.autoFace)) {
-      const seeds = liveEdges.filter((id) => {
+    for (const plane of collectCandidatePlanes(store, drawn, options.autoFace)) {
+      const seeds = drawn.filter((id) => {
         const edge = store.edge(id);
         return (
           edge !== undefined &&
@@ -126,7 +137,7 @@ export function insertSegments(
     }
 
     return {
-      segmentEdges: endpoints.map((pair) => (pair ? chainBetween(store, pair[0], pair[1]) : [])),
+      segmentEdges,
       createdEdges: liveEdges,
       createdFaces,
       splitFaces,

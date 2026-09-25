@@ -32,7 +32,9 @@ import {
 import type { EdgeId } from '../../src/kernel/ids';
 import { AXIS_Z, vec3, type Vec3 } from '../../src/kernel/math/vec3';
 import { validateDocument } from '../../src/kernel/model/validate';
-import { boxEdges, counts, draw, rectangle } from '../kernel/helpers';
+import { deleteFaces } from '../../src/kernel/ops/erase';
+import { pushPull } from '../../src/kernel/ops/pushPull';
+import { boxEdges, counts, draw, rectangle, segment } from '../kernel/helpers';
 import { click, createTestEditor, pointer, screenOf, VIEW_SIZE } from './fixtures';
 
 const key = (value: string, modifiers: { shiftKey?: boolean } = {}) => ({
@@ -107,6 +109,20 @@ describe('Line tool', () => {
     expect(counts(editor.session.doc)).toEqual({ v: 2, e: 1, f: 0 });
   });
 
+  it('brings back a missing face when drawn over one of its edges', () => {
+    const editor = createTestEditor();
+    const doc = editor.session.doc;
+    draw(doc, rectangle(1, 1, 3, 3));
+    const face = [...doc.rootStore.faces()][0];
+    deleteFaces(doc, doc.rootDefinitionId, face ? [face.id] : []);
+    expect(counts(doc).f).toBe(0);
+    editor.activateTool(LINE_TOOL_ID);
+    clickAt(editor, 1, 1);
+    clickAt(editor, 3, 1);
+    expect(counts(doc)).toEqual({ v: 4, e: 4, f: 1 });
+    expectValidModel(editor);
+  });
+
   it('locks an axis with the arrow keys', () => {
     const editor = createTestEditor();
     editor.activateTool(LINE_TOOL_ID);
@@ -163,6 +179,88 @@ describe('Rectangle tool', () => {
     expect(doc.undoDepth).toBe(1);
     editor.undo();
     expect(counts(doc)).toEqual({ v: 0, e: 0, f: 0 });
+  });
+
+  describe('between corners of existing geometry', () => {
+    // From the front, above.
+    const camera: CameraState = {
+      eye: vec3(0.5, -3, 3.5),
+      target: vec3(0.5, 0.5, 0.5),
+      up: AXIS_Z,
+      fovDegrees: 35,
+      projection: 'perspective',
+      orthoHalfHeight: 5,
+    };
+
+    function viewed(): Editor {
+      const editor = createTestEditor();
+      editor.session.setCamera(camera);
+      return editor;
+    }
+
+    function clickOn(editor: Editor, point: Vec3): void {
+      const screen = projectToScreen(camera, point, VIEW_SIZE);
+      if (!screen) throw new Error('behind the camera');
+      editor.tools.pointerMove(pointer(screen.x, screen.y, { buttons: 0 }));
+      click(editor, screen.x, screen.y);
+    }
+
+    /** Faces whose outline has every point on the plane `axis` = `value`. */
+    function facesAt(editor: Editor, axis: 'x' | 'y' | 'z', value: number) {
+      const store = editor.session.doc.rootStore;
+      return [...store.faces()].filter((face) =>
+        store.loopPoints(face.outer).every((p) => Math.abs(p[axis] - value) < 1e-9),
+      );
+    }
+
+    it('fills the opening of a hole cut through a box, from one corner to the diagonal one', () => {
+      const editor = viewed();
+      const doc = editor.session.doc;
+      draw(doc, boxEdges(0, 0, 0, 1, 1, 1));
+      draw(doc, rectangle(0.25, 0.25, 0.75, 0.75, 1));
+      const square = facesAt(editor, 'z', 1).find((face) => face.inners.length === 0);
+      if (!square) throw new Error('no square marked on the top');
+      pushPull(doc, doc.rootDefinitionId, square.id, -1);
+      expect(counts(doc).f).toBe(10);
+
+      editor.activateTool(RECTANGLE_TOOL_ID);
+      clickOn(editor, vec3(0.25, 0.25, 1));
+      expect(editor.session.preview?.marker?.label).toBe('Endpoint');
+      clickOn(editor, vec3(0.75, 0.75, 1));
+      expect(counts(doc).f).toBe(11);
+      expect(
+        facesAt(editor, 'z', 1)
+          .map((face) => face.inners.length)
+          .sort(),
+      ).toEqual([0, 1]);
+      expect(doc.lastTransaction?.label).toBe('Rectangle');
+      expectValidModel(editor);
+    });
+
+    it('stands up between two diagonal corners in a vertical plane', () => {
+      const editor = viewed();
+      const doc = editor.session.doc;
+      draw(doc, [segment([0, 0, 0], [0, 0, 1]), segment([1, 0, 0], [1, 0, 1])]);
+      editor.activateTool(RECTANGLE_TOOL_ID);
+      clickOn(editor, vec3(0, 0, 0));
+      clickOn(editor, vec3(1, 0, 1));
+      expect(facesAt(editor, 'y', 0)).toHaveLength(1);
+      expect(counts(doc)).toEqual({ v: 4, e: 4, f: 1 });
+      expectValidModel(editor);
+    });
+
+    it('lies on the wall under the pointer when it starts at a corner of that wall', () => {
+      const editor = viewed();
+      const doc = editor.session.doc;
+      draw(doc, boxEdges(0, 0, 0, 1, 1, 1));
+      editor.activateTool(RECTANGLE_TOOL_ID);
+      clickOn(editor, vec3(0, 0, 1));
+      clickOn(editor, vec3(0.6, 0, 0.4));
+      const front = facesAt(editor, 'y', 0);
+      expect(front).toHaveLength(2);
+      expect(counts(doc).f).toBe(7);
+      expectValidModel(editor);
+    });
   });
 });
 

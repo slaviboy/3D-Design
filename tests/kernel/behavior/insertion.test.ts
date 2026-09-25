@@ -48,7 +48,7 @@ const CIRCLE_IN_RECTANGLE: CurveParams & { kind: 'circle' } = {
   segments: DEFAULT_CIRCLE_SEGMENTS,
 };
 
-/** Rows A1–A22 of docs/BEHAVIOR_MATRIX.md (A20 is in hierarchy.test.ts). */
+/** Rows A1–A24 of docs/BEHAVIOR_MATRIX.md (A20 is in hierarchy.test.ts). */
 describe('behavior matrix A: edge insertion, auto-split, auto-face', () => {
   it('A1: a single line creates two vertices and one edge', () => {
     const doc = newDocument();
@@ -248,6 +248,59 @@ describe('behavior matrix A: edge insertion, auto-split, auto-face', () => {
     const doc = newDocument();
     draw(doc, rectangle(0, 0, 1e-5, 1e-5));
     expect(counts(doc)).toEqual({ v: 4, e: 4, f: 1 });
+  });
+
+  /** A 2 × 2 ground face with a 1 × 1 square hole in the middle, whose inner face was deleted. */
+  function squareHole() {
+    const doc = newDocument();
+    draw(doc, rectangle(0, 0, 2, 2));
+    draw(doc, rectangle(0.5, 0.5, 1.5, 1.5));
+    const inner = [...doc.rootStore.faces()].find((face) => face.inners.length === 0);
+    deleteFaces(doc, doc.rootDefinitionId, inner ? [inner.id] : []);
+    expect(counts(doc)).toEqual({ v: 8, e: 8, f: 1 });
+    return doc;
+  }
+
+  it('A23: drawing over the outline of a hole fills it, as drawing a new edge into it does', () => {
+    const drawOver = (segments: Parameters<typeof draw>[1]) => {
+      const doc = squareHole();
+      insertSegments(doc, doc.rootDefinitionId, segments, { autoFace: true, retrace: true });
+      expectValid(doc);
+      return counts(doc).f;
+    };
+    expect(drawOver(rectangle(0.5, 0.5, 1.5, 1.5))).toBe(2);
+    expect(drawOver([segment([0.5, 0.5, 0], [1.5, 0.5, 0])])).toBe(2);
+    expect(drawOver([segment([0.7, 0.5, 0], [1.2, 0.5, 0])])).toBe(2);
+
+    // Without retracing (operations inserting computed edges), the hole stays open.
+    const doc = squareHole();
+    const before = hashDocument(doc);
+    insertSegments(doc, doc.rootDefinitionId, rectangle(0.5, 0.5, 1.5, 1.5), { autoFace: true });
+    expect(hashDocument(doc)).toBe(before);
+  });
+
+  it('A24: drawing over an edge of an open box brings back the missing face', () => {
+    const doc = newDocument();
+    draw(doc, [
+      ...rectangle(0, 0, 1, 1),
+      ...rectangle(0, 0, 1, 1, 1),
+      segment([0, 0, 0], [0, 0, 1]),
+      segment([1, 0, 0], [1, 0, 1]),
+      segment([1, 1, 0], [1, 1, 1]),
+      segment([0, 1, 0], [0, 1, 1]),
+    ]);
+    const top = [...doc.rootStore.faces()].find((face) =>
+      doc.rootStore.loopPoints(face.outer).every((p) => p.z === 1),
+    );
+    deleteFaces(doc, doc.rootDefinitionId, top ? [top.id] : []);
+    expect(counts(doc).f).toBe(5);
+    insertSegments(doc, doc.rootDefinitionId, [segment([0, 0, 1], [1, 0, 1])], {
+      autoFace: true,
+      retrace: true,
+    });
+    expect(counts(doc).f).toBe(6);
+    expect(orientationConsistent(doc.rootStore)).toBe(true);
+    expectValid(doc);
   });
 
   it('uses the orientation hint for a new face off the ground plane', () => {

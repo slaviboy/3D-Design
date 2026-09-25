@@ -42,6 +42,8 @@ tool is marked Done.
 | A20 | Rectangle drawn on a face inside a group, from outside the group context | group unchanged | Isolation: new geometry lives in the root context and does not split the group's face |
 | A21 | A3 with all coordinates offset by (10000, 10000, 0) | 4/4/1 | Precision far from the origin |
 | A22 | 1e-5 m square | 4/4/1 | Tiny features still form faces |
+| A23 | A 2 × 2 ground face with a 1 × 1 square hole (its inner face deleted); draw over the hole's outline, one of its edges, or part of one | 8/8/2 | Drawing tools fill the hole, as a new edge drawn into it would; inserting the same segments without retracing (operations) leaves it open |
+| A24 | A unit box with its top face deleted; draw over one top edge | 8/12/6 | The top face comes back, oriented consistently |
 
 ## B. Push/Pull
 

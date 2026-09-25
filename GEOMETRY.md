@@ -122,11 +122,14 @@ for the active context, plus options such as `autoFace`.
    - Crossing a face's interior out of plane does **not** split the face. That only happens through Intersect Faces.
 4. **Apply splits.** Sort and deduplicate the split parameters per edge, call `splitEdge` (which is curve-aware), cut
    the new segments into sub-edges, and skip any sub-edge that already exists.
-5. **Collect candidate planes.**
-   - Planes of existing faces that contain a new edge.
-   - Planes spanned by each new edge and each non-collinear edge at one of its endpoints.
+5. **Collect candidate planes.** The seed edges are the new edges. For drawing tools (`retrace`), they also include
+   the existing edges the segments ran over, so drawing over the outline of an empty region fills it, as drawing a
+   new edge into it does. That is how the reference restores a face; operations that insert computed edges (Offset,
+   Intersect Faces, sections) don't set it.
+   - Planes of existing faces that contain a seed edge.
+   - Planes spanned by each seed edge and each non-collinear edge at one of its endpoints.
    - Deduplicate by (normal up to sign, offset).
-6. **Build a local planar graph per plane.** Starting from the new edges, walk connected edges that lie in the plane,
+6. **Build a local planar graph per plane.** Starting from the seed edges, walk connected edges that lie in the plane,
    and add the full loops of any faces being split. When splitting an existing face, limit the search to the face's
    bounding box. Project to a 2D orthonormal basis of the plane, reusing the face's basis when splitting so orientation
    carries over.

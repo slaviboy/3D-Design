@@ -38,14 +38,17 @@ async function faces(page: Page): Promise<{ count: number; groundHoles: number[]
 // Views jump instead of gliding, so framing the box takes effect at once.
 test.use({ reducedMotion: 'reduce' });
 
-test('pushing a rectangle on top down past the bottom stops there and cuts a hole', async ({ page }) => {
+/**
+ * Draws a 2 m × 1 m × 1 m box, marks a 1 m × 0.5 m rectangle in the middle of its top and pushes it down past the
+ * bottom, which cuts a hole through. Returns the hole's corners at the top, in page coordinates.
+ */
+async function boxWithHole(page: Page) {
   await drawBox(page);
   const { min, max } = await extents(page);
   const center = { x: (min.x + max.x) / 2, y: (min.y + max.y) / 2 };
   // Frame the box, so the rectangle's corners are well clear of its edges and don't snap to them.
   await page.keyboard.press('Shift+Z');
 
-  // A 1 m × 0.5 m rectangle in the middle of the top.
   await page.keyboard.press('r');
   const corner = await onScreen(page, { x: center.x - 0.5, y: center.y - 0.25, z: 1 });
   const toward = await onScreen(page, { x: center.x + 0.5, y: center.y + 0.25, z: 1 });
@@ -65,6 +68,22 @@ test('pushing a rectangle on top down past the bottom stops there and cuts a hol
   await page.mouse.move(below.x, below.y, { steps: 6 });
   await expect(page.locator('.statusbar__hint')).toContainText('Offset limited to 1000mm');
   await page.mouse.click(below.x, below.y);
-
   await expect.poll(() => faces(page)).toEqual({ count: 10, groundHoles: [1] });
+  return { corner, opposite: toward };
+}
+
+test('pushing a rectangle on top down past the bottom stops there and cuts a hole', async ({ page }) => {
+  await boxWithHole(page);
+});
+
+test('a rectangle from one corner of the opening to the diagonal one closes it', async ({ page }) => {
+  const { corner, opposite } = await boxWithHole(page);
+  await page.keyboard.press('r');
+  await page.mouse.move(corner.x, corner.y, { steps: 3 });
+  await expect(page.getByTestId('inference-label')).toHaveText('Endpoint');
+  await page.mouse.click(corner.x, corner.y);
+  await page.mouse.move(opposite.x, opposite.y, { steps: 3 });
+  await expect(page.getByTestId('inference-label')).toHaveText('Endpoint');
+  await page.mouse.click(opposite.x, opposite.y);
+  await expect.poll(async () => (await faces(page)).count).toBe(11);
 });
