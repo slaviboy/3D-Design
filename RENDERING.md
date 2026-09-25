@@ -83,6 +83,12 @@ or line widths, so they aren't used.
   hide nothing in X-ray and wireframe, and Back Edges keeps points on edges visible (they're drawn dashed); the origin
   is tested like other points, since the axes are drawn with depth testing. Candidates are tested lazily in ranking
   order, at most 16 per pointer move, with definition bounds cached until the document changes.
+- **Ties never come down to rounding.** A line inference (an axis, Parallel, Perpendicular, an edge's extension or
+  From Point) that passes within half a pixel of a point the model offers yields to that point. So moving along an
+  edge reads On Edge all the way, even where the axis line through a remembered corner runs along the edge. The two
+  are the same place worked out in two ways, and their pixel distances differ only by rounding (about 1e-14 px),
+  which would otherwise pick one on every pointer move. Lines of the same rank that tie are settled by kind: an
+  edge's extension before a From Point line.
 - **A tool's own preview.** Move, Rotate, Push/Pull and Offset preview by applying their operation to the model, so
   inference sees the preview where it is on screen: it hides what lies behind it, but what it added or moved is never
   a snap target (`exclusionForChanges` in `src/app/inference/exclusion.ts`), nor, for Move and Rotate, the face under

@@ -43,6 +43,7 @@ import {
   pointOnTargetPlane,
   projectToScreen,
   rayThroughScreen,
+  worldUnitsPerPixel,
   type CameraState,
   type Ray,
   type ScreenPoint,
@@ -171,6 +172,11 @@ const PRIORITY: Readonly<Record<InferenceKind, number>> = {
 
 /** Among linear inferences within this many pixels of each other, the lower rank wins. */
 const LINEAR_TIE_PX = 0.5;
+/**
+ * A line passing this close to a point the model offers (in pixels at the point's depth) goes through that point: a
+ * From Point line lying along an edge, say. The two are worked out differently, so only rounding tells them apart.
+ */
+const SAME_PLACE_PX = 0.5;
 /** Points within this many pixels of each other count as equally close, and the one nearer the camera wins. */
 const DEPTH_TIE_PX = 0.5;
 /**
@@ -185,6 +191,14 @@ const LINEAR_RANK: Partial<Record<InferenceKind, number>> = {
   extension: 2,
   'from-point': 2,
 };
+/** Settles lines of the same rank that tie: an edge's extension names the edge, a From Point line only a point. */
+const LINEAR_ORDER: readonly InferenceKind[] = [
+  'on-axis',
+  'parallel',
+  'perpendicular',
+  'extension',
+  'from-point',
+];
 
 interface Candidate {
   readonly inference: Inference;
@@ -419,7 +433,7 @@ export function infer(
 
   if (geometric && PRIORITY[geometric.inference.kind] <= 1) return withAxis(geometric.inference);
 
-  const linear = bestLinearInference(request, ray, tolerance, frame, visible);
+  const linear = bestLinearInference(request, ray, tolerance, frame, visible, points);
   if (linear) {
     // Lines through the anchor may win a tie with geometry; lines elsewhere only when strictly closer.
     const throughAnchor = linear.inference.kind !== 'extension' && linear.inference.kind !== 'from-point';
@@ -467,7 +481,8 @@ export function infer(
 /**
  * The closest visible linear inference: an axis, or a line parallel or perpendicular to a recent edge, through the
  * anchor; the extension of a recent edge; or an axis line through a recent point. Among lines about as close as the
- * closest, the lower rank wins.
+ * closest, the lower rank wins, then the kind listed first in {@link LINEAR_ORDER}. A line through one of the points
+ * the model `offers` yields to it, so moving along an edge reads On Edge all the way.
  */
 function bestLinearInference(
   request: InferenceRequest,
@@ -475,6 +490,7 @@ function bestLinearInference(
   tolerance: number,
   frame: AxisFrame,
   visible: (candidate: Candidate) => boolean,
+  offers: readonly Candidate[],
 ): Candidate | null {
   const { anchor, references } = request;
   const axes = axisEntries(frame);
@@ -527,15 +543,25 @@ function bestLinearInference(
     }
   }
 
-  candidates.sort((p, q) => p.pixels - q.pixels);
-  const index = candidates.findIndex(visible);
-  const first = candidates[index];
+  // Rounding would otherwise decide, on every pointer move, between a line and the point it passes through. A line
+  // there is as hidden as the point, so leaving it out loses nothing the camera sees.
+  const lines = candidates.filter((line) => {
+    const { point } = line.inference;
+    const reach = SAME_PLACE_PX * worldUnitsPerPixel(request.camera, point, request.size);
+    return !offers.some((offer) => distance(offer.inference.point, point) <= reach);
+  });
+  lines.sort((p, q) => p.pixels - q.pixels);
+  const index = lines.findIndex(visible);
+  const first = lines[index];
   if (!first) return null;
   let best = first;
   const rankOf = (candidate: Candidate): number => LINEAR_RANK[candidate.inference.kind] ?? 0;
-  for (const other of candidates.slice(index + 1)) {
+  const orderOf = (candidate: Candidate): number => LINEAR_ORDER.indexOf(candidate.inference.kind);
+  const beats = (other: Candidate): boolean =>
+    rankOf(other) < rankOf(best) || (rankOf(other) === rankOf(best) && orderOf(other) < orderOf(best));
+  for (const other of lines.slice(index + 1)) {
     if (other.pixels > first.pixels + LINEAR_TIE_PX) break;
-    if (rankOf(other) < rankOf(best) && visible(other)) best = other;
+    if (beats(other) && visible(other)) best = other;
   }
   return best;
 }

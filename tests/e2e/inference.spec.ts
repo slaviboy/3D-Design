@@ -100,3 +100,23 @@ test('snaps to a corner the camera sees', async ({ page }) => {
   await page.mouse.move(front.x, front.y, { steps: 3 });
   await expect(page.getByTestId('inference-label')).toHaveText('Endpoint');
 });
+
+test('reads On Edge all along an edge after passing its corner, never From Point', async ({ page }) => {
+  await drawBox(page);
+  const { min, max } = await extents(page);
+  const corner = await onScreen(page, { x: max.x, y: min.y, z: 1 });
+  await page.keyboard.press('l');
+  await page.mouse.move(corner.x - 30, corner.y, { steps: 3 });
+  await page.mouse.move(corner.x, corner.y, { steps: 3 });
+  await expect(page.getByTestId('inference-label')).toHaveText('Endpoint');
+
+  // The corner is remembered now, and the red From Point line through it lies along the top front edge.
+  const labels = new Set<string>();
+  for (let step = 1; step < 40; step++) {
+    const along = await onScreen(page, { x: max.x - (step / 40) * (max.x - min.x), y: min.y, z: 1 });
+    await page.mouse.move(along.x + 0.4, along.y + 0.3);
+    // Pointer moves reach the tool synchronously, so the marker already belongs to this position.
+    labels.add(await page.evaluate(() => window.__planar?.editor.session.preview?.marker?.label ?? 'none'));
+  }
+  expect([...labels].filter((label) => !['On Edge', 'Midpoint', 'Endpoint'].includes(label))).toEqual([]);
+});
