@@ -53,8 +53,27 @@ export function buildShortcutMap(
 }
 
 /**
+ * Chords the browser keeps for itself (tabs and windows): a page never receives them, so a shortcut on one could
+ * never run. In canonical form, where Mod is Command on macOS and Ctrl elsewhere, and Ctrl is the Mac Control key.
+ */
+const BROWSER_RESERVED_CHORDS: ReadonlySet<string> = new Set([
+  'Mod+W',
+  'Mod+T',
+  'Mod+N',
+  'Mod+Q',
+  'Mod+Shift+T',
+  'Mod+Shift+N',
+  'Mod+Shift+W',
+  'Mod+Tab',
+  'Mod+Shift+Tab',
+  'Ctrl+Tab',
+  'Ctrl+Shift+Tab',
+]);
+
+/**
  * The canonical form of a chord the user wants to assign, or why it can't be used. Digits start typing in the
- * measurements box and Escape cancels tools, so neither may be bound on its own or with only Shift.
+ * measurements box and Escape cancels tools, so neither may be bound on its own or with only Shift; and the browser
+ * never passes on the chords it uses for tabs and windows.
  */
 export function validateUserChord(chord: string): Result<string> {
   const canonical = normalizeChord(chord);
@@ -67,6 +86,9 @@ export function validateUserChord(chord: string): Result<string> {
     return err('Digits are used for typing measurements; add Ctrl, Alt or Command to use them');
   }
   if (key === 'Escape') return err('Escape is reserved for cancelling the current operation');
+  if (BROWSER_RESERVED_CHORDS.has(canonical)) {
+    return err('The browser keeps this shortcut for its tabs and windows, so Planar never receives it');
+  }
   return ok(canonical);
 }
 
@@ -119,14 +141,8 @@ export function exportShortcuts(overrides: ShortcutOverrides): string {
   );
 }
 
-/**
- * Reads shortcut changes from a JSON file. Unknown commands and invalid chords are refused, so a file from another
- * version can't leave broken bindings behind.
- */
-export function importShortcuts(
-  text: string,
-  commands: Iterable<CommandShortcutDefaults>,
-): Result<ShortcutOverrides> {
+/** The shortcut list of a shortcuts file, or why the text isn't one. */
+function readShortcutList(text: string): Result<Record<string, unknown>> {
   let value: unknown;
   try {
     value = JSON.parse(text);
@@ -142,9 +158,22 @@ export function importShortcuts(
   if (typeof file.overrides !== 'object' || file.overrides === null || Array.isArray(file.overrides)) {
     return err('The file has no shortcut list');
   }
+  return ok(file.overrides as Record<string, unknown>);
+}
+
+/**
+ * Reads shortcut changes from a JSON file. Unknown commands and invalid chords are refused, so a file from another
+ * version can't leave broken bindings behind.
+ */
+export function importShortcuts(
+  text: string,
+  commands: Iterable<CommandShortcutDefaults>,
+): Result<ShortcutOverrides> {
+  const list = readShortcutList(text);
+  if (!list.ok) return list;
   const known = new Set([...commands].map((command) => command.id));
   const overrides: Record<string, readonly string[]> = {};
-  for (const [commandId, chords] of Object.entries(file.overrides as Record<string, unknown>)) {
+  for (const [commandId, chords] of Object.entries(list.value)) {
     if (!known.has(commandId)) return err(`Unknown command "${commandId}"`);
     if (!Array.isArray(chords)) return err(`The shortcuts for "${commandId}" are not a list`);
     const canonical: string[] = [];
@@ -159,12 +188,30 @@ export function importShortcuts(
   return ok(overrides);
 }
 
-/** Reads stored overrides defensively: anything malformed is ignored and the defaults apply. */
+/**
+ * Reads the stored overrides defensively, one entry at a time. A command renamed or removed since, or a chord that is
+ * no longer allowed, is dropped on its own and every other change the user made is kept; a malformed store is ignored
+ * and the defaults apply.
+ */
 export function parseStoredOverrides(
   text: string | null,
   commands: Iterable<CommandShortcutDefaults>,
 ): ShortcutOverrides {
   if (text === null) return {};
-  const result = importShortcuts(text, commands);
-  return result.ok ? result.value : {};
+  const list = readShortcutList(text);
+  if (!list.ok) return {};
+  const known = new Set([...commands].map((command) => command.id));
+  const overrides: Record<string, readonly string[]> = {};
+  for (const [commandId, chords] of Object.entries(list.value)) {
+    if (!known.has(commandId) || !Array.isArray(chords)) continue;
+    const canonical = chords.flatMap((chord: unknown) => {
+      if (typeof chord !== 'string') return [];
+      const result = validateUserChord(chord);
+      return result.ok ? [result.value] : [];
+    });
+    // An entry whose chords were all dropped would take away the command's defaults; the defaults win instead.
+    if (canonical.length === 0 && chords.length > 0) continue;
+    overrides[commandId] = canonical;
+  }
+  return overrides;
 }

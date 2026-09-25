@@ -24,22 +24,37 @@ interface DialogProps {
   readonly className?: string;
 }
 
-/** Modal dialog: focus moves into it, Tab stays inside, Escape closes, and focus returns to where it was. */
+const FOCUSABLE = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled]):not([type="hidden"])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(', ');
+
+/** What Tab reaches inside `root`, in document order: enabled controls that are shown. */
+export function focusableIn(root: HTMLElement): HTMLElement[] {
+  return [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+    (element) => element.getClientRects().length > 0 && element.closest('[hidden], [inert]') === null,
+  );
+}
+
+/**
+ * Modal dialog: focus moves into it, Tab stays inside, Escape closes, and focus returns to where it was. The first
+ * element marked `data-autofocus` gets focus, otherwise the first text field, otherwise the first control.
+ */
 export function Dialog({ title, onClose, children, className }: DialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const dialog = dialogRef.current;
-    const focusable = () =>
-      dialog
-        ? [
-            ...dialog.querySelectorAll<HTMLElement>(
-              'button:not([disabled]), input, [tabindex]:not([tabindex="-1"])',
-            ),
-          ]
-        : [];
-    (dialog?.querySelector<HTMLElement>('[autofocus], input') ?? focusable()[0])?.focus();
+    if (dialog) {
+      const items = focusableIn(dialog);
+      const marked = items.find((item) => item.matches('[data-autofocus], [autofocus]'));
+      (marked ?? items.find((item) => item instanceof HTMLInputElement) ?? items[0])?.focus();
+    }
     return () => {
       previous?.focus();
     };
@@ -64,11 +79,7 @@ export function Dialog({ title, onClose, children, className }: DialogProps) {
             event.stopPropagation();
             onClose();
           } else if (event.key === 'Tab' && dialogRef.current) {
-            const items = [
-              ...dialogRef.current.querySelectorAll<HTMLElement>(
-                'button:not([disabled]), input, [tabindex]:not([tabindex="-1"])',
-              ),
-            ];
+            const items = focusableIn(dialogRef.current);
             const first = items[0];
             const last = items.at(-1);
             if (event.shiftKey && document.activeElement === first) {

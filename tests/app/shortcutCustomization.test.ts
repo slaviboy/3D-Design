@@ -91,6 +91,41 @@ describe('shortcut customization', () => {
     expect(parseStoredOverrides('not json', commands)).toEqual({});
     expect(parseStoredOverrides(null, commands)).toEqual({});
   });
+
+  it('refuses the chords the browser keeps for its tabs and windows', () => {
+    for (const chord of [
+      'Mod+W',
+      'Mod+T',
+      'Mod+N',
+      'Mod+Q',
+      'Mod+Shift+T',
+      'Mod+Shift+N',
+      'Mod+Tab',
+      'Ctrl+Tab',
+    ]) {
+      const result = validateUserChord(chord);
+      expect(result.ok, chord).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/browser/);
+    }
+    expect(validateUserChord('Mod+Shift+R')).toEqual({ ok: true, value: 'Mod+Shift+R' });
+    expect(validateUserChord('Alt+W')).toEqual({ ok: true, value: 'Alt+W' });
+  });
+
+  it('keeps the stored changes that still apply when others no longer do', () => {
+    const stored = exportShortcuts({
+      'tool.line': ['Shift+L'],
+      // A command removed since, and chords that are no longer allowed:
+      'tool.removed': ['K'],
+      'tool.polygon': ['Mod+W', 'Shift+P'],
+      'edit.redo': ['9'],
+    });
+    expect(parseStoredOverrides(stored, commands)).toEqual({
+      'tool.line': ['Shift+L'],
+      'tool.polygon': ['Shift+P'],
+    });
+    // An explicit "no shortcut" stays.
+    expect(parseStoredOverrides(exportShortcuts({ 'edit.redo': [] }), commands)).toEqual({ 'edit.redo': [] });
+  });
 });
 
 describe('editor shortcuts', () => {

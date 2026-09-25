@@ -50,3 +50,24 @@ test('changes the theme and units in Preferences and keeps them after reloading'
     )
     .toBe('1.25');
 });
+
+test('keeps keyboard focus inside Preferences, including its lists', async ({ page, browserName }) => {
+  // WebKit moves focus between fields only with Tab; Alt+Tab reaches every control, like Tab elsewhere.
+  const tab = browserName === 'webkit' ? 'Alt+Tab' : 'Tab';
+  await page.goto('/');
+  await page.getByRole('menuitem', { name: 'Window', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Preferences…' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Preferences' });
+  await expect(dialog).toBeVisible();
+
+  const theme = dialog.getByLabel('Theme');
+  const close = dialog.getByRole('button', { name: 'Close', exact: true });
+  await theme.focus();
+  // Backwards from the first control wraps to the last, and forwards from the last back to the first.
+  await page.keyboard.press(`Shift+${tab}`);
+  await expect(close).toBeFocused();
+  await page.keyboard.press(tab);
+  await expect(theme).toBeFocused();
+  await page.keyboard.press(tab);
+  await expect(dialog.getByLabel('Interface size')).toBeFocused();
+});
