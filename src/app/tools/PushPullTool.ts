@@ -16,7 +16,7 @@
  */
 
 import type { FaceId } from '../../kernel/ids';
-import { dot, scale, sub, type Vec3 } from '../../kernel/math/vec3';
+import { distance, dot, normalize, scale, sub, type Vec3, add } from '../../kernel/math/vec3';
 import type { TransactionRecord } from '../../kernel/model/ModelDocument';
 import { pushPull, pushPullLimit, type PushPullLimit } from '../../kernel/ops/pushPull';
 import { EPS_LEN } from '../../kernel/tolerance';
@@ -101,6 +101,33 @@ interface Finished {
   readonly stops: Stops;
 }
 
+/** How much further out than its snapping reach an edge snap lets go of the pointer. */
+const EDGE_HOLD_REACH = 1.5;
+/** How much nearer another point must be to take over from a held snap, as a share of the snapping reach. */
+const SWITCH_MARGIN = 0.5;
+
+function sameEdge(a: Inference, b: Inference): boolean {
+  const [p, q] = [a.edge, b.edge];
+  if (!p || !q) return false;
+  return (
+    (distance(p.a, q.a) <= EPS_LEN && distance(p.b, q.b) <= EPS_LEN) ||
+    (distance(p.a, q.b) <= EPS_LEN && distance(p.b, q.a) <= EPS_LEN)
+  );
+}
+
+function screenDistanceToSegment(
+  p: { x: number; y: number },
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lengthSquared = dx * dx + dy * dy;
+  const t =
+    lengthSquared === 0 ? 0 : Math.min(Math.max(((p.x - a.x) * dx + (p.y - a.y) * dy) / lengthSquared, 0), 1);
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+
 function stopFor(stops: Stops, keepOriginal: boolean): Stop | null {
   return keepOriginal ? stops.keeping : stops.moving;
 }
@@ -131,6 +158,8 @@ export class PushPullTool implements Tool {
     const inference = inferAt(editor, input, {
       // A face follows the pointer along its normal: points on the axes' lines would make it jump.
       drawingAxes: false,
+      // It moves along its own normal: lines through remembered points (From Point) and the like don't apply.
+      linear: false,
       // The extrusion follows the pointer and would catch it; it still hides what lies behind it.
       exclude: combineExclusions(
         operation.exclusion,
@@ -275,26 +304,59 @@ export class PushPullTool implements Tool {
   }
 
   /**
-   * Keeps the last point snap while the pointer stays within reach of it, when this move offers none. The preview the
-   * snap produced may have taken its target away: a push landing on the bottom takes the bottom's edges with it.
-   * Dropping the snap would move the face off it, bring the target back and snap again, flickering on every move.
+   * Keeps the last point snap while the pointer stays by it, when this move offers none. The preview the snap produced
+   * may have taken its target away: a push landing on the bottom takes the bottom's edges with it. And a finger moving
+   * along an edge keeps crossing the rim of its snapping reach. Dropping the snap would each time swap the snapped
+   * height for wherever the pointer ray passes the face's line, far off when the pointer is over other geometry, and
+   * the face would flicker between the two.
    */
   #holdSnap(editor: Editor, operation: Operation, input: PointerInput, inference: Inference): Inference {
-    if (POINT_INFERENCE_KINDS.has(inference.kind)) {
+    const held = operation.snap ? this.#stillBy(editor, operation.snap, input) : null;
+    // Another point takes over only when the pointer is clearly nearer to it: two edges a few pixels apart on screen
+    // (the top and bottom of a wall seen from high up) would otherwise trade places at every tremble of a finger.
+    if (
+      POINT_INFERENCE_KINDS.has(inference.kind) &&
+      (!held || sameEdge(held, inference) || this.#clearlyNearer(editor, input, inference, held))
+    ) {
       operation.snap = inference;
       return inference;
     }
-    const held = operation.snap;
-    const screen = held ? projectToScreen(editor.session.camera, held.point, editor.viewportSize) : null;
-    if (
-      held &&
-      screen &&
-      Math.hypot(screen.x - input.x, screen.y - input.y) <= inferenceTolerancePx(editor)
-    ) {
-      return held;
+    operation.snap = held;
+    return held ?? inference;
+  }
+
+  #clearlyNearer(editor: Editor, input: PointerInput, candidate: Inference, held: Inference): boolean {
+    const { camera } = editor.session;
+    const size = editor.viewportSize;
+    const at = projectToScreen(camera, candidate.point, size);
+    const heldAt = projectToScreen(camera, held.point, size);
+    if (!at || !heldAt) return true;
+    const pixels = (p: { x: number; y: number }) => Math.hypot(p.x - input.x, p.y - input.y);
+    return pixels(at) + SWITCH_MARGIN * inferenceTolerancePx(editor) < pixels(heldAt);
+  }
+
+  /**
+   * The held snap for this pointer position, or null once the pointer has left it. A snap on an edge follows the
+   * pointer along the edge while the pointer stays within half again the snapping reach of it, so it lets go a little
+   * further out than it caught.
+   */
+  #stillBy(editor: Editor, held: Inference, input: PointerInput): Inference | null {
+    const { camera } = editor.session;
+    const size = editor.viewportSize;
+    const reach = inferenceTolerancePx(editor);
+    const edge = held.edge;
+    if (!edge) {
+      const screen = projectToScreen(camera, held.point, size);
+      return screen && Math.hypot(screen.x - input.x, screen.y - input.y) <= reach ? held : null;
     }
-    operation.snap = null;
-    return inference;
+    const a = projectToScreen(camera, edge.a, size);
+    const b = projectToScreen(camera, edge.b, size);
+    if (!a || !b || screenDistanceToSegment(input, a, b) > reach * EDGE_HOLD_REACH) return null;
+    const direction = normalize(sub(edge.b, edge.a));
+    if (!direction) return held;
+    const onLine = closestPointOnLineToRay(edge.a, direction, rayThroughScreen(camera, input, size));
+    const along = Math.min(Math.max(dot(sub(onLine, edge.a), direction), 0), distance(edge.a, edge.b));
+    return { ...held, kind: 'on-edge', label: 'On Edge', point: add(edge.a, scale(direction, along)) };
   }
 
   #faceAt(input: PointerInput, editor: Editor): FaceId | null {

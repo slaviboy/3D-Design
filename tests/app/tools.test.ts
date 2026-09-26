@@ -37,6 +37,7 @@ import type { EdgeId } from '../../src/kernel/ids';
 import { add, AXIS_X, AXIS_Z, scale, vec3, type Vec3 } from '../../src/kernel/math/vec3';
 import { validateDocument } from '../../src/kernel/model/validate';
 import { deleteFaces } from '../../src/kernel/ops/erase';
+import { insertCurve } from '../../src/kernel/ops/curves';
 import { pushPull } from '../../src/kernel/ops/pushPull';
 import {
   boxEdges,
@@ -682,6 +683,58 @@ describe('Push/Pull tool', () => {
       expect(counts(doc)).toEqual({ v: 0, e: 0, f: 0 });
       expect(doc.lastTransaction?.label).toBe('Push/Pull');
       expectValidModel(editor);
+    });
+
+    it('stays on an edge of the next shape while a finger trembles along it, and never reads From Point', () => {
+      // A box, and beside it a hexagonal prism as tall, seen from beyond the box (examples of a user's file).
+      const target = vec3(6, -1, 0.3);
+      const view: CameraState = {
+        ...camera,
+        eye: vec3(target.x - 14 * Math.cos(0.35), target.y, target.z + 14 * Math.sin(0.35)),
+        target,
+      };
+      const size = { width: 1000, height: 700 };
+      const on = (point: Vec3) => {
+        const screen = projectToScreen(view, point, size);
+        if (!screen) throw new Error('behind the camera');
+        return screen;
+      };
+      const editor = createTestEditor();
+      editor.setViewportSize(size);
+      editor.session.setCamera(view);
+      const doc = editor.session.doc;
+      const root = doc.rootDefinitionId;
+      draw(doc, boxEdges(0, -4.58, 0, 6.451, 0, 0.68));
+      insertCurve(doc, root, {
+        kind: 'polygon',
+        center: vec3(8.6, 0, 0),
+        normal: AXIS_Z,
+        xAxis: vec3(1, 0, 0),
+        radius: 1.8,
+        sides: 6,
+      });
+      const hexagon = [...doc.rootStore.faces()].find((face) =>
+        doc.rootStore.loopPoints(face.outer).every((p) => p.x > 6.7),
+      );
+      if (!hexagon) throw new Error('no hexagon');
+      pushPull(doc, root, hexagon.id, -0.68);
+
+      editor.activateTool(PUSH_PULL_TOOL_ID);
+      const press = on(vec3(8, 1, 0.68));
+      const touch = { pointerType: 'touch' as const };
+      editor.tools.pointerMove(pointer(press.x, press.y, { buttons: 0, ...touch }));
+      click(editor, press.x, press.y, touch);
+      const seen: string[] = [];
+      for (let step = 0; step <= 40; step++) {
+        const along = on(vec3(6.451 * (0.9 - (step / 40) * 0.7), 0, 0));
+        const tremble = [-6, -2, 0.5, 3, 7][step % 5] ?? 0;
+        editor.tools.pointerMove(pointer(along.x + tremble, along.y + tremble / 2, { buttons: 0, ...touch }));
+        seen.push(`${editor.session.preview?.marker?.label ?? ''} ${editor.tools.measurement?.value ?? ''}`);
+      }
+      expect(seen.filter((state) => !state.startsWith('On Edge') && !state.startsWith('Midpoint'))).toEqual(
+        [],
+      );
+      expect(new Set(seen.map((state) => state.split(' ').at(-1)))).toEqual(new Set(['0mm']));
     });
 
     it('holds still near the bottom: a snap that lands the push is kept while the pointer stays by it', () => {

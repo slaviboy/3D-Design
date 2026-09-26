@@ -127,6 +127,11 @@ export interface InferenceRequest {
    */
   readonly drawingAxes?: boolean;
   /**
+   * Offer inferences along lines: axes, Parallel, Perpendicular, edge extensions and From Point (on by default).
+   * Push/Pull moves a face along its own normal and uses none of them.
+   */
+  readonly linear?: boolean;
+  /**
    * A point the result must not line up with along a drawing axis: the Rectangle tool's first corner, where a second
    * corner on the axis through it would only give a flat rectangle. Axes through it aren't offered.
    */
@@ -503,7 +508,10 @@ export function infer(
 
   if (geometric && PRIORITY[geometric.inference.kind] <= 1) return withAxis(geometric.inference);
 
-  const linear = bestLinearInference(request, ray, tolerance, frame, visible, points, planar, accept);
+  const linear =
+    request.linear === false
+      ? null
+      : bestLinearInference(request, ray, tolerance, frame, visible, points, planar, accept);
   if (linear) {
     // Lines through the anchor may win a tie with geometry; lines elsewhere only when strictly closer.
     const throughAnchor = linear.inference.kind !== 'extension' && linear.inference.kind !== 'from-point';

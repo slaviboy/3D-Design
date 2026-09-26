@@ -226,10 +226,14 @@ Push/Pull applies to a planar face F. Let `n` be F's normal and `d` the signed d
 
 - **Preview.** The drag preview runs the whole operation, imprinting included, in a speculative transaction, so the
   preview is exactly what a click keeps (a hole shows as soon as the push reaches the far side).
-- **Snapping.** Inference snaps the distance to existing geometry, so flush positions are exact. A snap stays while
-  the pointer stays within reach of its point, even when the preview it produced took the point away (a push that
-  lands on the bottom takes the bottom's edges with it); otherwise the distance would leave it, the point would come
-  back, and the preview would alternate on every move.
+- **Snapping.** Inference snaps the distance to points of existing geometry (endpoints, midpoints, points on edges),
+  so flush positions are exact; lines through remembered points (From Point) and other line inferences are not
+  offered, since the face only moves along its normal. A snap holds while the pointer stays by it: a point within
+  snapping reach, an edge within half again that reach, where the snap slides along the edge with the pointer.
+  Another point takes over only when the pointer is nearer to it by half the reach. Without that, a trembling finger
+  at the rim of an edge's reach, or between two edges a few pixels apart, would swap the snapped height for the
+  pointer's on every move; and a push that lands on the bottom takes the bottom's edges with it, which would drop
+  the snap.
 - **Repeat.** Double-clicking reuses the last distance.
 
 Rows marked ⚑ in the behavior matrix are cases where the reference behavior is unclear and must be confirmed before

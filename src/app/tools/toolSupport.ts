@@ -61,6 +61,8 @@ export interface InferOptions {
   readonly exclude?: InferenceExclusion;
   /** Snap to points on the drawing axes' lines (on by default). */
   readonly drawingAxes?: boolean;
+  /** Offer inferences along lines (see `InferenceRequest.linear`; on by default). */
+  readonly linear?: boolean;
   /** Leave out the drawing axes through this point (see `InferenceRequest.excludeAxesThrough`). */
   readonly excludeAxesThrough?: Vec3;
   /** The result is projected onto `fallbackPlane` through the anchor (see `InferenceRequest.planar`). */
@@ -153,6 +155,7 @@ export function inferAt(editor: Editor, screen: ScreenPoint, options: InferOptio
     ...(options.fallbackPlane ? { fallbackPlane: options.fallbackPlane } : {}),
     ...(options.exclude ? { exclude: options.exclude } : {}),
     ...(options.drawingAxes === false ? { drawingAxes: false } : {}),
+    ...(options.linear === false ? { linear: false } : {}),
     ...(options.excludeAxesThrough ? { excludeAxesThrough: options.excludeAxesThrough } : {}),
     ...(options.planar === true ? { planar: true } : {}),
   });
