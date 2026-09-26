@@ -83,3 +83,35 @@ test('points on the red, green and blue axes snap, with a marker in the axis col
     await expect(page.locator(`.inference-marker--on-drawing-axis[data-axis="${axis}"]`)).toBeVisible();
   }
 });
+
+test('a polygon started on the red axis stays drawn with the pointer straight above its center', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await expect(page.getByRole('menubar', { name: 'Main menu' })).toBeVisible();
+  await page
+    .getByRole('toolbar', { name: 'Tools' })
+    .getByRole('button', { name: 'Polygon', exact: true })
+    .click();
+  const center = await onScreen(page, { x: 2, y: 0, z: 0 });
+  await page.mouse.move(center.x + 20, center.y + 20, { steps: 2 });
+  await page.mouse.move(center.x + 2, center.y, { steps: 3 });
+  await expect(page.getByTestId('inference-label')).toHaveText('On Red Axis');
+  await page.mouse.click(center.x + 2, center.y);
+
+  // Up along the blue line through the center: every point of it lies on the center once dropped to the ground.
+  const top = await onScreen(page, { x: 2, y: 0, z: 2 });
+  const seen: { label: string; lines: number }[] = [];
+  for (let step = 1; step <= 30; step++) {
+    const along = step / 30;
+    await page.mouse.move(center.x + 2 + along * (top.x - center.x), center.y + along * (top.y - center.y));
+    seen.push(
+      await page.evaluate(() => {
+        const preview = window.__planar?.editor.session.preview;
+        return { label: preview?.marker?.label ?? 'none', lines: preview?.lines.length ?? 0 };
+      }),
+    );
+  }
+  expect(seen.filter(({ label }) => label === 'On Blue Axis')).toEqual([]);
+  expect(seen.filter(({ lines }) => lines === 0)).toEqual([]);
+});

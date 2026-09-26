@@ -17,10 +17,17 @@
 
 import { describe, expect, it } from 'vitest';
 import { projectToScreen, rayThroughScreen, type CameraState } from '../../src/app/camera/camera';
-import { axisOf, closestPointOnLineToRay, infer } from '../../src/app/inference/inference';
+import {
+  axisOf,
+  closestPointOnLineToRay,
+  infer,
+  type InferenceReferences,
+} from '../../src/app/inference/inference';
 import { IDENTITY } from '../../src/kernel/math/mat4';
-import { AXIS_Z, vec3, type Vec3 } from '../../src/kernel/math/vec3';
+import { planeFromPointNormal } from '../../src/kernel/math/plane';
+import { AXIS_X, AXIS_Z, vec3, type Vec3 } from '../../src/kernel/math/vec3';
 import type { ModelDocument } from '../../src/kernel/model/ModelDocument';
+import { addGuideLine } from '../../src/kernel/model/mutations';
 import { insertCurve } from '../../src/kernel/ops/curves';
 import { makeGroup } from '../../src/kernel/ops/hierarchy';
 import { draw, newDocument, rectangle, segment } from '../kernel/helpers';
@@ -182,6 +189,103 @@ describe('inference', () => {
 
     it('are left out for tools that take only points of the model', () => {
       expect(inferAt(newDocument(), 3, 0.2, { drawingAxes: false }).kind).toBe('free');
+    });
+  });
+
+  describe('for a tool that draws in a plane through its anchor', () => {
+    // From the front right, above, so the vertical through a point on the ground shows as its own line.
+    const camera: CameraState = {
+      eye: vec3(6, -9, 6),
+      target: vec3(1.5, 0, 0.5),
+      up: AXIS_Z,
+      fovDegrees: 35,
+      projection: 'perspective',
+      orthoHalfHeight: 5,
+    };
+    const size = { width: 800, height: 600 };
+
+    function inferNear(
+      doc: ModelDocument,
+      point: Vec3,
+      extra: { anchor: Vec3; normal: Vec3; planar: boolean; references?: InferenceReferences },
+    ) {
+      const screen = projectToScreen(camera, point, size);
+      if (!screen) throw new Error('behind the camera');
+      return infer(doc, doc.rootDefinitionId, IDENTITY, {
+        camera,
+        size,
+        screen: { x: screen.x + 2, y: screen.y },
+        anchor: extra.anchor,
+        fallbackPlane: planeFromPointNormal(extra.anchor, extra.normal),
+        planar: extra.planar,
+        ...(extra.references ? { references: extra.references } : {}),
+      });
+    }
+
+    it('leaves out the axis along the plane normal, which would put the point on the anchor', () => {
+      const doc = newDocument();
+      const anchor = vec3(2, 0, 0);
+      const above = inferNear(doc, vec3(2, 0, 1), { anchor, normal: AXIS_Z, planar: true });
+      expect(above.label).not.toBe('On Blue Axis');
+      // A tool drawing lines in space still gets it.
+      expect(inferNear(doc, vec3(2, 0, 1), { anchor, normal: AXIS_Z, planar: false }).label).toBe(
+        'On Blue Axis',
+      );
+    });
+
+    it('leaves out a corner straight above the anchor, but keeps the anchor itself', () => {
+      const doc = newDocument();
+      draw(doc, [segment([2, 0, 0], [2, 0, 1]), segment([2, 0, 1], [3, 0, 1])]);
+      const anchor = vec3(2, 0, 0);
+      const corner = inferNear(doc, vec3(2, 0, 1), { anchor, normal: AXIS_Z, planar: true });
+      expect(corner.kind).not.toBe('endpoint');
+      expect(corner.point).not.toEqual(vec3(2, 0, 1));
+      expect(inferNear(doc, anchor, { anchor, normal: AXIS_Z, planar: true }).kind).toBe('endpoint');
+    });
+
+    it('does the same on a wall, where the red axis runs along the normal', () => {
+      const doc = newDocument();
+      const anchor = vec3(0, 1, 1);
+      const along = inferNear(doc, vec3(1.5, 1, 1), { anchor, normal: AXIS_X, planar: true });
+      expect(along.label).not.toBe('On Red Axis');
+      expect(inferNear(doc, vec3(1.5, 1, 1), { anchor, normal: AXIS_X, planar: false }).label).toBe(
+        'On Red Axis',
+      );
+    });
+
+    // Lines along the normal elsewhere drop to a single spot: the size would stick there while the marker floats above.
+    it('leaves out the blue drawing axis', () => {
+      const doc = newDocument();
+      const anchor = vec3(2, 0, 0);
+      expect(inferNear(doc, vec3(0, 0, 1), { anchor, normal: AXIS_Z, planar: false }).kind).toBe(
+        'on-drawing-axis',
+      );
+      expect(inferNear(doc, vec3(0, 0, 1), { anchor, normal: AXIS_Z, planar: true }).kind).not.toBe(
+        'on-drawing-axis',
+      );
+    });
+
+    it('leaves out the blue From Point line of a remembered point', () => {
+      const doc = newDocument();
+      const anchor = vec3(2, 0, 0);
+      const references = { points: [vec3(3, 1, 0)], edges: [] };
+      const above = vec3(3, 1, 1);
+      expect(inferNear(doc, above, { anchor, normal: AXIS_Z, planar: false, references }).kind).toBe(
+        'from-point',
+      );
+      expect(inferNear(doc, above, { anchor, normal: AXIS_Z, planar: true, references }).kind).not.toBe(
+        'from-point',
+      );
+    });
+
+    it('leaves out a guide line standing up from the plane', () => {
+      const doc = newDocument();
+      doc.transact('Guide', () => addGuideLine(doc, doc.rootDefinitionId, vec3(3, 1, 0), AXIS_Z));
+      const anchor = vec3(2, 0, 0);
+      expect(inferNear(doc, vec3(3, 1, 1), { anchor, normal: AXIS_Z, planar: false }).label).toBe('On Guide');
+      expect(inferNear(doc, vec3(3, 1, 1), { anchor, normal: AXIS_Z, planar: true }).label).not.toBe(
+        'On Guide',
+      );
     });
   });
 });

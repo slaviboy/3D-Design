@@ -18,6 +18,10 @@
 import { describe, expect, it } from 'vitest';
 import { projectToScreen, type CameraState } from '../../src/app/camera/camera';
 import type { Editor } from '../../src/app/Editor';
+import { ARC_TOOL_ID, PIE_TOOL_ID, TWO_POINT_ARC_TOOL_ID } from '../../src/app/tools/ArcTool';
+import { PROTRACTOR_TOOL_ID } from '../../src/app/tools/ProtractorTool';
+import { ROTATED_RECTANGLE_TOOL_ID } from '../../src/app/tools/RotatedRectangleTool';
+import { ROTATE_TOOL_ID } from '../../src/app/tools/RotateTool';
 import {
   CIRCLE_TOOL_ID,
   ERASER_TOOL_ID,
@@ -30,11 +34,11 @@ import {
   TAPE_MEASURE_TOOL_ID,
 } from '../../src/app/tools/Tool';
 import type { EdgeId } from '../../src/kernel/ids';
-import { AXIS_Z, vec3, type Vec3 } from '../../src/kernel/math/vec3';
+import { add, AXIS_X, AXIS_Z, scale, vec3, type Vec3 } from '../../src/kernel/math/vec3';
 import { validateDocument } from '../../src/kernel/model/validate';
 import { deleteFaces } from '../../src/kernel/ops/erase';
 import { pushPull } from '../../src/kernel/ops/pushPull';
-import { boxEdges, counts, draw, rectangle, segment } from '../kernel/helpers';
+import { boxEdges, counts, draw, polygon, rectangle, segment } from '../kernel/helpers';
 import { click, createTestEditor, pointer, screenOf, VIEW_SIZE } from './fixtures';
 
 const key = (value: string, modifiers: { shiftKey?: boolean } = {}) => ({
@@ -324,6 +328,119 @@ describe('Circle and Polygon tools', () => {
     clickAt(editor, 1, -3);
     expect(counts(editor.session.doc)).toEqual({ v: 5, e: 5, f: 1 });
     expectValidModel(editor);
+  });
+});
+
+describe('tools that draw in a plane through their first point', () => {
+  // From the front right, above, so the blue line above a point on the ground shows as a line of its own.
+  const camera: CameraState = {
+    eye: vec3(6, -9, 6),
+    target: vec3(1.5, 0, 0.5),
+    up: AXIS_Z,
+    fovDegrees: 35,
+    projection: 'perspective',
+    orthoHalfHeight: 5,
+  };
+  const size = { width: 800, height: 600 };
+
+  function viewed(): Editor {
+    const editor = createTestEditor();
+    editor.setViewportSize(size);
+    editor.session.setCamera(camera);
+    return editor;
+  }
+
+  /** Where `point` shows, two pixels to the right, so the pointer isn't exactly on a line through it. */
+  function near(point: Vec3): { x: number; y: number } {
+    const screen = projectToScreen(camera, point, size);
+    if (!screen) throw new Error('behind the camera');
+    return { x: screen.x + 2, y: screen.y };
+  }
+
+  function hover(editor: Editor, point: Vec3): void {
+    const screen = near(point);
+    editor.tools.pointerMove(pointer(screen.x, screen.y, { buttons: 0 }));
+  }
+
+  function clickOn(editor: Editor, point: Vec3): void {
+    hover(editor, point);
+    const screen = near(point);
+    click(editor, screen.x, screen.y);
+  }
+
+  function expectShapeShown(editor: Editor, axis: string): void {
+    expect(editor.session.preview?.marker?.label).not.toBe(axis);
+    expect(editor.session.preview?.lines.length).toBeGreaterThan(0);
+    expect(editor.tools.measurement?.value).not.toBe('0mm');
+  }
+
+  it.each([
+    ['Circle', CIRCLE_TOOL_ID],
+    ['Polygon', POLYGON_TOOL_ID],
+    ['Arc', ARC_TOOL_ID],
+    ['Pie', PIE_TOOL_ID],
+    ['2-Point Arc', TWO_POINT_ARC_TOOL_ID],
+    ['Rotated Rectangle', ROTATED_RECTANGLE_TOOL_ID],
+  ])('%s keeps its size with the pointer straight above its first point', (_name, toolId) => {
+    const editor = viewed();
+    editor.activateTool(toolId);
+    clickOn(editor, vec3(2, 0, 0));
+    // Every point of the blue line up from the first point lies on it once dropped into the ground plane.
+    for (const height of [0.5, 1, 2]) {
+      hover(editor, vec3(2, 0, height));
+      expectShapeShown(editor, 'On Blue Axis');
+    }
+  });
+
+  it('keeps a circle on a wall with the pointer out along the wall normal', () => {
+    for (const { wall, center, normal, axis } of [
+      {
+        wall: polygon([vec3(-1, 1, 0), vec3(-1, 4, 0), vec3(-1, 4, 2), vec3(-1, 1, 2)]),
+        center: vec3(-1, 2.5, 1),
+        normal: AXIS_X,
+        axis: 'On Red Axis',
+      },
+      {
+        wall: polygon([vec3(0, 1, 0), vec3(3, 1, 0), vec3(3, 1, 2), vec3(0, 1, 2)]),
+        center: vec3(1.5, 1, 1),
+        normal: vec3(0, -1, 0),
+        axis: 'On Green Axis',
+      },
+    ]) {
+      const editor = viewed();
+      draw(editor.session.doc, wall);
+      editor.activateTool(CIRCLE_TOOL_ID);
+      hover(editor, center);
+      expect(editor.session.preview?.marker?.label).toBe('On Face');
+      clickOn(editor, center);
+      for (const out of [0.6, 1]) {
+        hover(editor, add(center, scale(normal, out)));
+        expectShapeShown(editor, axis);
+      }
+    }
+  });
+
+  it.each([
+    ['Rotate', ROTATE_TOOL_ID],
+    ['Protractor', PROTRACTOR_TOOL_ID],
+  ])('%s turns toward the pointer above its center instead of holding the last angle', (_name, toolId) => {
+    const editor = viewed();
+    draw(editor.session.doc, rectangle(3, 1, 4, 2));
+    editor.selectAll();
+    editor.activateTool(toolId);
+    clickOn(editor, vec3(2, 0, 0));
+    hover(editor, vec3(2, 0, 1));
+    expect(editor.session.preview?.marker?.label).not.toBe('On Blue Axis');
+    clickOn(editor, vec3(3, 0, 0));
+    hover(editor, vec3(2, 1, 0));
+    expect(editor.tools.measurement?.value).toBe('90.0°');
+    // Seen from the camera, the pointer above the center covers the ground straight behind it, away from the eye.
+    const behind = (Math.atan2(9, -4) * 180) / Math.PI;
+    for (const height of [0.5, 1]) {
+      hover(editor, vec3(2, 0, height));
+      expect(editor.session.preview?.marker?.label).not.toBe('On Blue Axis');
+      expect(Number.parseFloat(editor.tools.measurement?.value ?? '')).toBeCloseTo(behind, 0);
+    }
   });
 });
 

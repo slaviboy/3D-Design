@@ -216,7 +216,7 @@ export class RotatedRectangleTool implements Tool {
     const plane = this.#plane;
     return inferAt(editor, input, {
       ...(start ? { anchor: start } : {}),
-      ...(plane ? { fallbackPlane: plane } : {}),
+      ...(plane ? { fallbackPlane: plane, planar: true } : {}),
       lockDirection: start && !this.#end ? this.#direction : null,
     });
   }

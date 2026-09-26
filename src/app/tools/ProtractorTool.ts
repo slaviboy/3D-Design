@@ -79,7 +79,11 @@ export class ProtractorTool implements Tool {
 
   pointerMove(input: PointerInput, editor: Editor): void {
     const pivot = this.#pivot;
-    this.#current = inferAt(editor, input, pivot ? { anchor: pivot.center, fallbackPlane: pivot.plane } : {});
+    this.#current = inferAt(
+      editor,
+      input,
+      pivot ? { anchor: pivot.center, fallbackPlane: pivot.plane, planar: true } : {},
+    );
     const reference = this.#reference;
     if (pivot && reference) {
       const direction = directionInPlane(pivot.plane, pivot.center, this.#current.point);
@@ -96,7 +100,11 @@ export class ProtractorTool implements Tool {
       this.#pivot = { center: inference.point, plane: protractorPlane(editor, inference, this.#lockNormal) };
       return;
     }
-    const inference = inferAt(editor, input, { anchor: pivot.center, fallbackPlane: pivot.plane });
+    const inference = inferAt(editor, input, {
+      anchor: pivot.center,
+      fallbackPlane: pivot.plane,
+      planar: true,
+    });
     const direction = directionInPlane(pivot.plane, pivot.center, inference.point);
     if (!direction) return;
     const reference = this.#reference;

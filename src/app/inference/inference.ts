@@ -131,6 +131,12 @@ export interface InferenceRequest {
    * corner on the axis through it would only give a flat rectangle. Axes through it aren't offered.
    */
   readonly excludeAxesThrough?: Vec3;
+  /**
+   * The result is used projected onto `fallbackPlane` through `anchor` (circles, polygons, arcs, rotated rectangles,
+   * rotations). Snaps that could only land on the anchor once projected are left out: lines along the plane's normal,
+   * every point of which projects to one spot, and points off the plane straight above or below the anchor.
+   */
+  readonly planar?: boolean;
 }
 
 export const DEFAULT_INFERENCE_TOLERANCE_PX = 10;
@@ -225,21 +231,49 @@ interface Candidate {
   readonly onEdge: boolean;
 }
 
-/** Collects the candidates within `tolerance` pixels of the cursor. */
+/** Collects the candidates within `tolerance` pixels of the cursor that `accept` lets through. */
 function candidateList(
   camera: CameraState,
   size: ViewportSize,
   screen: ScreenPoint,
   tolerance: number,
+  accept: (inference: Inference) => boolean = () => true,
 ): { readonly list: Candidate[]; readonly offer: (inference: Inference, onEdge?: boolean) => void } {
   const list: Candidate[] = [];
   const offer = (inference: Inference, onEdge = false): void => {
+    if (!accept(inference)) return;
     const projected = projectToScreen(camera, inference.point, size);
     if (!projected) return;
     const pixels = Math.hypot(projected.x - screen.x, projected.y - screen.y);
     if (pixels <= tolerance) list.push({ inference, pixels, depth: projected.depth, onEdge });
   };
   return { list, offer };
+}
+
+/** What a `planar` request leaves out (see {@link InferenceRequest.planar}). */
+interface PlanarRules {
+  /** A line running along the plane's normal: every point of it projects to one spot. */
+  readonly alongNormal: (direction: Vec3) => boolean;
+  /** A point off the plane that projects onto the anchor, which would give a result of no size. */
+  readonly landsOnAnchor: (point: Vec3) => boolean;
+}
+
+function planarRules(request: InferenceRequest): PlanarRules | null {
+  const { anchor, fallbackPlane } = request;
+  const normal = request.planar === true && anchor && fallbackPlane ? normalize(fallbackPlane.normal) : null;
+  if (!anchor || !normal) return null;
+  // Half a pixel at the anchor: nearer than that, a projected point is the anchor as far as anyone can see.
+  const reach = SAME_PLACE_PX * worldUnitsPerPixel(request.camera, anchor, request.size);
+  return {
+    alongNormal: (direction) => {
+      const unit = normalize(direction);
+      return unit !== null && length(cross(unit, normal)) <= AXIS_ALIGNMENT_SINE;
+    },
+    landsOnAnchor: (point) => {
+      const height = dot(sub(point, anchor), normal);
+      return Math.abs(height) > reach && distance(sub(point, scale(normal, height)), anchor) <= reach;
+    },
+  };
 }
 
 /**
@@ -339,7 +373,9 @@ export function infer(
   const clip = request.clip ?? NO_SECTION_CLIPPING;
   const boundsCache = request.boundsCache ?? new Map<DefinitionId, Aabb>();
   const visible = visibilityTest(doc, context, contextTransform, request, boundsCache);
-  const { list: points, offer } = candidateList(camera, size, screen, tolerance);
+  const planar = planarRules(request);
+  const accept = (inference: Inference): boolean => !planar?.landsOnAnchor(inference.point);
+  const { list: points, offer } = candidateList(camera, size, screen, tolerance, accept);
 
   // The axes aren't cut by sections, so the origin never is.
   offer({ point: frame.origin, kind: 'origin', label: 'Origin', inGroup: false });
@@ -405,6 +441,7 @@ export function infer(
     const through = request.excludeAxesThrough;
     for (const { axis, direction, label } of axes) {
       if (through && length(cross(sub(through, frame.origin), direction)) <= EPS_LEN) continue;
+      if (planar?.alongNormal(direction)) continue;
       offer({
         point: closestPointOnLineToRay(frame.origin, direction, ray),
         kind: 'on-drawing-axis',
@@ -422,6 +459,7 @@ export function infer(
       offer({ point, kind: 'endpoint', label: 'Guide Point', inGroup: false });
     } else {
       const direction = transformDirection(contextTransform, guide.geometry.direction);
+      if (planar?.alongNormal(direction)) continue;
       offer({
         point: closestPointOnLineToRay(point, direction, ray),
         kind: 'on-edge',
@@ -465,7 +503,7 @@ export function infer(
 
   if (geometric && PRIORITY[geometric.inference.kind] <= 1) return withAxis(geometric.inference);
 
-  const linear = bestLinearInference(request, ray, tolerance, frame, visible, points);
+  const linear = bestLinearInference(request, ray, tolerance, frame, visible, points, planar, accept);
   if (linear) {
     // Lines through the anchor may win a tie with geometry; lines elsewhere only when strictly closer.
     const throughAnchor = linear.inference.kind !== 'extension' && linear.inference.kind !== 'from-point';
@@ -523,15 +561,28 @@ function bestLinearInference(
   frame: AxisFrame,
   visible: (candidate: Candidate) => boolean,
   offers: readonly Candidate[],
+  planar: PlanarRules | null,
+  accept: (inference: Inference) => boolean,
 ): Candidate | null {
   const { anchor, references } = request;
   const axes = axisEntries(frame);
-  const { list: candidates, offer } = candidateList(request.camera, request.size, request.screen, tolerance);
+  const { list: candidates, offer: offerAny } = candidateList(
+    request.camera,
+    request.size,
+    request.screen,
+    tolerance,
+    accept,
+  );
+  // For a planar tool, a line along the plane's normal would put every point in one spot.
+  const offer = (inference: Inference, direction: Vec3): void => {
+    if (!planar?.alongNormal(direction)) offerAny(inference);
+  };
 
   if (anchor) {
     for (const { axis, direction, label } of axes) {
       const point = closestPointOnLineToRay(anchor, direction, ray);
-      if (distance(point, anchor) > 0) offer({ point, kind: 'on-axis', label, inGroup: false, axis });
+      if (distance(point, anchor) > 0)
+        offer({ point, kind: 'on-axis', label, inGroup: false, axis }, direction);
     }
     for (const edge of references?.edges ?? []) {
       const along = normalize(sub(edge.b, edge.a));
@@ -539,20 +590,23 @@ function bestLinearInference(
       if (!along || axisOf(along, frame)) continue;
       const parallel = closestPointOnLineToRay(anchor, along, ray);
       if (distance(parallel, anchor) > 0) {
-        offer({ point: parallel, kind: 'parallel', label: 'Parallel to Edge', inGroup: false, edge });
+        offer({ point: parallel, kind: 'parallel', label: 'Parallel to Edge', inGroup: false, edge }, along);
       }
       const planeNormal = normalize(cross(along, sub(anchor, edge.a))) ?? frame.z;
       const across = normalize(cross(planeNormal, along));
       if (!across) continue;
       const perpendicular = closestPointOnLineToRay(anchor, across, ray);
       if (distance(perpendicular, anchor) > 0) {
-        offer({
-          point: perpendicular,
-          kind: 'perpendicular',
-          label: 'Perpendicular to Edge',
-          inGroup: false,
-          edge,
-        });
+        offer(
+          {
+            point: perpendicular,
+            kind: 'perpendicular',
+            label: 'Perpendicular to Edge',
+            inGroup: false,
+            edge,
+          },
+          across,
+        );
       }
     }
   }
@@ -563,14 +617,14 @@ function bestLinearInference(
     const point = closestPointOnLineToRay(edge.a, along, ray);
     const parameter = dot(sub(point, edge.a), along);
     if (parameter < 0 || parameter > distance(edge.a, edge.b)) {
-      offer({ point, kind: 'extension', label: 'On Edge Extension', inGroup: false, edge });
+      offer({ point, kind: 'extension', label: 'On Edge Extension', inGroup: false, edge }, along);
     }
   }
   for (const reference of references?.points ?? []) {
     for (const { direction } of axes) {
       const point = closestPointOnLineToRay(reference, direction, ray);
       if (distance(point, reference) > 0) {
-        offer({ point, kind: 'from-point', label: 'From Point', inGroup: false });
+        offer({ point, kind: 'from-point', label: 'From Point', inGroup: false }, direction);
       }
     }
   }

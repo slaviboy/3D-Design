@@ -371,9 +371,10 @@ export class ArcTool implements Tool {
   #infer(input: PointerInput, editor: Editor): Inference {
     const [anchor] = this.#points;
     const plane = this.#plane;
+    const planar = plane && this.#mode !== 'three-point';
     return inferAt(editor, input, {
       ...(anchor ? { anchor } : {}),
-      ...(plane && this.#mode !== 'three-point' ? { fallbackPlane: plane } : {}),
+      ...(planar ? { fallbackPlane: plane, planar: true } : {}),
     });
   }
 

@@ -122,7 +122,7 @@ export class RotateTool implements Tool {
       this.#current = inferAt(
         editor,
         input,
-        pivot ? { anchor: pivot.center, fallbackPlane: pivot.plane } : {},
+        pivot ? { anchor: pivot.center, fallbackPlane: pivot.plane, planar: true } : {},
       );
       return;
     }
@@ -135,6 +135,7 @@ export class RotateTool implements Tool {
     const inference = inferAt(editor, input, {
       anchor: center,
       fallbackPlane: plane,
+      planar: true,
       // The rotated preview follows the pointer and would catch it. A copy leaves the original in place, where the
       // pointer may snap back to it.
       exclude: operation.copy ? preview : combineExclusions(operation.exclusion, preview),
@@ -166,7 +167,11 @@ export class RotateTool implements Tool {
       this.#pivot = { center: inference.point, plane: protractorPlane(editor, inference, this.#lockNormal) };
       return;
     }
-    const inference = inferAt(editor, input, { anchor: pivot.center, fallbackPlane: pivot.plane });
+    const inference = inferAt(editor, input, {
+      anchor: pivot.center,
+      fallbackPlane: pivot.plane,
+      planar: true,
+    });
     const reference = directionInPlane(pivot.plane, pivot.center, inference.point);
     if (!reference) return;
     this.#operation = {

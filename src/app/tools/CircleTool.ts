@@ -208,7 +208,11 @@ export class CircleTool implements Tool {
   #infer(input: PointerInput, editor: Editor): Inference {
     const placement = this.#placement;
     if (!placement) return inferAt(editor, input);
-    const inference = inferAt(editor, input, { anchor: placement.center, fallbackPlane: placement.plane });
+    const inference = inferAt(editor, input, {
+      anchor: placement.center,
+      fallbackPlane: placement.plane,
+      planar: true,
+    });
     return { ...inference, point: projectOntoPlane(placement.plane, inference.point) };
   }
 

@@ -62,6 +62,8 @@ export interface InferOptions {
   readonly drawingAxes?: boolean;
   /** Leave out the drawing axes through this point (see `InferenceRequest.excludeAxesThrough`). */
   readonly excludeAxesThrough?: Vec3;
+  /** The result is projected onto `fallbackPlane` through the anchor (see `InferenceRequest.planar`). */
+  readonly planar?: boolean;
 }
 
 /** Inference tolerance for touch, in pixels (10 for a mouse): a finger covers what it points at. */
@@ -146,6 +148,7 @@ export function inferAt(editor: Editor, screen: ScreenPoint, options: InferOptio
     ...(options.exclude ? { exclude: options.exclude } : {}),
     ...(options.drawingAxes === false ? { drawingAxes: false } : {}),
     ...(options.excludeAxesThrough ? { excludeAxesThrough: options.excludeAxesThrough } : {}),
+    ...(options.planar === true ? { planar: true } : {}),
   });
   remember(memory, inference);
   return inference;

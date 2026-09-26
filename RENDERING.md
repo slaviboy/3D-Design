@@ -91,6 +91,14 @@ or line widths, so they aren't used.
   are the same place worked out in two ways, and their pixel distances differ only by rounding (about 1e-14 px),
   which would otherwise pick one on every pointer move. Lines of the same rank that tie are settled by kind: an
   edge's extension before a From Point line.
+- **Shapes drawn in a plane keep their size.** Circle, Polygon, Arc, 2-Point Arc, Pie, Rotated Rectangle, Rotate and
+  Protractor drop the inferred point into the plane through their first point (`planar` in
+  `src/app/inference/inference.ts`). Every point of a line along that plane's normal drops to one spot, so these tools
+  leave such lines out: the axis through the first point (blue on the ground, red or green on a wall), and the drawing
+  axes, From Point lines and guides running the same way. They also leave out points off the plane that drop onto the
+  first point, like a corner straight above it. Otherwise, with the pointer lined up above the center, the marker
+  would read On Blue Axis while the shape collapsed to nothing. Three-Point Arc isn't limited: its third point sets
+  its plane.
 - **A tool's own preview.** Move, Rotate, Push/Pull and Offset preview by applying their operation to the model, so
   inference sees the preview where it is on screen: it hides what lies behind it, but what it added or moved is never
   a snap target (`exclusionForChanges` in `src/app/inference/exclusion.ts`), nor, for Move and Rotate, the face under
