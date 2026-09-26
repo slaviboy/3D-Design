@@ -201,7 +201,7 @@ describe('inference sees only what the camera sees', () => {
     // Moving the whole box: nothing of it is a target, nor the face under the pointer.
     const moving = exclusionForMove(store, { faces: [...store.faces()].map((face) => face.id) });
     expect(inferAt(doc, screenOf(1, 1), { exclude: moving }).kind).toBe('free');
-    expect(inferAt(doc, screenOf(0.5, 0.5), { exclude: moving }).kind).toBe('free');
+    expect(inferAt(doc, screenOf(0.6, 0.7), { exclude: moving }).kind).toBe('free');
   });
 
   it('names what a transaction added or moved', () => {

@@ -25,7 +25,7 @@ import { collectAnnotationLabels, type AnnotationLabel } from '../annotations/an
 import { projectToScreen, type Projection } from '../camera/camera';
 import type { Editor, EditorNotification, InputRequest } from '../Editor';
 import type { ExchangeRequest } from '../io/ModelExchange';
-import type { InferenceKind } from '../inference/inference';
+import type { Axis, InferenceKind } from '../inference/inference';
 import type { PanelId } from '../panels/panels';
 import type { ToolOverlay } from '../tools/Tool';
 import type { DockLayout, PanelFocusRequest } from '../dock/dockLayout';
@@ -48,6 +48,8 @@ export interface ScreenMarker {
   readonly y: number;
   readonly kind: InferenceKind;
   readonly label: string;
+  /** The drawing axis a point on an axis line lies on. */
+  readonly axis?: Axis;
 }
 
 /** Flat, UI-facing snapshot of editor state. Components subscribe to individual fields. */
@@ -216,7 +218,13 @@ export function createEditorStore(editor: Editor): EditorStore {
       overlay: tools.overlay,
       marker:
         previewMarker && projected
-          ? { x: projected.x, y: projected.y, kind: previewMarker.kind, label: previewMarker.label }
+          ? {
+              x: projected.x,
+              y: projected.y,
+              kind: previewMarker.kind,
+              label: previewMarker.label,
+              ...(previewMarker.axis ? { axis: previewMarker.axis } : {}),
+            }
           : null,
       measurementLabel: measurement?.label ?? null,
       measurementValue: measurement?.value ?? '',

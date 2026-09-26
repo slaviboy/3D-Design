@@ -58,6 +58,10 @@ export interface InferOptions {
   readonly fallbackPlane?: Plane;
   /** Geometry the operation is changing, which the pointer doesn't snap to. */
   readonly exclude?: InferenceExclusion;
+  /** Snap to points on the drawing axes' lines (on by default). */
+  readonly drawingAxes?: boolean;
+  /** Leave out the drawing axes through this point (see `InferenceRequest.excludeAxesThrough`). */
+  readonly excludeAxesThrough?: Vec3;
 }
 
 /** Inference tolerance for touch, in pixels (10 for a mouse): a finger covers what it points at. */
@@ -140,6 +144,8 @@ export function inferAt(editor: Editor, screen: ScreenPoint, options: InferOptio
     ...(options.lockDirection ? { lockDirection: options.lockDirection } : {}),
     ...(options.fallbackPlane ? { fallbackPlane: options.fallbackPlane } : {}),
     ...(options.exclude ? { exclude: options.exclude } : {}),
+    ...(options.drawingAxes === false ? { drawingAxes: false } : {}),
+    ...(options.excludeAxesThrough ? { excludeAxesThrough: options.excludeAxesThrough } : {}),
   });
   remember(memory, inference);
   return inference;
@@ -203,7 +209,12 @@ export function lineStyleFor(axis: Axis | undefined): PreviewLineStyle {
 
 export function markerFor(inference: Inference | null): InferenceMarker | null {
   if (!inference || inference.kind === 'free') return null;
-  return { point: inference.point, kind: inference.kind, label: inference.label };
+  return {
+    point: inference.point,
+    kind: inference.kind,
+    label: inference.label,
+    ...(inference.drawingAxis ? { axis: inference.drawingAxis } : {}),
+  };
 }
 
 /** Arrow keys lock drawing to a drawing axis: up blue, right red, left green. */

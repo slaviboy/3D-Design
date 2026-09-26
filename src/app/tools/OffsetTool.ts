@@ -149,7 +149,7 @@ export class OffsetTool implements Tool {
     if (!outline) return;
     const pressPoint = projectOntoPlane(
       outline.plane,
-      inferAt(editor, input, { fallbackPlane: outline.plane }).point,
+      inferAt(editor, input, { fallbackPlane: outline.plane, drawingAxes: false }).point,
     );
     const store = editor.session.doc.store(editor.session.activeContext);
     this.#operation = {
@@ -292,6 +292,7 @@ export class OffsetTool implements Tool {
   #pointOnPlane(editor: Editor, input: PointerInput, operation: Operation): Vec3 {
     const { plane } = operation.outline;
     const inference = inferAt(editor, input, {
+      drawingAxes: false,
       fallbackPlane: plane,
       // The new outline follows the pointer and would catch it.
       exclude: combineExclusions(

@@ -65,3 +65,21 @@ test('reads On Edge all along an edge after passing its corner, never From Point
   }
   expect([...labels].filter((label) => !['On Edge', 'Midpoint', 'Endpoint'].includes(label))).toEqual([]);
 });
+
+test('points on the red, green and blue axes snap, with a marker in the axis color', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('menubar', { name: 'Main menu' })).toBeVisible();
+  await page.keyboard.press('r');
+  const label = page.getByTestId('inference-label');
+  for (const [point, name, axis] of [
+    [{ x: 3, y: 0, z: 0 }, 'On Red Axis', 'x'],
+    [{ x: 0, y: 3, z: 0 }, 'On Green Axis', 'y'],
+    [{ x: 0, y: 0, z: 2 }, 'On Blue Axis', 'z'],
+  ] as const) {
+    const screen = await onScreen(page, point);
+    await page.mouse.move(screen.x + 20, screen.y + 20, { steps: 2 });
+    await page.mouse.move(screen.x + 3, screen.y + 2, { steps: 3 });
+    await expect(label).toHaveText(name);
+    await expect(page.locator(`.inference-marker--on-drawing-axis[data-axis="${axis}"]`)).toBeVisible();
+  }
+});

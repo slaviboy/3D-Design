@@ -270,6 +270,28 @@ export class FatLineMaterial extends LineMaterial {
   }
 }
 
+/** Width of selected edges, in CSS pixels: wider than any edge style, so a selection stands out. */
+export const SELECTED_EDGE_WIDTH = 3;
+
+/**
+ * Selected edges: wide lines in the selection color, drawn over the model's own edges while they are selected and
+ * gone when they aren't. Nudged toward the camera like {@link OverlayLineMaterial}, so they cover the edge underneath
+ * and still hide behind nearer faces.
+ */
+export class SelectedEdgeMaterial extends FatLineMaterial {
+  constructor(view: StyleViewUniforms, color: THREE.ColorRepresentation) {
+    super(undefined, view);
+    this.color = new THREE.Color(color);
+    this.linewidth = SELECTED_EDGE_WIDTH;
+    this.vertexShader = patch(
+      this.vertexShader,
+      'gl_Position = clip;',
+      `gl_Position = clip;
+      gl_Position.z -= ${OVERLAY_DEPTH_NUDGE.toExponential()} * gl_Position.w;`,
+    );
+  }
+}
+
 // -------------------------------------------------------------------------------------------------- the set
 
 /** The edge materials of one style. They are rebuilt when the style changes; view values update every frame. */

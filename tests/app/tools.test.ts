@@ -181,6 +181,41 @@ describe('Rectangle tool', () => {
     expect(counts(doc)).toEqual({ v: 0, e: 0, f: 0 });
   });
 
+  it('starts on a drawing axis when the pointer is near its line', () => {
+    const editor = createTestEditor();
+    editor.activateTool(RECTANGLE_TOOL_ID);
+    moveTo(editor, 1, 0.3);
+    expect(editor.session.preview?.marker).toMatchObject({
+      kind: 'on-drawing-axis',
+      label: 'On Red Axis',
+      axis: 'x',
+    });
+    clickAt(editor, 1, 0.3);
+    clickAt(editor, 3, 2);
+    expectExtent(editor, 'x', 1, 3);
+    expectExtent(editor, 'y', 0, 2);
+  });
+
+  it('ends on a drawing axis, but not on one through its first corner, which would flatten it', () => {
+    const editor = createTestEditor();
+    const doc = editor.session.doc;
+    editor.activateTool(RECTANGLE_TOOL_ID);
+    clickAt(editor, 1, 1);
+    moveTo(editor, 3, 0.2);
+    expect(editor.session.preview?.marker).toMatchObject({ label: 'On Red Axis' });
+    clickAt(editor, 3, 0.2);
+    expectExtent(editor, 'y', 0, 1);
+    expect(counts(doc).f).toBe(1);
+
+    const fresh = createTestEditor();
+    fresh.activateTool(RECTANGLE_TOOL_ID);
+    clickAt(fresh, 0, 0);
+    moveTo(fresh, 0.3, 3);
+    expect(fresh.session.preview?.marker?.kind).not.toBe('on-drawing-axis');
+    clickAt(fresh, 0.3, 3);
+    expect(counts(fresh.session.doc).f).toBe(1);
+  });
+
   describe('between corners of existing geometry', () => {
     // From the front, above.
     const camera: CameraState = {
@@ -326,6 +361,27 @@ describe('Push/Pull tool', () => {
     clickAt(editor, 2, 2);
     expect(editor.handleKey(key('Escape'))).toBe(true);
     expect(counts(doc)).toEqual({ v: 4, e: 4, f: 1 });
+  });
+
+  it('does not snap to the drawing axes, which would make the face jump', () => {
+    const camera: CameraState = {
+      eye: vec3(6, -8, 5),
+      target: vec3(1, 1, 0.5),
+      up: AXIS_Z,
+      fovDegrees: 35,
+      projection: 'perspective',
+      orthoHalfHeight: 5,
+    };
+    const editor = createTestEditor();
+    editor.session.setCamera(camera);
+    draw(editor.session.doc, rectangle(1, 1, 3, 3));
+    editor.activateTool(PUSH_PULL_TOOL_ID);
+    const face = projectToScreen(camera, vec3(2, 2, 0), VIEW_SIZE);
+    const onBlueAxis = projectToScreen(camera, vec3(0, 0, 1), VIEW_SIZE);
+    if (!face || !onBlueAxis) throw new Error('behind the camera');
+    click(editor, face.x, face.y);
+    editor.tools.pointerMove(pointer(onBlueAxis.x, onBlueAxis.y, { buttons: 0 }));
+    expect(editor.session.preview?.marker?.kind).not.toBe('on-drawing-axis');
   });
 
   describe('reaching the far side of a shape', () => {

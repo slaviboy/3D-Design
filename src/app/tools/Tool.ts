@@ -18,7 +18,7 @@
 import type { Vec3 } from '../../kernel/math/vec3';
 import type { MeasurementIntent, MeasurementKind } from '../../kernel/vcb/parseMeasurement';
 import type { Editor } from '../Editor';
-import type { InferenceKind } from '../inference/inference';
+import type { Axis, InferenceKind } from '../inference/inference';
 import type { EntityRef } from '../selection/Selection';
 
 export const SELECT_TOOL_ID = 'tool.select';
@@ -95,6 +95,8 @@ export interface InferenceMarker {
   readonly point: Vec3;
   readonly kind: InferenceKind;
   readonly label: string;
+  /** The drawing axis a point on an axis line lies on, which colors the marker. */
+  readonly axis?: Axis;
 }
 
 /** What a tool shows in the 3D view while it works. */

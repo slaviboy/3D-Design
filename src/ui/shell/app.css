@@ -1018,6 +1018,23 @@
   background: transparent;
 }
 
+/* A point on one of the drawing axes: a diamond in the axis color. */
+.inference-marker--on-drawing-axis {
+  transform: rotate(45deg);
+}
+
+.inference-marker--on-drawing-axis[data-axis='x'] {
+  border-color: #d4443b;
+}
+
+.inference-marker--on-drawing-axis[data-axis='y'] {
+  border-color: #3b9a4b;
+}
+
+.inference-marker--on-drawing-axis[data-axis='z'] {
+  border-color: #2f5fd0;
+}
+
 .inference-marker--on-axis,
 .inference-marker--locked {
   width: 7px;

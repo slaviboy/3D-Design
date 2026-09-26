@@ -81,8 +81,10 @@ or line widths, so they aren't used.
   crossed inside its outline (more than half a pixel from its edges, so silhouettes don't hide the points just behind
   them) and the candidate must lie off the face's plane by more than 0.75 px (points on a face stay visible). Faces
   hide nothing in X-ray and wireframe, and Back Edges keeps points on edges visible (they're drawn dashed); the origin
-  is tested like other points, since the axes are drawn with depth testing. Candidates are tested lazily in ranking
-  order, at most 16 per pointer move, with definition bounds cached until the document changes.
+  and points on the drawing axes' lines (On Red, Green or Blue Axis, ranked just after On Edge so an edge lying on an
+  axis reads On Edge) are tested like other points, since the axes are drawn with depth testing. Push/Pull and Offset
+  leave the axes out: their result would jump to the level of the axis point under the pointer. Candidates are tested
+  lazily in ranking order, at most 16 per pointer move, with definition bounds cached until the document changes.
 - **Ties never come down to rounding.** A line inference (an axis, Parallel, Perpendicular, an edge's extension or
   From Point) that passes within half a pixel of a point the model offers yields to that point. So moving along an
   edge reads On Edge all the way, even where the axis line through a remembered corner runs along the edge. The two
@@ -149,7 +151,7 @@ form. These are the known differences from the target design, each scheduled for
 |---|---|---|
 | Spatial chunks of ~16k triangles per material | One merged geometry per definition, rebuilt when that definition changes | Performance phase |
 | Instanced screen-space edge quads with profiles and styles | 1 px `LineSegments`; soft and hidden edges skipped | Visualization phase |
-| Selection state in a `DataTexture` | A separate overlay mesh for selected faces and edges, plus box outlines for instances. Overlay lines (`OverlayLineMaterial`) lie exactly on the model's edges, so they are nudged toward the camera by 1e-5 in normalized depth: they win over the edge underneath whichever is drawn first, and still hide behind nearer faces | Performance phase, if measurements show a need |
+| Selection state in a `DataTexture` | A separate overlay mesh for selected faces and edges, plus box outlines for instances. Selected edges are wide lines (`SelectedEdgeMaterial`, 3 px) in the selection color while they are selected. Overlay lines (`OverlayLineMaterial` and the wide ones) lie exactly on the model's edges, so they are nudged toward the camera by 1e-5 in normalized depth: they win over the edge underneath whichever is drawn first, and still hide behind nearer faces | Performance phase, if measurements show a need |
 | Chunk-relative positions against float32 jitter | World positions in float32 buffers | Performance phase |
 | Styles and environments | Default faces use fixed front and back colors | Visualization phase |
 | Shadows and sections | Implemented in Phase 7 in a simpler form; see "Current implementation (Phase 7)" below | Later refinements noted there |

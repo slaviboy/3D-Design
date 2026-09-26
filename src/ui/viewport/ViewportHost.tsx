@@ -314,6 +314,7 @@ export function ViewportHost() {
         <>
           <span
             className={`inference-marker inference-marker--${marker.kind}`}
+            data-axis={marker.axis}
             style={{ left: marker.x, top: marker.y }}
             aria-hidden="true"
           />

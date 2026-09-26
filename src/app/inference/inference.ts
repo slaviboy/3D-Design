@@ -38,6 +38,7 @@ import {
 } from '../../kernel/math/vec3';
 import type { ModelDocument } from '../../kernel/model/ModelDocument';
 import { isTagVisible } from '../../kernel/model/visibility';
+import { EPS_LEN } from '../../kernel/tolerance';
 import {
   cameraBasis,
   pointOnTargetPlane,
@@ -65,6 +66,7 @@ export type InferenceKind =
   | 'origin'
   | 'on-edge'
   | 'on-face'
+  | 'on-drawing-axis'
   | 'on-axis'
   | 'parallel'
   | 'perpendicular'
@@ -90,6 +92,8 @@ export interface Inference {
   readonly inGroup: boolean;
   /** The world axis the point lies on relative to the anchor, if any. */
   readonly axis?: Axis;
+  /** For `on-drawing-axis`: which of the drawing axes' lines the point lies on. */
+  readonly drawingAxis?: Axis;
   /** World-space edge the inference came from, for endpoint, midpoint and on-edge. */
   readonly edge?: { readonly a: Vec3; readonly b: Vec3 };
   /** World-space plane of the face under the cursor, for on-face inferences in the active context. */
@@ -117,6 +121,16 @@ export interface InferenceRequest {
   readonly clip?: SectionClipping;
   /** Definition bounds shared by the ray queries of this request (and others against the same unchanged document). */
   readonly boundsCache?: Map<DefinitionId, Aabb>;
+  /**
+   * Snap to points on the lines of the drawing axes, where nothing hides them (on by default). Tools that take only
+   * points of the model, such as Push/Pull, turn it off.
+   */
+  readonly drawingAxes?: boolean;
+  /**
+   * A point the result must not line up with along a drawing axis: the Rectangle tool's first corner, where a second
+   * corner on the axis through it would only give a flat rectangle. Axes through it aren't offered.
+   */
+  readonly excludeAxesThrough?: Vec3;
 }
 
 export const DEFAULT_INFERENCE_TOLERANCE_PX = 10;
@@ -160,6 +174,8 @@ const PRIORITY: Readonly<Record<InferenceKind, number>> = {
   midpoint: 1,
   center: 1,
   'on-edge': 3,
+  // After edges, so an edge lying on an axis reads On Edge.
+  'on-drawing-axis': 3.5,
   'on-face': 4,
   'on-axis': 2,
   parallel: 2,
@@ -382,6 +398,22 @@ export function infer(
       }
     },
   );
+
+  // The drawing axes are lines through the model like guides; they are drawn with depth testing, so a point on them
+  // counts only where nothing hides it. Sections don't cut them.
+  if (request.drawingAxes !== false) {
+    const through = request.excludeAxesThrough;
+    for (const { axis, direction, label } of axes) {
+      if (through && length(cross(sub(through, frame.origin), direction)) <= EPS_LEN) continue;
+      offer({
+        point: closestPointOnLineToRay(frame.origin, direction, ray),
+        kind: 'on-drawing-axis',
+        label,
+        inGroup: false,
+        drawingAxis: axis,
+      });
+    }
+  }
 
   for (const guide of doc.store(context).guides()) {
     if (guide.attributes.hidden || !isTagVisible(doc, guide.attributes.tagId)) continue;

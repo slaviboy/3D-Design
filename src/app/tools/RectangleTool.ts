@@ -193,8 +193,12 @@ export class RectangleTool implements Tool {
   #infer(input: PointerInput, editor: Editor): Inference {
     const frame = this.#frame;
     if (!frame) return inferAt(editor, input);
-    // No anchor: axis inferences through the first corner would only ever produce a flat rectangle.
-    const inference = inferAt(editor, input, { fallbackPlane: frame.plane });
+    // No anchor, and no drawing axis through the first corner: a corner on an axis through the other one would only
+    // ever produce a flat rectangle.
+    const inference = inferAt(editor, input, {
+      fallbackPlane: frame.plane,
+      excludeAxesThrough: frame.corner,
+    });
     const chosen = this.#frameFor(editor, frame, inference);
     this.#currentFrame = chosen;
     return { ...inference, point: projectOntoPlane(chosen.plane, inference.point) };

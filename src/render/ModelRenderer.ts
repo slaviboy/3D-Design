@@ -49,6 +49,7 @@ import {
   BACK_EDGE_RENDER_ORDER,
   EdgeStyleMaterials,
   OverlayLineMaterial,
+  SelectedEdgeMaterial,
   srgbColor,
   X_RAY_OPACITY,
   type StyleView,
@@ -272,6 +273,8 @@ export class ModelRenderer {
     depthWrite: false,
   });
   readonly #selectionEdgeMaterial = new OverlayLineMaterial({ color: VIEW_COLORS.selection });
+  /** Selected edges are drawn wide; the thin selection material outlines selected groups and components. */
+  readonly #selectedEdgeMaterial = new SelectedEdgeMaterial(this.#edgeStyles.view, VIEW_COLORS.selection);
   readonly #lockedEdgeMaterial = new OverlayLineMaterial({ color: VIEW_COLORS.locked });
   readonly #hoverFaceMaterial = new THREE.MeshBasicMaterial({
     color: VIEW_COLORS.hover,
@@ -439,6 +442,7 @@ export class ModelRenderer {
       this.#annotationMaterial,
       this.#selectionFaceMaterial,
       this.#selectionEdgeMaterial,
+      this.#selectedEdgeMaterial,
       this.#lockedEdgeMaterial,
       this.#hoverFaceMaterial,
       this.#hoverEdgeMaterial,
@@ -789,6 +793,7 @@ export class ModelRenderer {
       this.#selectionFaceMaterial,
       this.#selectionEdgeMaterial,
       this.#lockedEdgeMaterial,
+      this.#selectedEdgeMaterial,
     );
   }
 
@@ -845,6 +850,8 @@ export class ModelRenderer {
     edgeMaterial: THREE.LineBasicMaterial,
     /** Box outline of locked groups and components. */
     lockedEdgeMaterial: THREE.LineBasicMaterial = edgeMaterial,
+    /** Wide lines for the edges themselves, instead of `edgeMaterial`. */
+    wideEdgeMaterial?: SelectedEdgeMaterial,
   ): void {
     const context = this.#source.activeContext;
     if (!doc.definition(context)) return;
@@ -873,7 +880,11 @@ export class ModelRenderer {
       setPositions(geometry, facePositions, faceNormals);
       target.add(new THREE.Mesh(geometry, faceMaterial));
     }
-    if (edgePositions.length > 0) {
+    if (edgePositions.length > 0 && wideEdgeMaterial) {
+      const geometry = new LineSegmentsGeometry();
+      geometry.setPositions(edgePositions);
+      target.add(new LineSegments2(geometry, wideEdgeMaterial));
+    } else if (edgePositions.length > 0) {
       const geometry = new THREE.BufferGeometry();
       setPositions(geometry, edgePositions);
       target.add(new THREE.LineSegments(geometry, edgeMaterial));

@@ -66,7 +66,7 @@ describe('linear inferences', () => {
 
   it('prefers the axis through the anchor when a from-point line coincides with it', () => {
     const doc = newDocument();
-    const result = inferWith(doc, 5, 0, { points: [vec3(3, 0, 0)], edges: [] }, vec3(1, 0, 0));
+    const result = inferWith(doc, 5, 1, { points: [vec3(3, 1, 0)], edges: [] }, vec3(1, 1, 0));
     expect(result.kind).toBe('on-axis');
   });
 
@@ -217,12 +217,13 @@ describe('lines through the same place as the model', () => {
       projection: 'perspective',
       orthoHalfHeight: 5,
     });
-    draw(editor.session.doc, [segment([0, 0, 0], [1, 0, 0])]);
+    // Away from the red axis, which would otherwise name the points along it.
+    draw(editor.session.doc, [segment([0, 1, 0], [1, 1, 0])]);
     editor.activateTool(LINE_TOOL_ID);
     // Hovering the end remembers both the edge and the point.
-    expect(hoverNear(editor, vec3(1, 0, 0), { x: 0, y: 0 })).toBe('Endpoint');
+    expect(hoverNear(editor, vec3(1, 1, 0), { x: 0, y: 0 })).toBe('Endpoint');
     const labels: string[] = [];
-    for (let step = 0; step <= 120; step++) labels.push(hoverNear(editor, vec3(1.4 + step * 0.01, 0, 0)));
+    for (let step = 0; step <= 120; step++) labels.push(hoverNear(editor, vec3(1.4 + step * 0.01, 1, 0)));
     expect(unexpected(labels, ['On Edge Extension'])).toEqual([]);
   });
 });

@@ -110,6 +110,8 @@ export class PushPullTool implements Tool {
       operation.dragged = true;
     operation.keepOriginal = toggleModifier(input, editor);
     operation.inference = inferAt(editor, input, {
+      // A face follows the pointer along its normal: points on the axes' lines would make it jump.
+      drawingAxes: false,
       // The extrusion follows the pointer and would catch it; it still hides what lies behind it.
       exclude: combineExclusions(
         operation.exclusion,

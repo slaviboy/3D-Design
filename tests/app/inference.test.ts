@@ -16,21 +16,21 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { rayThroughScreen } from '../../src/app/camera/camera';
+import { projectToScreen, rayThroughScreen, type CameraState } from '../../src/app/camera/camera';
 import { axisOf, closestPointOnLineToRay, infer } from '../../src/app/inference/inference';
 import { IDENTITY } from '../../src/kernel/math/mat4';
-import { vec3, type Vec3 } from '../../src/kernel/math/vec3';
+import { AXIS_Z, vec3, type Vec3 } from '../../src/kernel/math/vec3';
 import type { ModelDocument } from '../../src/kernel/model/ModelDocument';
 import { insertCurve } from '../../src/kernel/ops/curves';
 import { makeGroup } from '../../src/kernel/ops/hierarchy';
-import { draw, newDocument, rectangle } from '../kernel/helpers';
+import { draw, newDocument, rectangle, segment } from '../kernel/helpers';
 import { screenOf, TOP_CAMERA, VIEW_SIZE } from './fixtures';
 
 function inferAt(
   doc: ModelDocument,
   x: number,
   y: number,
-  extra: { anchor?: Vec3; lockDirection?: Vec3 } = {},
+  extra: { anchor?: Vec3; lockDirection?: Vec3; drawingAxes?: boolean } = {},
 ) {
   return infer(doc, doc.rootDefinitionId, IDENTITY, {
     camera: TOP_CAMERA,
@@ -71,10 +71,10 @@ describe('inference', () => {
 
   it('reports faces under the cursor with their plane, and free points on the ground', () => {
     const doc = withSquare();
-    const onFace = inferAt(doc, 0.5, 0.7);
+    const onFace = inferAt(doc, 1.2, 0.8);
     expect(onFace).toMatchObject({ kind: 'on-face', label: 'On Face' });
     expect(Math.abs(onFace.facePlane?.normal.z ?? 0)).toBeCloseTo(1);
-    expectPoint(onFace.point, vec3(0.5, 0.7, 0));
+    expectPoint(onFace.point, vec3(1.2, 0.8, 0));
 
     const free = inferAt(doc, 4, 4);
     expect(free).toMatchObject({ kind: 'free', label: '' });
@@ -101,9 +101,9 @@ describe('inference', () => {
 
   it('infers axis alignment from the anchor', () => {
     const doc = newDocument();
-    const onAxis = inferAt(doc, 3, 0.2, { anchor: vec3(0, 0, 0) });
+    const onAxis = inferAt(doc, 3, 1.2, { anchor: vec3(0, 1, 0) });
     expect(onAxis).toMatchObject({ kind: 'on-axis', label: 'On Red Axis', axis: 'x' });
-    expectPoint(onAxis.point, vec3(3, 0, 0));
+    expectPoint(onAxis.point, vec3(3, 1, 0));
   });
 
   it('honors direction locks, projecting strong inferences onto the locked line', () => {
@@ -126,7 +126,7 @@ describe('inference', () => {
     const corner = inferAt(doc, 1.95, -1.95);
     expect(corner).toMatchObject({ kind: 'endpoint', inGroup: true });
     expect(corner.entity?.kind).toBe('instance');
-    expect(inferAt(doc, 0.5, 0.5)).toMatchObject({
+    expect(inferAt(doc, 1.2, 0.8)).toMatchObject({
       kind: 'on-face',
       inGroup: true,
       label: 'On Face in Group',
@@ -140,5 +140,48 @@ describe('inference', () => {
     const ray = rayThroughScreen(TOP_CAMERA, screenOf(2, 5), VIEW_SIZE);
     expectPoint(closestPointOnLineToRay(vec3(0, 0, 0), vec3(1, 0, 0), ray), vec3(2, 0, 0));
     expectPoint(closestPointOnLineToRay(vec3(1, 1, 1), vec3(0, 0, 1), ray), vec3(1, 1, 1));
+  });
+
+  describe('the drawing axes', () => {
+    it('snap the pointer to a point on their lines, named by the axis', () => {
+      const doc = newDocument();
+      const red = inferAt(doc, 3, 0.2);
+      expect(red).toMatchObject({ kind: 'on-drawing-axis', label: 'On Red Axis', drawingAxis: 'x' });
+      expectPoint(red.point, vec3(3, 0, 0));
+      // The negative half too.
+      const green = inferAt(doc, 0.2, -3);
+      expect(green).toMatchObject({ kind: 'on-drawing-axis', label: 'On Green Axis', drawingAxis: 'y' });
+      expectPoint(green.point, vec3(0, -3, 0));
+
+      // Seen from the side, the blue axis.
+      const side: CameraState = { ...TOP_CAMERA, eye: vec3(6, -10, 1), target: vec3(0, 0, 1), up: AXIS_Z };
+      const screen = projectToScreen(side, vec3(0, 0, 2), VIEW_SIZE);
+      if (!screen) throw new Error('behind the camera');
+      const blue = infer(doc, doc.rootDefinitionId, IDENTITY, {
+        camera: side,
+        size: VIEW_SIZE,
+        screen: { x: screen.x + 3, y: screen.y },
+      });
+      expect(blue).toMatchObject({ kind: 'on-drawing-axis', label: 'On Blue Axis', drawingAxis: 'z' });
+      expectPoint(blue.point, vec3(0, 0, 2));
+    });
+
+    it('only where nothing hides them', () => {
+      const doc = newDocument();
+      draw(doc, rectangle(2, -1, 4, 1, 1));
+      // The red axis runs under this face, seen from above.
+      expect(inferAt(doc, 3, 0.2).kind).toBe('on-face');
+    });
+
+    it('give way to an edge lying on them', () => {
+      const doc = newDocument();
+      draw(doc, [segment([1, 0, 0], [4, 0, 0])]);
+      // Clear of its ends and middle, 16 px or more away.
+      expect(inferAt(doc, 1.7, 0.2)).toMatchObject({ kind: 'on-edge', label: 'On Edge' });
+    });
+
+    it('are left out for tools that take only points of the model', () => {
+      expect(inferAt(newDocument(), 3, 0.2, { drawingAxes: false }).kind).toBe('free');
+    });
   });
 });
