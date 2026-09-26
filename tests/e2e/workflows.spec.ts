@@ -159,6 +159,8 @@ test('keeps working offline after the first visit', async ({ page, context, brow
 test('offers to recover unsaved work after a session ends unexpectedly', async ({ page, context }) => {
   await page.clock.install();
   await page.goto('/');
+  // Keys pressed before the app has mounted go nowhere.
+  await expect(page.getByRole('menubar', { name: 'Main menu' })).toBeVisible();
   await openSample(page);
   await page.keyboard.press('ControlOrMeta+A');
   await expect(page.getByTestId('selection-count')).toHaveText('1 selected');
