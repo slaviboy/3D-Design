@@ -34,7 +34,7 @@ import type { ModelDocument } from '../model/ModelDocument';
 import { addCurve, moveVertex, removeFace, reverseFace } from '../model/mutations';
 import { DEFAULT_EDGE_ATTRIBUTES, DEFAULT_FACE_ATTRIBUTES, type EdgeAttributes } from '../model/types';
 import { EPS_LEN, EPS_PARALLEL, isParallelBySine } from '../tolerance';
-import { transformCurveParams } from './curves';
+import { isSmoothJoint, transformCurveParams } from './curves';
 import { eraseEdges, removeEdgeAndOrphans } from './erase';
 import { insertSegments, type SegmentInput } from './insertSegments';
 import { faceRings, type FaceRings } from './planar/regions';
@@ -343,9 +343,10 @@ function extrude(
       const q = loop.points[(i + 1) % count];
       if (!p || !q) continue;
       caps.push(segments.push({ a: add(p, offset), b: add(q, offset) }) - 1);
-      // The side edge at a vertex inside a curve is soft and smooth, so extruded arcs look round.
+      // The side edge at a vertex inside a round curve is soft and smooth, so extruded arcs look round; a polygon
+      // keeps its corners.
       const previousCurve = loop.curves[(i - 1 + count) % count] ?? null;
-      const smooth = previousCurve !== null && previousCurve === loop.curves[i];
+      const smooth = isSmoothJoint(store, previousCurve, loop.curves[i] ?? null);
       sides.push(
         segments.push({ a: p, b: add(p, offset), ...(smooth ? { attributes: SOFT_SMOOTH_EDGE } : {}) }) - 1,
       );

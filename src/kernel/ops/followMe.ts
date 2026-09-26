@@ -35,6 +35,7 @@ import type { ModelDocument } from '../model/ModelDocument';
 import { removeFace, reverseFace, setEdgeAttributes } from '../model/mutations';
 import { DEFAULT_EDGE_ATTRIBUTES, type EdgeAttributes } from '../model/types';
 import { isParallelBySine } from '../tolerance';
+import { isSmoothJoint } from './curves';
 import { removeEdgeAndOrphans } from './erase';
 import { insertSegments, type SegmentInput } from './insertSegments';
 import { settleRegion } from './planar/settle';
@@ -185,7 +186,7 @@ function withoutRepeats(points: readonly Vec3[]): Vec3[] {
  * Sweeps a planar profile face along a chain of edges. Consecutive copies of the profile lie on the bisector
  * (miter) planes at the path's joints, and neighbouring copies are joined by four-sided faces. An open path keeps
  * the profile as the start cap and adds an end cap; a closed path makes a closed ring, which around a circle is a
- * lathe. Edges running along a curved path or a curved profile are soft and smooth.
+ * lathe. Edges running along a curved path or a curved profile are soft and smooth, except at a polygon's corners.
  *
  * Refused, leaving the model unchanged: a path that branches or is not connected, and a profile whose plane is
  * parallel to the path where the sweep starts. GEOMETRY.md ("Algorithm: Follow Me").
@@ -290,8 +291,7 @@ export function followMe(
     store.getEdge(path.edges[(segment + segmentCount) % segmentCount] ?? pathEdges[0] ?? (0 as EdgeId)).curve;
   const ringSoft = (i: number): boolean => {
     if (!path.closed && (i === 0 || i === count - 1)) return false;
-    const before = pathCurve(i - 1);
-    return before !== null && before === pathCurve(i);
+    return isSmoothJoint(store, pathCurve(i - 1), pathCurve(i));
   };
 
   const ringIndex: number[][][] = copies.map((copy, i) =>
@@ -307,7 +307,7 @@ export function followMe(
         loop.map((p, j) => {
           const curves = loops[l]?.curves ?? [];
           const before = curves[(j - 1 + curves.length) % curves.length] ?? null;
-          return addSegment(p, to[l]?.[j] ?? p, before !== null && before === curves[j]);
+          return addSegment(p, to[l]?.[j] ?? p, isSmoothJoint(store, before, curves[j] ?? null));
         }),
       ),
     );

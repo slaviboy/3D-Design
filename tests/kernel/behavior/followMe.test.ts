@@ -22,14 +22,20 @@ import { vec3, type Vec3 } from '../../../src/kernel/math/vec3';
 import type { ModelDocument } from '../../../src/kernel/model/ModelDocument';
 import { addCurve } from '../../../src/kernel/model/mutations';
 import { hashDocument } from '../../../src/kernel/model/snapshot';
-import { curvePoints } from '../../../src/kernel/ops/curves';
+import type { CurveParams } from '../../../src/kernel/model/types';
+import { curvePoints, insertCurve } from '../../../src/kernel/ops/curves';
 import { followMe } from '../../../src/kernel/ops/followMe';
 import { insertSegments } from '../../../src/kernel/ops/insertSegments';
 import { isSolid, solidVolume } from '../../../src/kernel/ops/solids/solid';
 import { counts, draw, expectValid, faceIds, newDocument, orientationConsistent, polygon } from '../helpers';
 
 /** Draws loose edges through the points (no faces), optionally as one curve. Returns the edges in order. */
-function path(doc: ModelDocument, points: readonly Vec3[], closed: boolean, curve = false): EdgeId[] {
+function path(
+  doc: ModelDocument,
+  points: readonly Vec3[],
+  closed: boolean,
+  curve: boolean | CurveParams = false,
+): EdgeId[] {
   const root = doc.rootDefinitionId;
   return doc.transact('path', () => {
     const segments = closed
@@ -37,7 +43,7 @@ function path(doc: ModelDocument, points: readonly Vec3[], closed: boolean, curv
       : points.slice(0, -1).map((a, i) => ({ a, b: points[i + 1] ?? a }));
     const result = insertSegments(doc, root, segments, { autoFace: false });
     const edges = result.segmentEdges.flat();
-    if (curve) addCurve(doc, root, { kind: 'polyline' }, edges);
+    if (curve) addCurve(doc, root, curve === true ? { kind: 'polyline' } : curve, edges);
     return edges;
   });
 }
@@ -100,6 +106,45 @@ describe('behavior matrix L: Follow Me', () => {
     );
     expect(softEdges).toHaveLength(96);
     expectValid(doc);
+  });
+
+  it('L7: a polygon keeps its corners as visible edges, as a profile and as a path', () => {
+    const doc = newDocument();
+    const root = doc.rootDefinitionId;
+    const hexagon = {
+      kind: 'polygon',
+      normal: vec3(1, 0, 0),
+      xAxis: vec3(0, 1, 0),
+      radius: 0.5,
+      sides: 6,
+    } as const;
+    insertCurve(doc, root, { ...hexagon, center: vec3(0, 0, 1) });
+    followMe(doc, root, onlyFace(doc), path(doc, [vec3(0, 0, 0), vec3(5, 0, 0)], false));
+    expect(counts(doc)).toEqual({ v: 14, e: 19, f: 8 });
+    const soft = (model: ModelDocument) =>
+      [...model.rootStore.edges()].filter((edge) => edge.attributes.soft || edge.attributes.smooth);
+    expect(soft(doc)).toEqual([]);
+    expectValid(doc);
+
+    // L3's lathe around a hexagon instead of a circle.
+    const lathe = newDocument();
+    draw(lathe, polygon([vec3(1, 0, 0), vec3(2, 0, 0), vec3(2, 0, 1), vec3(1, 0, 1)]));
+    const around: CurveParams = {
+      ...hexagon,
+      center: vec3(0, 0, 0),
+      normal: vec3(0, 0, 1),
+      xAxis: vec3(1, 0, 0),
+      radius: 1,
+    };
+    followMe(
+      lathe,
+      lathe.rootDefinitionId,
+      onlyFace(lathe),
+      path(lathe, curvePoints(around).points, true, around),
+    );
+    expect(counts(lathe)).toEqual({ v: 24, e: 48, f: 24 });
+    expect(soft(lathe)).toEqual([]);
+    expectValid(lathe);
   });
 
   it('L4: undo restores the model exactly', () => {

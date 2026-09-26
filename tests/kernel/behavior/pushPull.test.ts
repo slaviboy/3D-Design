@@ -312,6 +312,28 @@ describe('behavior matrix B: Push/Pull', () => {
     expectValid(doc);
   });
 
+  it('B20: pulling a polygon makes a prism whose side edges stay visible', () => {
+    const doc = newDocument();
+    insertCurve(doc, root(doc), {
+      kind: 'polygon',
+      center: vec3(0, 0, 0),
+      normal: vec3(0, 0, 1),
+      xAxis: vec3(1, 0, 0),
+      radius: 0.5,
+      sides: 6,
+    });
+    const hexagon = onlyFace(doc, () => true);
+    pushPull(doc, root(doc), hexagon, -1);
+    expect(counts(doc)).toEqual({ v: 12, e: 18, f: 8 });
+    // A polygon is faceted: its sides meet at hard edges, where a circle's are soft and smooth (B9).
+    expect(
+      [...doc.rootStore.edges()].filter((edge) => edge.attributes.soft || edge.attributes.smooth),
+    ).toEqual([]);
+    expect([...doc.rootStore.curves()].map((curve) => curve.params.kind)).toEqual(['polygon', 'polygon']);
+    expect(orientationConsistent(doc.rootStore)).toBe(true);
+    expectValid(doc);
+  });
+
   describe('the far side', () => {
     it('is the depth a face can be pushed to before it meets the parallel face behind it', () => {
       const doc = newDocument();

@@ -181,6 +181,15 @@ export function splitCurveChains(store: EntityStore, edges: readonly EdgeId[]): 
 }
 
 /**
+ * Whether the joint between two consecutive edges lies inside one curve that stands for a round shape (a circle, an
+ * arc or a polyline), so that an edge swept from the joint (a Push/Pull side edge, a Follow Me edge) is soft and
+ * smooth. A polygon is faceted: its corners stay visible edges.
+ */
+export function isSmoothJoint(store: EntityStore, before: CurveId | null, after: CurveId | null): boolean {
+  return before !== null && before === after && store.getCurve(before).params.kind !== 'polygon';
+}
+
+/**
  * Removes an edge from its curve (before the edge itself is deleted). Circles, polygons and arcs that lose an edge
  * become polylines, and a chain broken in the middle becomes several curves.
  */

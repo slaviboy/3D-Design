@@ -329,6 +329,37 @@ describe('Circle and Polygon tools', () => {
     expect(counts(editor.session.doc)).toEqual({ v: 5, e: 5, f: 1 });
     expectValidModel(editor);
   });
+
+  it('pull up into a prism with a line down each side, and a smooth cylinder', () => {
+    const editor = createTestEditor();
+    const store = editor.session.doc.rootStore;
+    editor.activateTool(POLYGON_TOOL_ID);
+    type(editor, '6s');
+    clickAt(editor, -2, -2);
+    clickAt(editor, -1, -2);
+    editor.activateTool(CIRCLE_TOOL_ID);
+    clickAt(editor, 2, 2);
+    clickAt(editor, 3, 2);
+    editor.activateTool(PUSH_PULL_TOOL_ID);
+    clickAt(editor, -2, -2);
+    type(editor, '1m');
+    clickAt(editor, 2, 2);
+    type(editor, '1m');
+
+    const sides = (left: boolean) =>
+      [...store.edges()].filter((edge) => {
+        const a = store.position(edge.v0);
+        const b = store.position(edge.v1);
+        return a.x < 0 === left && Math.abs(a.z - b.z) > 0.5;
+      });
+    const prism = sides(true);
+    expect(prism).toHaveLength(6);
+    expect(prism.filter((edge) => edge.attributes.soft || edge.attributes.smooth)).toEqual([]);
+    const cylinder = sides(false);
+    expect(cylinder).toHaveLength(24);
+    expect(cylinder.every((edge) => edge.attributes.soft && edge.attributes.smooth)).toBe(true);
+    expectValidModel(editor);
+  });
 });
 
 describe('tools that draw in a plane through their first point', () => {

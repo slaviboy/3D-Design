@@ -68,6 +68,7 @@ tool is marked Done.
 | B17 | B1, and a unit box floating at z = 2 above it; pull the lower top +1 | 16/24/10 | The top's corners land on the upper box's, so the stretch goes as an extrusion; the faces cancel and the boxes join; the side walls heal into one face each |
 | B18 | B1 with a slot marked at its front edge (x 0.25–0.75, y 0–0.5); push the slot −1 | 16/24/10 | Cut through; no edges left bounding nothing across the opening |
 | B19 | B18's slot pushed −0.4, then its floor −0.6 | 20/28/10 | The floor would land on the bottom's edge, so it goes as an extrusion; same slot as B18, with a vertex left on each wall edge where the old floor was |
+| B20 | 6-sided polygon on ground, r 0.5, push/pull +1 | 12/18/8 | A prism: the 6 vertical edges stay hard (a polygon is faceted, unlike B9's circle); top and bottom remain polygon curves |
 
 ## C. Move / stretch / autofold
 
@@ -183,6 +184,7 @@ and B = [1,3]³: Union volume 15, Subtract B − A volume 7, Trim leaves volumes
 | L4 | L1 with a straight path | 10/13/6 | Undo restores the hash |
 | L5 | Disconnected path; branching path | rejected | `KernelError`; hash and history unchanged |
 | L6 | Profile plane parallel to the path; empty path | rejected | `KernelError`; hash unchanged |
+| L7 | 6-sided polygon r 0.5 in plane x = 0 along L4's path; L3 with a 6-sided polygon path r 1 | 14/19/8; 24/48/24 | No soft edges: a polygon's corners stay hard, as a profile and as a path |
 
 ## I. VCB parsing (default units: meters, decimal)
 

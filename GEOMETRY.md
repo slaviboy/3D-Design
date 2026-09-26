@@ -194,7 +194,9 @@ Push/Pull applies to a planar face F. Let `n` be F's normal and `d` the signed d
 3. **Extrude.**
    - Create offset vertices and an offset face F′ that copies F's attributes.
    - Create one side quad per loop edge, with its winding chosen by the sign of `d`.
-   - Side edges that come from curve edges are marked soft and smooth.
+   - A side edge at a vertex inside a circle, arc or polyline curve is marked soft and smooth, so the sides read as one
+     round surface. A polygon is faceted: its side edges stay hard, so a pulled polygon is a prism with a line down
+     each corner. A polygon that became a polyline (an edge erased, or scaled unevenly) extrudes smooth like one.
    - What happens to F depends on the case:
      - **Ctrl held:** F is kept.
      - **F has no neighbors:** F is kept, flipped, as the base of a closed shell.
@@ -383,6 +385,7 @@ whose flags changed. A call that changes nothing creates no history entry. `maxA
    - A ring at a path vertex is soft and smooth when the two path edges meeting there belong to the same curve.
    - A longitudinal edge is soft and smooth when the two profile edges meeting at its profile point belong to the same
      curve.
+   - Polygons are the exception, as in Push/Pull: their corners stay hard edges.
 8. **Insert.** Rings and longitudinal segments go through insertSegments with `autoFace` off. Every planned face is
    then settled with `settleRegion` (rule `merge`) and the profile's attributes, all in one transaction.
 9. **Known limit.** A closed path that isn't planar twists the profile, so the last band isn't planar. The transaction
