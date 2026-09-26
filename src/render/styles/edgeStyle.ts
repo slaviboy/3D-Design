@@ -78,6 +78,35 @@ function patch(source: string, search: string, replacement: string): string {
   return source.replace(search, replacement);
 }
 
+// -------------------------------------------------------------------------------------------------- overlay lines
+
+/**
+ * How far overlay lines are nudged toward the camera, in normalized depth: a few hundred steps of a 24-bit depth
+ * buffer, far less than the gap between two surfaces that aren't touching.
+ */
+const OVERLAY_DEPTH_NUDGE = 1e-5;
+
+/**
+ * Lines drawn over the model's own edges: selection and hover highlights, and the boxes around selected groups and
+ * components, which often lie on their outer edges. They lie exactly where the edges are, so the depth test alone
+ * would let whichever is drawn last win, and rounding would stipple them. Nudged a hair toward the camera, they win
+ * over the edge underneath and still hide behind nearer faces.
+ */
+export class OverlayLineMaterial extends THREE.LineBasicMaterial {
+  override onBeforeCompile(shader: CompileShader): void {
+    shader.vertexShader = patch(
+      shader.vertexShader,
+      '#include <project_vertex>',
+      `#include <project_vertex>
+      gl_Position.z -= ${OVERLAY_DEPTH_NUDGE.toExponential()} * gl_Position.w;`,
+    );
+  }
+
+  override customProgramCacheKey(): string {
+    return 'planar-overlay-line';
+  }
+}
+
 // -------------------------------------------------------------------------------------------------- thin edges
 
 /**

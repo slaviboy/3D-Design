@@ -60,7 +60,7 @@ Doc titles are shown in *italics* and map to entries in `help.sketchup.com/index
 
 | Feature | Reference | Required behavior | Pri | Cx | Dependencies | Status | Tests required |
 |---|---|---|---|---|---|---|---|
-| Click select | *Selecting Geometry* | Single entity; empty space clears | MVP | S | CPU picking | Done (P3) | Picker |
+| Click select | *Selecting Geometry* | Single entity; empty space clears | MVP | S | CPU picking | Done (P3): faces, edges (within 5 px of the pointer, 10 px for a finger), groups and components; selected edges are drawn in the selection blue over the model's own edges | Picker + e2e (clicking and deleting a line) |
 | Double / triple click | same | Double on face = face + bounding edges; double on edge = edge + faces; triple = all connected | MVP | S | kernel queries | Done (P3) | Sets |
 | Window / crossing box | same | Drag left→right: fully inside; right→left: touching | MVP | M | frustum queries | Done (P3) | Frustum tests |
 | Modifiers | same | Ctrl add · Shift toggle · Shift+Ctrl subtract; cursor shows the mode | MVP | S | input router | Done (P3) | Integration |

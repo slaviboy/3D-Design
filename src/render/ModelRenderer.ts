@@ -48,6 +48,7 @@ import { buildEdgeStyleArrays } from './styles/edgeGeometry';
 import {
   BACK_EDGE_RENDER_ORDER,
   EdgeStyleMaterials,
+  OverlayLineMaterial,
   srgbColor,
   X_RAY_OPACITY,
   type StyleView,
@@ -270,8 +271,8 @@ export class ModelRenderer {
     side: THREE.DoubleSide,
     depthWrite: false,
   });
-  readonly #selectionEdgeMaterial = new THREE.LineBasicMaterial({ color: VIEW_COLORS.selection });
-  readonly #lockedEdgeMaterial = new THREE.LineBasicMaterial({ color: VIEW_COLORS.locked });
+  readonly #selectionEdgeMaterial = new OverlayLineMaterial({ color: VIEW_COLORS.selection });
+  readonly #lockedEdgeMaterial = new OverlayLineMaterial({ color: VIEW_COLORS.locked });
   readonly #hoverFaceMaterial = new THREE.MeshBasicMaterial({
     color: VIEW_COLORS.hover,
     transparent: true,
@@ -279,7 +280,7 @@ export class ModelRenderer {
     side: THREE.DoubleSide,
     depthWrite: false,
   });
-  readonly #hoverEdgeMaterial = new THREE.LineBasicMaterial({ color: VIEW_COLORS.hover });
+  readonly #hoverEdgeMaterial = new OverlayLineMaterial({ color: VIEW_COLORS.hover });
   readonly #previewMaterials = new Map<ViewPreviewLineStyle, THREE.LineBasicMaterial>();
 
   /** three.js materials for faces, keyed by material (or `default`), side and fading. */
