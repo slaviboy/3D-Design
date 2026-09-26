@@ -61,35 +61,46 @@ async function selectionBlueNear(page: Page, point: Point): Promise<number> {
 }
 
 /**
- * How many pixels of the selection blue a vertical run through where a world point is drawn crosses: the width of a
- * selected, roughly horizontal line, in device pixels.
+ * How many device pixels in the selection blue, or in the dark of a plain edge, a vertical run through where a world
+ * point is drawn crosses: the width of a roughly horizontal line there.
  */
-async function selectionBlueAcross(page: Page, point: Point): Promise<number> {
-  return page.evaluate((target) => {
-    const canvas = document.querySelector<HTMLCanvasElement>('.viewport canvas');
-    const screen = window.__planar?.screenOf(target);
-    if (!canvas || !screen) throw new Error('nothing drawn there');
-    const scale = canvas.width / canvas.clientWidth;
-    const copy = document.createElement('canvas');
-    copy.width = canvas.width;
-    copy.height = canvas.height;
-    const context = copy.getContext('2d');
-    if (!context) throw new Error('no 2D context');
-    context.drawImage(canvas, 0, 0);
-    const reach = Math.ceil(8 * scale);
-    const data = context.getImageData(
-      Math.round(screen.x * scale),
-      Math.round(screen.y * scale) - reach,
-      1,
-      2 * reach + 1,
-    ).data;
-    let count = 0;
-    for (let i = 0; i < data.length; i += 4) {
-      const [red, green, blue] = [data[i] ?? 0, data[i + 1] ?? 0, data[i + 2] ?? 0];
-      if (blue - red > 60 && blue - green > 30) count++;
-    }
-    return count / scale;
-  }, point);
+async function widthAcross(page: Page, point: Point, color: 'selection' | 'edge'): Promise<number> {
+  return page.evaluate(
+    ({ target, selection }) => {
+      const canvas = document.querySelector<HTMLCanvasElement>('.viewport canvas');
+      const screen = window.__planar?.screenOf(target);
+      if (!canvas || !screen) throw new Error('nothing drawn there');
+      const scale = canvas.width / canvas.clientWidth;
+      const copy = document.createElement('canvas');
+      copy.width = canvas.width;
+      copy.height = canvas.height;
+      const context = copy.getContext('2d');
+      if (!context) throw new Error('no 2D context');
+      context.drawImage(canvas, 0, 0);
+      const reach = Math.ceil(12 * scale);
+      const data = context.getImageData(
+        Math.round(screen.x * scale),
+        Math.round(screen.y * scale) - reach,
+        1,
+        2 * reach + 1,
+      ).data;
+      let count = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        const [red, green, blue] = [data[i] ?? 0, data[i + 1] ?? 0, data[i + 2] ?? 0];
+        if (selection ? blue - red > 60 && blue - green > 30 : Math.max(red, green, blue) < 150) count++;
+      }
+      return count;
+    },
+    { target: point, selection: color === 'selection' },
+  );
+}
+
+/** A selected line stands out from a plain edge, about twice as wide, without swamping it: at most 3 device pixels. */
+async function expectSelectedWidth(page: Page, point: Point, plainWidth: number): Promise<void> {
+  const selectedWidth = await widthAcross(page, point, 'selection');
+  expect(plainWidth).toBeGreaterThan(0);
+  expect(selectedWidth).toBeGreaterThan(plainWidth);
+  expect(selectedWidth).toBeLessThanOrEqual(3);
 }
 
 test('selects a line with a click, shows it selected, and deletes it', async ({ page }) => {
@@ -99,13 +110,14 @@ test('selects a line with a click, shows it selected, and deletes it', async ({ 
   await page.keyboard.press('Escape');
   await page.keyboard.press(' ');
   expect(await selectionBlueNear(page, middle)).toBe(0);
+  const plainWidth = await widthAcross(page, middle, 'edge');
 
   const edge = await onScreen(page, middle);
   await page.mouse.click(edge.x, edge.y);
   await expect.poll(() => selectedKinds(page)).toEqual(['edge']);
   // Drawn in the selection color over the model's own edge, not hidden under it, and wider than an edge.
   await expect.poll(() => selectionBlueNear(page, middle)).toBeGreaterThan(0);
-  expect(await selectionBlueAcross(page, middle)).toBeGreaterThanOrEqual(2.5);
+  await expectSelectedWidth(page, middle, plainWidth);
 
   // Deselected, it is an ordinary edge again.
   const view = await page.getByRole('application', { name: '3D viewport' }).boundingBox();
@@ -119,4 +131,24 @@ test('selects a line with a click, shows it selected, and deletes it', async ({ 
   // Deleting a box's edge takes the two faces it bounded with it, as in the reference.
   await page.keyboard.press('Delete');
   await expect.poll(() => counts(page)).toEqual({ edges: 11, faces: 4 });
+});
+
+test.describe('on a screen with two device pixels to a CSS pixel', () => {
+  test.use({ deviceScaleFactor: 2 });
+
+  test('draws a selected line as wide as on any other screen, next to the edges around it', async ({
+    page,
+  }) => {
+    await drawBox(page);
+    const { min, max } = await extents(page);
+    const middle: Point = { x: (min.x + max.x) / 2, y: min.y, z: 1 };
+    await page.keyboard.press('Escape');
+    await page.keyboard.press(' ');
+    const plainWidth = await widthAcross(page, middle, 'edge');
+    const edge = await onScreen(page, middle);
+    await page.mouse.click(edge.x, edge.y);
+    await expect.poll(() => selectedKinds(page)).toEqual(['edge']);
+    await expect.poll(() => selectionBlueNear(page, middle)).toBeGreaterThan(0);
+    await expectSelectedWidth(page, middle, plainWidth);
+  });
 });

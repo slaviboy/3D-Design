@@ -199,16 +199,23 @@ uniform vec2 planarDepthRange;
   attribute vec3 profileInB;
 #endif`;
 
-const FAT_LINE_WIDTH = `#ifdef PLANAR_DEPTH_CUE
+/*
+ * Widths and the extension are in CSS pixels: `LineSegments2` sets `resolution` to the renderer's viewport, which is
+ * in CSS pixels. With PLANAR_DEVICE_PIXELS the width is in device pixels instead, a multiple of a plain edge's width
+ * (WebGL lines are one device pixel wide on every screen).
+ */
+const FAT_LINE_WIDTH = `#if defined( PLANAR_DEPTH_CUE )
   float planarDepth = - ( ( position.y < 0.5 ) ? start.z : end.z );
   float planarT = clamp( ( planarDepth - planarDepthRange.x ) / max( planarDepthRange.y - planarDepthRange.x, 1e-6 ), 0.0, 1.0 );
-  offset *= mix( linewidth, 1.0, planarT ) * planarPixelRatio;
+  offset *= mix( linewidth, 1.0, planarT );
+#elif defined( PLANAR_DEVICE_PIXELS )
+  offset *= linewidth / planarPixelRatio;
 #else
-  offset *= linewidth * planarPixelRatio;
+  offset *= linewidth;
 #endif`;
 
 const FAT_LINE_EXTENSION = `clip.xy += offset;
-clip.xy += ( ( position.y < 0.5 ) ? - dir : dir ) * ( 2.0 * planarExtension * planarPixelRatio / resolution.y ) * clip.w;`;
+clip.xy += ( ( position.y < 0.5 ) ? - dir : dir ) * ( 2.0 * planarExtension / resolution.y ) * clip.w;`;
 
 /*
  * A profile edge is an outline: the two faces that meet at it lie on the same side of the plane through the edge
@@ -270,8 +277,11 @@ export class FatLineMaterial extends LineMaterial {
   }
 }
 
-/** Width of selected edges, in CSS pixels: wider than any edge style, so a selection stands out. */
-export const SELECTED_EDGE_WIDTH = 3;
+/**
+ * Width of selected edges, in device pixels: twice a plain edge on every screen, so a selection stands out without
+ * swamping the lines around it.
+ */
+export const SELECTED_EDGE_WIDTH = 2;
 
 /**
  * Selected edges: wide lines in the selection color, drawn over the model's own edges while they are selected and
@@ -281,6 +291,7 @@ export const SELECTED_EDGE_WIDTH = 3;
 export class SelectedEdgeMaterial extends FatLineMaterial {
   constructor(view: StyleViewUniforms, color: THREE.ColorRepresentation) {
     super(undefined, view);
+    this.defines.PLANAR_DEVICE_PIXELS = '';
     this.color = new THREE.Color(color);
     this.linewidth = SELECTED_EDGE_WIDTH;
     this.vertexShader = patch(

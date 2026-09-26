@@ -159,7 +159,7 @@ form. These are the known differences from the target design, each scheduled for
 |---|---|---|
 | Spatial chunks of ~16k triangles per material | One merged geometry per definition, rebuilt when that definition changes | Performance phase |
 | Instanced screen-space edge quads with profiles and styles | 1 px `LineSegments`; soft and hidden edges skipped | Visualization phase |
-| Selection state in a `DataTexture` | A separate overlay mesh for selected faces and edges, plus box outlines for instances. Selected edges are wide lines (`SelectedEdgeMaterial`, 3 px) in the selection color while they are selected. Overlay lines (`OverlayLineMaterial` and the wide ones) lie exactly on the model's edges, so they are nudged toward the camera by 1e-5 in normalized depth: they win over the edge underneath whichever is drawn first, and still hide behind nearer faces | Performance phase, if measurements show a need |
+| Selection state in a `DataTexture` | A separate overlay mesh for selected faces and edges, plus box outlines for instances. Selected edges are wide lines (`SelectedEdgeMaterial`, 2 device pixels: twice a plain edge on any screen) in the selection color while they are selected. Overlay lines (`OverlayLineMaterial` and the wide ones) lie exactly on the model's edges, so they are nudged toward the camera by 1e-5 in normalized depth: they win over the edge underneath whichever is drawn first, and still hide behind nearer faces | Performance phase, if measurements show a need |
 | Chunk-relative positions against float32 jitter | World positions in float32 buffers | Performance phase |
 | Styles and environments | Default faces use fixed front and back colors | Visualization phase |
 | Shadows and sections | Implemented in Phase 7 in a simpler form; see "Current implementation (Phase 7)" below | Later refinements noted there |
@@ -314,7 +314,8 @@ which is what the old hex constants did).
 - **Profiles** are wide screen-space lines (three's bundled `LineSegments2` / `LineMaterial`) for every edge that bounds a
   visible face. Each carries two directions pointing from the edge into its faces. The vertex shader keeps the edge only
   when both faces lie on the same side of the plane through the edge and the eye (or the edge bounds a single face),
-  so outlines follow the camera without CPU work and do not depend on face orientation. Width is in CSS pixels.
+  so outlines follow the camera without CPU work and do not depend on face orientation. Width is in CSS pixels, the
+  unit of the `resolution` three's lines are drawn with.
 - **Depth cue** replaces the plain edges with wide lines whose width falls linearly from the style's width at the
   nearest model point to 1 px at the farthest (the model's bounding sphere gives the range). This is an approximation of
   depth-dependent line weight.
