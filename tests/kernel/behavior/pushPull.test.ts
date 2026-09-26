@@ -103,14 +103,18 @@ describe('behavior matrix B: Push/Pull', () => {
     expect(doc.rootStore.getFacePlane(top).offset).toBeCloseTo(1.5);
   });
 
-  it('B3: pushing the top flush with the bottom is refused and changes nothing', () => {
+  it('B3: pushing the top flush with the bottom cuts through the whole box', () => {
     const doc = newDocument();
     const top = unitBox(doc);
     const before = hashDocument(doc);
-    const depth = doc.undoDepth;
-    expect(() => pushPull(doc, root(doc), top, -1)).toThrow(KernelError);
+    expect(() => pushPull(doc, root(doc), top, -1.2)).toThrow(KernelError);
     expect(hashDocument(doc)).toBe(before);
-    expect(doc.undoDepth).toBe(depth);
+    // The walls end where the top meets the bottom, which faces the other way: the two cancel, and the walls go too.
+    expect(pushPull(doc, root(doc), top, -1).face).toBeNull();
+    expect(counts(doc)).toEqual({ v: 0, e: 0, f: 0 });
+    expectValid(doc);
+    doc.undo();
+    expect(hashDocument(doc)).toBe(before);
   });
 
   function boxWithInnerSquare(doc: ModelDocument): FaceId {
@@ -334,25 +338,82 @@ describe('behavior matrix B: Push/Pull', () => {
     expectValid(doc);
   });
 
-  describe('the far side', () => {
-    it('is the depth a face can be pushed to before it meets the parallel face behind it', () => {
+  it('B21: pushing a bump back flush flattens it into the top it rose from', () => {
+    const doc = newDocument();
+    const square = boxWithInnerSquare(doc);
+    const bump = pushPull(doc, root(doc), square, 0.3).face as FaceId;
+    const before = hashDocument(doc);
+    // Any further would turn the bump's walls inside out.
+    expect(() => pushPull(doc, root(doc), bump, -0.4)).toThrow(KernelError);
+    expect(hashDocument(doc)).toBe(before);
+    pushPull(doc, root(doc), bump, -0.3);
+    expect(counts(doc)).toEqual({ v: 12, e: 16, f: 7 });
+    expect(facesWhere(doc, (normal, c) => normal.z > 0.5 && near(c.z, 1))).toHaveLength(2);
+    expect(orientationConsistent(doc.rootStore)).toBe(true);
+    expectValid(doc);
+  });
+
+  it('B22: pushing the top of a step back down levels it with the top beside it', () => {
+    const doc = newDocument();
+    draw(doc, rectangle(0, 0, 2, 1));
+    pushPull(
+      doc,
+      root(doc),
+      onlyFace(doc, () => true),
+      -1,
+    );
+    draw(doc, [segment([1, 0, 1], [1, 1, 1])]);
+    const left = onlyFace(doc, (normal, c) => normal.z > 0.5 && near(c.z, 1) && c.x < 1);
+    const step = pushPull(doc, root(doc), left, 1).face as FaceId;
+    pushPull(doc, root(doc), step, -1);
+    expect(counts(doc)).toEqual({ v: 10, e: 15, f: 7 });
+    expect(facesWhere(doc, (normal, c) => normal.z > 0.5 && near(c.z, 1))).toHaveLength(2);
+    expect(orientationConsistent(doc.rootStore)).toBe(true);
+    expectValid(doc);
+  });
+
+  describe('where a push stops', () => {
+    it('is the far side: the nearest parallel face behind, facing the other way', () => {
       const doc = newDocument();
       const top = unitBox(doc);
-      expect(pushPullLimit(doc.rootStore, top)).toBeCloseTo(1, 9);
-      const inner = boxWithInnerSquare(newDocument());
-      expect(inner).toBeDefined();
+      // The walls end there too; the far side says more, since landing there cuts through.
+      expect(pushPullLimit(doc.rootStore, top)).toMatchObject({ kind: 'far-side' });
+      expect(pushPullLimit(doc.rootStore, top)?.distance).toBeCloseTo(1, 9);
 
       const pocketDoc = newDocument();
       const square = boxWithInnerSquare(pocketDoc);
-      expect(pushPullLimit(pocketDoc.rootStore, square)).toBeCloseTo(1, 9);
+      expect(pushPullLimit(pocketDoc.rootStore, square)?.distance).toBeCloseTo(1, 9);
       const floor = pushPull(pocketDoc, root(pocketDoc), square, -0.3).face as FaceId;
-      expect(pushPullLimit(pocketDoc.rootStore, floor)).toBeCloseTo(0.7, 9);
+      expect(pushPullLimit(pocketDoc.rootStore, floor)).toMatchObject({ kind: 'far-side' });
+      expect(pushPullLimit(pocketDoc.rootStore, floor)?.distance).toBeCloseTo(0.7, 9);
       // An outer wall beside the pocket reaches the pocket's wall first.
       const wall = onlyFace(pocketDoc, (normal, c) => normal.x > 0.5 && near(c.x, 1));
-      expect(pushPullLimit(pocketDoc.rootStore, wall)).toBeCloseTo(0.25, 9);
+      expect(pushPullLimit(pocketDoc.rootStore, wall)?.distance).toBeCloseTo(0.25, 9);
     });
 
-    it('is missing for a free-standing face and where nothing parallel lies behind', () => {
+    it('is flush where the walls a push stretches end, when that comes first', () => {
+      const doc = newDocument();
+      const bump = pushPull(doc, root(doc), boxWithInnerSquare(doc), 0.3).face as FaceId;
+      expect(pushPullLimit(doc.rootStore, bump)).toMatchObject({ kind: 'flush' });
+      expect(pushPullLimit(doc.rootStore, bump)?.distance).toBeCloseTo(0.3, 9);
+
+      // With nothing behind it, an open box's top stops where the walls end, and lands there as a flat face.
+      const open = newDocument();
+      const top = unitBox(open);
+      const bottom = onlyFace(open, (normal, c) => normal.z < -0.5 && near(c.z, 0));
+      open.transact('Open the bottom', () => {
+        removeFace(open, root(open), bottom);
+      });
+      expect(pushPullLimit(open.rootStore, top)).toMatchObject({ kind: 'flush' });
+      expect(pushPullLimit(open.rootStore, top)?.distance).toBeCloseTo(1, 9);
+      // Keeping the starting face extrudes new walls instead, which never flatten.
+      expect(pushPullLimit(open.rootStore, top, { createNewStartFace: true })).toBeNull();
+      pushPull(open, root(open), top, -1);
+      expect(counts(open)).toEqual({ v: 4, e: 4, f: 1 });
+      expectValid(open);
+    });
+
+    it('is missing for a free-standing face', () => {
       const flat = newDocument();
       draw(flat, rectangle(0, 0, 1, 1, 1));
       expect(
@@ -361,14 +422,6 @@ describe('behavior matrix B: Push/Pull', () => {
           onlyFace(flat, () => true),
         ),
       ).toBeNull();
-
-      const open = newDocument();
-      const top = unitBox(open);
-      const bottom = onlyFace(open, (normal, c) => normal.z < -0.5 && near(c.z, 0));
-      open.transact('Open the bottom', () => {
-        removeFace(open, root(open), bottom);
-      });
-      expect(pushPullLimit(open.rootStore, top)).toBeNull();
     });
   });
 });

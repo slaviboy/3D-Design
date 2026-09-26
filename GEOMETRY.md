@@ -176,16 +176,23 @@ and other non-face entities.
 
 Push/Pull applies to a planar face F. Let `n` be F's normal and `d` the signed distance.
 
-0. **The far side.** Pushing into F's back side (`d < 0`) stops at the far side of the shape: the nearest face behind F
-   that is parallel to it, faces the other way and overlaps it (`pushPullLimit`; free-standing faces have none).
-   Going further is refused, as the reference's "offset is limited"; a distance within `EPS_LEN` of the far side lands
-   exactly on it, where the push cuts through (step 4). The Push/Pull tool stops the pointer there and says so, and
-   refuses typed distances past it.
+0. **Where a push stops.** Pushing into F's back side (`d < 0`) stops at whichever comes first (`pushPullLimit`;
+   free-standing faces have neither):
+   - **The far side** of the shape: the nearest face behind F that is parallel to it, faces the other way and overlaps
+     it. A distance within `EPS_LEN` of it lands exactly on it, where the push cuts through (step 4). A box's top
+     pushed onto its own bottom takes the whole box with it.
+   - **Flush**, for a stretch: where the walls it stretches end. F comes down on what they rise from (step 2), so a
+     bump or a step pushed back down flattens into the surface around it.
+
+   Going further is refused, as the reference's "offset is limited". The Push/Pull tool stops the pointer there and
+   says which it is, and refuses typed distances past it.
 1. **Choose the mode.** A vertex u of F is *movable* if every face at u other than F contains the direction `n` (that
    is, is perpendicular to F) and is not coplanar with F.
    - **Stretch:** used when Ctrl is not held, every loop vertex is movable, and F has at least one neighbor face.
    - **Extrude:** used in every other case.
-2. **Stretch.** Move all of F's vertices by `d·n`. A neighbor face that would collapse refuses the push.
+2. **Stretch.** Move all of F's vertices by `d·n`. A neighbor face that would turn inside out refuses the push. One
+   that would come out exactly flat, where the walls end, doesn't: F lands on what the walls rise from, as below, and
+   the flattened walls go.
    - If F would come down on other geometry (a corner on a vertex or an edge, an edge on or across an edge), a stretch
      can't weld or split what it meets. It is carried out as an extrusion from where F is (step 3), and the edges of
      F's old outline that now only separate two coplanar faces facing the same way are healed away.
@@ -213,7 +220,10 @@ Push/Pull applies to a planar face F. Let `n` be F's normal and `d` the signed d
 
 - **Preview.** The drag preview runs the whole operation, imprinting included, in a speculative transaction, so the
   preview is exactly what a click keeps (a hole shows as soon as the push reaches the far side).
-- **Snapping.** Inference snaps the distance to existing geometry, so flush positions are exact.
+- **Snapping.** Inference snaps the distance to existing geometry, so flush positions are exact. A snap stays while
+  the pointer stays within reach of its point, even when the preview it produced took the point away (a push that
+  lands on the bottom takes the bottom's edges with it); otherwise the distance would leave it, the point would come
+  back, and the preview would alternate on every move.
 - **Repeat.** Double-clicking reuses the last distance.
 
 Rows marked ⚑ in the behavior matrix are cases where the reference behavior is unclear and must be confirmed before

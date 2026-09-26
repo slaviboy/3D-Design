@@ -51,7 +51,7 @@ tool is marked Done.
 |---|---|---|---|
 | B1 | `R(1,1)`, push/pull the face by +1 (toward +Z) | 8/12/6 | Closed shell; all normals outward; volume 1 |
 | B2 | B1, then push/pull the top by +0.5 | 8/12/6 | **Stretch**: no new entities; top face keeps its id; height 1.5 |
-| B3 | B1, then push/pull the top by −1 (flush with the bottom) | rejected ⚑ verify | Stretching would flatten the side faces, so the operation is refused and the model is unchanged |
+| B3 | B1, then push/pull the top by −1 (flush with the bottom) | 0/0/0 | The top lands on the bottom, which faces the other way: the two cancel, and the flattened walls go with them. −1.2 is refused (past the far side) |
 | B4 | B1, then `R(0.5,0.5)` centered on the top face | 12/16/7 | Top becomes a ring face with a hole plus an inner face |
 | B5 | B4, then pull the inner face +0.2 | 16/24/11 | **Frame remains**; inner face keeps its id at z = 1.2 |
 | B6 | B4, then push the inner face −0.3 (pocket) | 16/24/11 | Pocket side normals point into the pocket (outward from the solid) |
@@ -69,6 +69,8 @@ tool is marked Done.
 | B18 | B1 with a slot marked at its front edge (x 0.25–0.75, y 0–0.5); push the slot −1 | 16/24/10 | Cut through; no edges left bounding nothing across the opening |
 | B19 | B18's slot pushed −0.4, then its floor −0.6 | 20/28/10 | The floor would land on the bottom's edge, so it goes as an extrusion; same slot as B18, with a vertex left on each wall edge where the old floor was |
 | B20 | 6-sided polygon on ground, r 0.5, push/pull +1 | 12/18/8 | A prism: the 6 vertical edges stay hard (a polygon is faceted, unlike B9's circle); top and bottom remain polygon curves |
+| B21 | B4, then pull the inner face +0.3 and push it back −0.3 | 12/16/7 | Stops flush where the bump's walls end (`pushPullLimit` kind `flush`); the bump flattens into the top, the square stays marked. −0.4 is refused |
+| B22 | B1 at 2 × 1 × 1 with its top split at x = 1, the left half pulled +1, then pushed −1 | 10/15/7 | The step levels with the top beside it; the dividing line stays |
 
 ## C. Move / stretch / autofold
 

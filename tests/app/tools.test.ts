@@ -615,6 +615,106 @@ describe('Push/Pull tool', () => {
       );
       expect(bottomHoles(editor)).toEqual([0]);
     });
+
+    it('takes the whole box when its top reaches the bottom, and never shows the full box on the way', () => {
+      const editor = createTestEditor();
+      editor.session.setCamera(camera);
+      const doc = editor.session.doc;
+      draw(doc, boxEdges(0, 0, 0, 1, 1, 1));
+      editor.activateTool(PUSH_PULL_TOOL_ID);
+      const press = at(vec3(0.5, 0.5, 1));
+      click(editor, press.x, press.y);
+      const bottom = at(vec3(0.5, 0.5, 0));
+      // Down to the bottom a fraction of a pixel at a time, past it, and back up.
+      const heights: number[] = [];
+      for (const dy of [-3, -1, -0.5, -0.2, 0, 0.5, 2, 40, 0.5, -0.2, -1]) {
+        editor.tools.pointerMove(pointer(bottom.x, bottom.y + dy, { buttons: 0 }));
+        heights.push(Math.max(0, ...positions(editor).map((p) => p.z)));
+      }
+      expect(Math.max(...heights)).toBeLessThan(0.1);
+      expect(heights.filter((height) => height === 0)).toHaveLength(5);
+
+      const below = at(vec3(0.5, 0.5, -2));
+      editor.tools.pointerMove(pointer(below.x, below.y, { buttons: 0 }));
+      expect(editor.tools.measurement?.value).toBe('1000mm');
+      expect(editor.tools.statusHint).toMatch(/^Offset limited to 1000mm: this is the far side/);
+      click(editor, below.x, below.y);
+      expect(counts(doc)).toEqual({ v: 0, e: 0, f: 0 });
+      expect(doc.lastTransaction?.label).toBe('Push/Pull');
+      expectValidModel(editor);
+    });
+
+    it('holds still near the bottom: a snap that lands the push is kept while the pointer stays by it', () => {
+      // Steeply from above, where a snap to the bottom's edges lands the push well below where the pointer is.
+      const steep: CameraState = { ...camera, eye: vec3(3, -3, 12), target: vec3(1, 0.5, 0.5) };
+      const size = { width: 800, height: 600 };
+      const on = (point: Vec3) => {
+        const screen = projectToScreen(steep, point, size);
+        if (!screen) throw new Error('behind the camera');
+        return screen;
+      };
+      const flickering: string[] = [];
+      for (const corner of [vec3(0, 0, 0), vec3(1, 0, 0), vec3(2, 0, 0)]) {
+        const near = on(corner);
+        for (let dx = -12; dx <= 12; dx += 3) {
+          for (let dy = -12; dy <= 12; dy += 3) {
+            const editor = createTestEditor();
+            editor.setViewportSize(size);
+            editor.session.setCamera(steep);
+            const doc = editor.session.doc;
+            draw(doc, boxEdges(0, 0, 0, 2, 1, 1));
+            editor.activateTool(PUSH_PULL_TOOL_ID);
+            const press = on(vec3(1, 0.5, 1));
+            click(editor, press.x, press.y);
+            const spot = { x: near.x + dx, y: near.y + dy };
+            for (const t of [0.25, 0.5, 0.75]) {
+              const x = press.x + t * (spot.x - press.x);
+              const y = press.y + t * (spot.y - press.y);
+              editor.tools.pointerMove(pointer(x, y, { buttons: 0 }));
+            }
+            // The first move there may still settle; after that the preview must not change.
+            const states = new Set<string>();
+            for (let move = 0; move < 5; move++) {
+              editor.tools.pointerMove(pointer(spot.x, spot.y, { buttons: 0 }));
+              if (move > 0)
+                states.add(`${String(counts(doc).f)} faces, ${editor.tools.measurement?.value ?? ''}`);
+            }
+            if (states.size > 1)
+              flickering.push(`${String(dx)},${String(dy)} from ${JSON.stringify(corner)}`);
+          }
+        }
+      }
+      expect(flickering).toEqual([]);
+    });
+
+    it('stops a bump pushed back down where it is flush, and flattens it there', () => {
+      const editor = boxWithSquare();
+      const doc = editor.session.doc;
+      const press = at(vec3(0.5, 0.5, 1));
+      click(editor, press.x, press.y);
+      const up = at(vec3(0.5, 0.5, 1.1));
+      editor.tools.pointerMove(pointer(up.x, up.y, { buttons: 0 }));
+      type(editor, '300mm');
+      expect(extent(editor, 'z').max).toBeCloseTo(1.3);
+
+      const bump = at(vec3(0.5, 0.5, 1.3));
+      click(editor, bump.x, bump.y);
+      const shallow = at(vec3(0.5, 0.5, 1.2));
+      editor.tools.pointerMove(pointer(shallow.x, shallow.y, { buttons: 0 }));
+      type(editor, '500mm');
+      expect(editor.notifications.at(-1)?.message).toBe(
+        'Push/Pull stops where the face is flush, 300mm away',
+      );
+
+      const deep = at(vec3(0.5, 0.5, 0.5));
+      editor.tools.pointerMove(pointer(deep.x, deep.y, { buttons: 0 }));
+      expect(editor.tools.measurement?.value).toBe('300mm');
+      expect(editor.tools.statusHint).toMatch(/^Offset limited to 300mm: the face is flush there/);
+      click(editor, deep.x, deep.y);
+      expect(counts(doc)).toEqual({ v: 12, e: 16, f: 7 });
+      expect(extent(editor, 'z').max).toBeCloseTo(1);
+      expectValidModel(editor);
+    });
   });
 });
 

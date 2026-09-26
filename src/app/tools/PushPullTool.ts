@@ -18,10 +18,10 @@
 import type { FaceId } from '../../kernel/ids';
 import { dot, scale, sub, type Vec3 } from '../../kernel/math/vec3';
 import type { TransactionRecord } from '../../kernel/model/ModelDocument';
-import { pushPull, pushPullLimit } from '../../kernel/ops/pushPull';
+import { pushPull, pushPullLimit, type PushPullLimit } from '../../kernel/ops/pushPull';
 import { EPS_LEN } from '../../kernel/tolerance';
 import type { MeasurementIntent } from '../../kernel/vcb/parseMeasurement';
-import { rayThroughScreen } from '../camera/camera';
+import { projectToScreen, rayThroughScreen } from '../camera/camera';
 import type { Editor } from '../Editor';
 import { combineExclusions, exclusionForBoundary, type InferenceExclusion } from '../inference/exclusion';
 import { closestPointOnLineToRay, type Inference } from '../inference/inference';
@@ -39,6 +39,7 @@ import {
   errorMessage,
   formatDistance,
   inferAt,
+  inferenceTolerancePx,
   markerFor,
   POINT_INFERENCE_KINDS,
   previewExclusion,
@@ -48,6 +49,18 @@ import {
   toLocalDirection,
   toWorldNormal,
 } from './toolSupport';
+
+/** Where a push into the face stops, in world units (see `pushPullLimit`). */
+interface Stop {
+  readonly distance: number;
+  readonly kind: PushPullLimit['kind'];
+}
+
+/** The stop when the face moves, and when the starting face is kept (Ctrl), which never flattens walls. */
+interface Stops {
+  readonly moving: Stop | null;
+  readonly keeping: Stop | null;
+}
 
 interface Operation {
   readonly face: FaceId;
@@ -60,17 +73,19 @@ interface Operation {
   readonly speculation: Speculation;
   /** The face's own outline, which the distance never snaps to. */
   readonly exclusion: InferenceExclusion;
-  /** How far the face can be pushed in (world units) before it reaches the far side of the shape, if it can. */
-  readonly limit: number | null;
+  /** How far the face can be pushed in before it stops, if it does. */
+  readonly stops: Stops;
   /** World distance along the normal. */
   distance: number;
-  /** The pointer is past the far side, and the push stops there. */
+  /** The pointer is past where the push stops, and it stays there. */
   limited: boolean;
   /** The same distance in active-context units, as passed to the kernel. */
   localDistance: number;
   keepOriginal: boolean;
   dragged: boolean;
   inference: Inference | null;
+  /** The last point the distance snapped to, kept while the pointer stays within reach of it. */
+  snap: Inference | null;
   error: string | null;
 }
 
@@ -82,8 +97,12 @@ interface Finished {
   readonly worldDistance: number;
   readonly keepOriginal: boolean;
   readonly record: TransactionRecord | undefined;
-  /** The operation's {@link Operation.limit}, for typed values that replace it. */
-  readonly limit: number | null;
+  /** The operation's {@link Operation.stops}, for typed values that replace it. */
+  readonly stops: Stops;
+}
+
+function stopFor(stops: Stops, keepOriginal: boolean): Stop | null {
+  return keepOriginal ? stops.keeping : stops.moving;
 }
 
 /**
@@ -109,7 +128,7 @@ export class PushPullTool implements Tool {
     if (Math.hypot(input.x - operation.pressX, input.y - operation.pressY) > DRAG_THRESHOLD_PX)
       operation.dragged = true;
     operation.keepOriginal = toggleModifier(input, editor);
-    operation.inference = inferAt(editor, input, {
+    const inference = inferAt(editor, input, {
       // A face follows the pointer along its normal: points on the axes' lines would make it jump.
       drawingAxes: false,
       // The extrusion follows the pointer and would catch it; it still hides what lies behind it.
@@ -118,6 +137,7 @@ export class PushPullTool implements Tool {
         previewExclusion(editor, operation.speculation, { faceTargets: false }),
       ),
     });
+    operation.inference = this.#holdSnap(editor, operation, input, inference);
     const snapped = POINT_INFERENCE_KINDS.has(operation.inference.kind)
       ? operation.inference.point
       : closestPointOnLineToRay(
@@ -154,13 +174,14 @@ export class PushPullTool implements Tool {
       pressY: input.y,
       speculation: new Speculation(editor.session.doc),
       exclusion: exclusionForBoundary(store, { faces: [face] }),
-      limit: this.#limit(editor, face, normal),
+      stops: this.#stops(editor, face, normal),
       limited: false,
       distance: 0,
       localDistance: 0,
       keepOriginal: toggleModifier(input, editor),
       dragged: false,
       inference: null,
+      snap: null,
       error: null,
     };
   }
@@ -205,7 +226,7 @@ export class PushPullTool implements Tool {
         Math.abs(operation.distance) > EPS_LEN
           ? Math.sign(operation.distance)
           : this.#towardCamera(editor, operation.origin, operation.normal);
-      this.#refusePastFarSide(editor, operation.limit, sign * intent.value);
+      this.#refusePastStop(editor, stopFor(operation.stops, operation.keepOriginal), sign * intent.value);
       this.#apply(editor, operation, sign * intent.value);
       if (operation.error !== null) throw new Error(operation.error);
       this.#commit(editor, operation);
@@ -215,7 +236,7 @@ export class PushPullTool implements Tool {
     const doc = editor.session.doc;
     if (!last || !canReplace(doc, last.record)) throw new Error('Click a face to push or pull first');
     const worldDistance = Math.sign(last.worldDistance) * intent.value;
-    this.#refusePastFarSide(editor, last.limit, worldDistance);
+    this.#refusePastStop(editor, stopFor(last.stops, last.keepOriginal), worldDistance);
     doc.rollbackLastTransaction();
     const localDistance = this.#localDistance(editor, last.normal, worldDistance, last.face);
     try {
@@ -243,11 +264,37 @@ export class PushPullTool implements Tool {
     const operation = this.#operation;
     if (operation?.error) return operation.error;
     if (operation?.limited) {
-      return `Offset limited to ${formatDistance(editor, Math.abs(operation.distance))}: this is the far side. Click to cut through.`;
+      const distance = formatDistance(editor, Math.abs(operation.distance));
+      return stopFor(operation.stops, operation.keepOriginal)?.kind === 'flush'
+        ? `Offset limited to ${distance}: the face is flush there. Click to flatten it.`
+        : `Offset limited to ${distance}: this is the far side. Click to cut through.`;
     }
     return operation
       ? `Move to set the distance, then click, or type a distance. ${toggleModifierName(editor)} keeps the starting face.`
       : 'Click a face to push or pull it. Double-click a face to repeat the last distance.';
+  }
+
+  /**
+   * Keeps the last point snap while the pointer stays within reach of it, when this move offers none. The preview the
+   * snap produced may have taken its target away: a push landing on the bottom takes the bottom's edges with it.
+   * Dropping the snap would move the face off it, bring the target back and snap again, flickering on every move.
+   */
+  #holdSnap(editor: Editor, operation: Operation, input: PointerInput, inference: Inference): Inference {
+    if (POINT_INFERENCE_KINDS.has(inference.kind)) {
+      operation.snap = inference;
+      return inference;
+    }
+    const held = operation.snap;
+    const screen = held ? projectToScreen(editor.session.camera, held.point, editor.viewportSize) : null;
+    if (
+      held &&
+      screen &&
+      Math.hypot(screen.x - input.x, screen.y - input.y) <= inferenceTolerancePx(editor)
+    ) {
+      return held;
+    }
+    operation.snap = null;
+    return inference;
   }
 
   #faceAt(input: PointerInput, editor: Editor): FaceId | null {
@@ -255,10 +302,15 @@ export class PushPullTool implements Tool {
     return hit?.ref.kind === 'face' ? (hit.ref.id as FaceId) : null;
   }
 
-  /** A typed push deeper than the shape: say how far it can go, rather than stopping short of what was asked. */
-  #refusePastFarSide(editor: Editor, limit: number | null, worldDistance: number): void {
-    if (limit !== null && -worldDistance > limit + EPS_LEN) {
-      throw new Error(`Push/Pull stops at the face on the other side, ${formatDistance(editor, limit)} away`);
+  /** A typed push past where it stops: say how far it can go, rather than stopping short of what was asked. */
+  #refusePastStop(editor: Editor, stop: Stop | null, worldDistance: number): void {
+    if (stop !== null && -worldDistance > stop.distance + EPS_LEN) {
+      const away = formatDistance(editor, stop.distance);
+      throw new Error(
+        stop.kind === 'flush'
+          ? `Push/Pull stops where the face is flush, ${away} away`
+          : `Push/Pull stops at the face on the other side, ${away} away`,
+      );
     }
   }
 
@@ -267,9 +319,15 @@ export class PushPullTool implements Tool {
   }
 
   /** {@link pushPullLimit} in world units: the group or component being edited may scale distances along the normal. */
-  #limit(editor: Editor, face: FaceId, worldNormal: Vec3): number | null {
-    const local = pushPullLimit(editor.session.doc.store(editor.session.activeContext), face);
-    return local === null ? null : local / this.#localDistance(editor, worldNormal, 1, face);
+  #stops(editor: Editor, face: FaceId, worldNormal: Vec3): Stops {
+    const store = editor.session.doc.store(editor.session.activeContext);
+    const perUnit = this.#localDistance(editor, worldNormal, 1, face);
+    const inWorld = (limit: PushPullLimit | null): Stop | null =>
+      limit === null ? null : { distance: limit.distance / perUnit, kind: limit.kind };
+    return {
+      moving: inWorld(pushPullLimit(store, face)),
+      keeping: inWorld(pushPullLimit(store, face, { createNewStartFace: true })),
+    };
   }
 
   #localDistance(editor: Editor, worldNormal: Vec3, worldDistance: number, face: FaceId): number {
@@ -278,10 +336,11 @@ export class PushPullTool implements Tool {
   }
 
   #apply(editor: Editor, operation: Operation, requested: number): void {
-    // At or past the far side, the face stays there, where it cuts through.
-    const { limit } = operation;
-    operation.limited = limit !== null && -requested >= limit - EPS_LEN;
-    const worldDistance = limit !== null && operation.limited ? -limit : requested;
+    // At or past where the push stops, the face stays there, where it lands: it cuts through at the far side, and
+    // flattens its walls where they end.
+    const stop = stopFor(operation.stops, operation.keepOriginal);
+    operation.limited = stop !== null && -requested >= stop.distance - EPS_LEN;
+    const worldDistance = stop !== null && operation.limited ? -stop.distance : requested;
     operation.distance = worldDistance;
     operation.error = null;
     const { session } = editor;
@@ -322,7 +381,7 @@ export class PushPullTool implements Tool {
       worldDistance: operation.distance,
       keepOriginal: operation.keepOriginal,
       record,
-      limit: operation.limit,
+      stops: operation.stops,
     };
   }
 
@@ -334,7 +393,7 @@ export class PushPullTool implements Tool {
     const plane = session.doc.store(session.activeContext).getFacePlane(face);
     const normal = toWorldNormal(editor, plane.normal);
     // Measured before the push changes the face.
-    const limit = this.#limit(editor, face, normal);
+    const stops = this.#stops(editor, face, normal);
     try {
       pushPull(session.doc, session.activeContext, face, last.localDistance, {
         createNewStartFace: last.keepOriginal,
@@ -346,7 +405,7 @@ export class PushPullTool implements Tool {
         worldDistance: last.worldDistance,
         keepOriginal: last.keepOriginal,
         record: session.doc.lastTransaction,
-        limit,
+        stops,
       };
     } catch (error) {
       editor.notify('error', errorMessage(error));

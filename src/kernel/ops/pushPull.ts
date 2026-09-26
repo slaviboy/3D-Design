@@ -162,15 +162,46 @@ function farSideDistance(store: EntityStore, faceId: FaceId, reach?: number): nu
   return nearest;
 }
 
+/** Where a push into a face's back side stops (see {@link pushPullLimit}). */
+export interface PushPullLimit {
+  /** How far the face can be pushed in. */
+  readonly distance: number;
+  /**
+   * - `far-side`: the face reaches the far side of the shape and cuts through there. A box's top pushed onto its own
+   *   bottom takes the whole box with it.
+   * - `flush`: the walls it stretches end there, and it lands flush with the surface they rise from, as a bump or a
+   *   step pushed back down does.
+   */
+  readonly kind: 'far-side' | 'flush';
+}
+
 /**
- * How far a face can be pushed into its back side before it reaches the far side of the shape: the nearest face
- * behind it that is parallel to it, faces the other way and overlaps it. Pushing exactly that far cuts through;
- * pushing further is refused (the reference's "offset is limited"). Null when nothing is there, and for a
- * free-standing face, which has nothing behind it.
+ * How far a face can be pushed into its back side, and why it stops there: at the far side of the shape (the nearest
+ * face behind it that is parallel to it, faces the other way and overlaps it), or, when it stretches, where the walls
+ * it stretches end. Pushing exactly that far lands there; pushing further is refused (the reference's "offset is
+ * limited"). Null when nothing stops it, and for a free-standing face, which has nothing behind it.
  */
-export function pushPullLimit(store: EntityStore, faceId: FaceId): number | null {
+export function pushPullLimit(
+  store: EntityStore,
+  faceId: FaceId,
+  options: PushPullOptions = {},
+): PushPullLimit | null {
   if (neighborFaces(store, faceId).size === 0) return null;
-  return farSideDistance(store, faceId);
+  const farSide = farSideDistance(store, faceId);
+  const flush = pushPullMode(store, faceId, options) === 'stretch' ? flushDistance(store, faceId) : null;
+  // At the same depth the far side says more: landing there cuts through, walls and all.
+  if (flush !== null && (farSide === null || flush < farSide - EPS_LEN))
+    return { distance: flush, kind: 'flush' };
+  return farSide === null ? null : { distance: farSide, kind: 'far-side' };
+}
+
+/**
+ * How far a stretch can push the face into its back side before the walls it stretches end, where it comes down on
+ * what they rise from. Null when no wall ends behind the face, or the face would not come down on anything there.
+ */
+function flushDistance(store: EntityStore, faceId: FaceId): number | null {
+  const flat = stretchLimit(store, faceId, store.getFacePlane(faceId).normal);
+  return Number.isFinite(flat) && wouldTouch(store, faceId, flat) ? -flat : null;
 }
 
 /**
@@ -272,7 +303,14 @@ export function pushPull(
 
   return doc.transact('Push/Pull', () => {
     if (mode === 'stretch') {
-      if (travel <= stretchLimit(store, faceId, plane.normal) + EPS_LEN) {
+      // Exactly flat, the walls end and the face comes down on what they rise from. It lands there as a stretch onto
+      // other geometry does: a box's top pushed onto its bottom takes the box with it, and a bump pushed back flush
+      // merges into its surface. Any further would turn the walls inside out.
+      const flat = stretchLimit(store, faceId, plane.normal);
+      if (Math.abs(travel - flat) <= EPS_LEN && wouldTouch(store, faceId, flat)) {
+        return { mode: 'extrude', face: stretchByExtruding(doc, context, faceId, flat) };
+      }
+      if (travel <= flat + EPS_LEN) {
         throw new KernelError('invalid-operation', 'Push/Pull cannot flatten the neighboring faces');
       }
       if (wouldTouch(store, faceId, travel)) {

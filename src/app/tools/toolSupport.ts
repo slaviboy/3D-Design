@@ -27,6 +27,7 @@ import { cameraBasis, rayThroughScreen, type ScreenPoint } from '../camera/camer
 import type { Editor } from '../Editor';
 import {
   axisOf,
+  DEFAULT_INFERENCE_TOLERANCE_PX,
   infer,
   type Axis,
   type Inference,
@@ -68,6 +69,11 @@ export interface InferOptions {
 
 /** Inference tolerance for touch, in pixels (10 for a mouse): a finger covers what it points at. */
 export const TOUCH_INFERENCE_TOLERANCE_PX = 18;
+
+/** How close, in pixels, the pointer must come to something to snap to it. */
+export function inferenceTolerancePx(editor: Editor): number {
+  return editor.pointerKind === 'touch' ? TOUCH_INFERENCE_TOLERANCE_PX : DEFAULT_INFERENCE_TOLERANCE_PX;
+}
 
 /** How many recently hovered points and edges linear inferences refer to. */
 const REMEMBERED_POINTS = 2;
@@ -141,7 +147,7 @@ export function inferAt(editor: Editor, screen: ScreenPoint, options: InferOptio
     references: memory,
     clip: sessionClipping(editor),
     boundsCache: boundsCacheFor(editor),
-    ...(editor.pointerKind === 'touch' ? { tolerancePx: TOUCH_INFERENCE_TOLERANCE_PX } : {}),
+    tolerancePx: inferenceTolerancePx(editor),
     ...(options.anchor ? { anchor: options.anchor } : {}),
     ...(options.lockDirection ? { lockDirection: options.lockDirection } : {}),
     ...(options.fallbackPlane ? { fallbackPlane: options.fallbackPlane } : {}),
