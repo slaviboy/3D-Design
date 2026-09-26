@@ -44,6 +44,7 @@ import type { ViewChange, ViewEntityRef, ViewPreviewLineStyle, ViewSource } from
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
 import { DEFAULT_STYLE_SETTINGS, type ModelAxes, type StyleSettings } from '../kernel/model/types';
+import { BACK_FACE_OFFSET, FRONT_FACE_OFFSET } from './faceOffsets';
 import { buildEdgeStyleArrays } from './styles/edgeGeometry';
 import {
   BACK_EDGE_RENDER_ORDER,
@@ -239,9 +240,6 @@ const PREVIEW_COLORS: Readonly<Record<ViewPreviewLineStyle, number>> = {
   'axis-z': VIEW_COLORS.axisZ,
   guide: VIEW_COLORS.guide,
 };
-
-/** Keeps faces behind their own edges. */
-const FACE_POLYGON_OFFSET = { polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 } as const;
 
 /**
  * Builds and maintains three.js objects for a model. Each definition's geometry is built once and shared by all of
@@ -477,6 +475,8 @@ export class ModelRenderer {
     const cached = this.#faceMaterials.get(key);
     if (cached) return cached;
     const threeSide = side === 'front' ? THREE.FrontSide : THREE.BackSide;
+    // Behind their edges, and back sides behind front sides lying in the same place.
+    const offset = side === 'front' ? FRONT_FACE_OFFSET : BACK_FACE_OFFSET;
     let material: THREE.Material;
     if (style.faceStyle === 'hiddenLine') {
       // Unlit faces in the background color hide what is behind them.
@@ -484,14 +484,14 @@ export class ModelRenderer {
         color: srgbColor(style.backgroundColor),
         side: threeSide,
         ...(faded ? { transparent: true, opacity: FADED_OPACITY } : {}),
-        ...FACE_POLYGON_OFFSET,
+        ...offset,
       });
     } else if (!data) {
       material = new THREE.MeshLambertMaterial({
         color: srgbColor(side === 'front' ? style.frontColor : style.backColor),
         side: threeSide,
         ...(faded ? { transparent: true, opacity: FADED_OPACITY } : {}),
-        ...FACE_POLYGON_OFFSET,
+        ...offset,
       });
     } else {
       const opacity = data.opacity * (faded ? FADED_OPACITY : 1);
@@ -504,7 +504,7 @@ export class ModelRenderer {
         transparent,
         opacity,
         depthWrite: !transparent || faded,
-        ...FACE_POLYGON_OFFSET,
+        ...offset,
       });
       const showTextures = style.faceStyle === 'shadedWithTextures';
       const asset = data.texture && showTextures ? doc.asset(data.texture.assetId) : undefined;

@@ -18,6 +18,7 @@
 import * as THREE from 'three';
 import { DEFAULT_SHADOW_SETTINGS, type ShadowSettings } from '../../kernel/model/types';
 import { localDateTimeToUtc, parseLocalDateTime, solarPosition, sunDirection } from '../../kernel/sun/solar';
+import { GROUND_RECEIVER_OFFSET } from '../faceOffsets';
 import { AMBIENT_LIGHT_INTENSITY, SUN_DIRECTION, SUN_LIGHT_INTENSITY } from '../palette';
 import { groundReceiverHeight } from './groundReceiver';
 
@@ -72,9 +73,7 @@ export class ShadowController {
     const material = new THREE.ShadowMaterial({
       opacity: GROUND_SHADOW_OPACITY,
       depthWrite: false,
-      polygonOffset: true,
-      polygonOffsetFactor: 1,
-      polygonOffsetUnits: 1,
+      ...GROUND_RECEIVER_OFFSET,
     });
     this.ground = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
     this.ground.receiveShadow = true;

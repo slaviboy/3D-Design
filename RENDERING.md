@@ -182,6 +182,12 @@ Implemented in `src/render/ModelRenderer.ts`, with pure helpers in `src/kernel/o
 - **Buckets.** A definition's visible faces are split into one merged `BufferGeometry` per side (front or back) and
   material. The default material is its own bucket. Each vertex carries `position`, `normal` and `uv`. Front buckets
   are drawn with `FrontSide` and back buckets with `BackSide`.
+- **Front sides over back sides.** Where one face's front side and another's back side lie closer together than the
+  depth buffer can tell apart (a box pushed almost flat, two shapes touching face to face), rounding would pick one
+  per pixel, and the faces would flicker as the view moves. Back buckets are drawn a few depth steps further back than
+  front buckets (`src/render/faceOffsets.ts`: polygon offset units 5 against 1; only the constant part differs, since
+  a slope-scaled offset would let a front side well behind a back side show through at grazing angles). The front
+  side then shows on every pixel. The shadow ground receiver sits behind both.
 - **Material resolution.** A bucket with a material uses it. A default bucket uses the material of the innermost
   painted group or component it is drawn inside, found while walking the instance tree, so one shared geometry can
   show different inherited materials per instance. Otherwise it uses the style's front or back color.
