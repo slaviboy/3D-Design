@@ -23,6 +23,7 @@ import type { ModelDocument } from '../../../src/kernel/model/ModelDocument';
 import { hashDocument } from '../../../src/kernel/model/snapshot';
 import { insertCurve } from '../../../src/kernel/ops/curves';
 import { removeFace } from '../../../src/kernel/model/mutations';
+import { insertSegments } from '../../../src/kernel/ops/insertSegments';
 import { faceArea } from '../../../src/kernel/ops/planar/regions';
 import { pushPull, pushPullLimit, pushPullMode } from '../../../src/kernel/ops/pushPull';
 import {
@@ -368,6 +369,46 @@ describe('behavior matrix B: Push/Pull', () => {
     pushPull(doc, root(doc), step, -1);
     expect(counts(doc)).toEqual({ v: 10, e: 15, f: 7 });
     expect(facesWhere(doc, (normal, c) => normal.z > 0.5 && near(c.z, 1))).toHaveLength(2);
+    expect(orientationConsistent(doc.rootStore)).toBe(true);
+    expectValid(doc);
+  });
+
+  /** B7's hole through a unit box, with a lid drawn over its top opening as the Rectangle tool draws it. */
+  function boxWithLidOverHole(doc: ModelDocument): FaceId {
+    pushPull(doc, root(doc), boxWithInnerSquare(doc), -1);
+    insertSegments(doc, root(doc), rectangle(0.25, 0.25, 0.75, 0.75, 1), { autoFace: true, retrace: true });
+    expect(counts(doc)).toEqual({ v: 16, e: 24, f: 11 });
+    return onlyFace(doc, (_normal, c) => near(c.z, 1) && near(c.x, 0.5) && near(c.y, 0.5));
+  }
+
+  it('B23: pulling a lid drawn over a hole builds a closed box on it, instead of opening the hole again', () => {
+    const doc = newDocument();
+    const lid = boxWithLidOverHole(doc);
+    expect(doc.rootStore.getFacePlane(lid).normal.z).toBeCloseTo(1);
+    const cap = pushPull(doc, root(doc), lid, 0.5).face as FaceId;
+    expect(counts(doc)).toEqual({ v: 20, e: 32, f: 16 });
+    // The lid stays as the new box's bottom, facing down into the hole, and the new top faces up.
+    expect(doc.rootStore.getFacePlane(lid).normal.z).toBeCloseTo(-1);
+    expect(doc.rootStore.getFacePlane(cap).normal.z).toBeCloseTo(1);
+    const center = vec3(0.5, 0.5, 1.25);
+    // Four walls, all facing out.
+    const wall = (normal: Vec3, c: Vec3) => c.z > 1 && Math.abs(normal.z) < 0.5;
+    expect(facesWhere(doc, wall)).toHaveLength(4);
+    expect(facesWhere(doc, (normal, c) => wall(normal, c) && dot(normal, sub(c, center)) > 0.1)).toHaveLength(
+      4,
+    );
+    expect(orientationConsistent(doc.rootStore)).toBe(true);
+    expectValid(doc);
+  });
+
+  it('B24: pushing a lid drawn over a hole down into it plugs the top of the hole', () => {
+    const doc = newDocument();
+    const lid = boxWithLidOverHole(doc);
+    pushPull(doc, root(doc), lid, -0.3);
+    expect(counts(doc)).toEqual({ v: 20, e: 28, f: 12 });
+    // The lid stays on top, and a new floor faces down into the rest of the hole.
+    expect(doc.rootStore.getFacePlane(lid).normal.z).toBeCloseTo(1);
+    expect(facesWhere(doc, (normal, c) => normal.z < -0.5 && near(c.z, 0.7))).toHaveLength(1);
     expect(orientationConsistent(doc.rootStore)).toBe(true);
     expectValid(doc);
   });

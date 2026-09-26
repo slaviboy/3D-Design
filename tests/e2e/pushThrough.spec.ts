@@ -17,7 +17,7 @@
 
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { drawBox, extents, onScreen } from './modelHelpers';
+import { backColored, drawBox, extents, onScreen } from './modelHelpers';
 
 /** How many faces the model has, and how many holes each face lying on the ground has. */
 async function faces(page: Page): Promise<{ count: number; groundHoles: number[] }> {
@@ -86,4 +86,34 @@ test('a rectangle from one corner of the opening to the diagonal one closes it',
   await expect(page.getByTestId('inference-label')).toHaveText('Endpoint');
   await page.mouse.click(opposite.x, opposite.y);
   await expect.poll(async () => (await faces(page)).count).toBe(11);
+});
+
+test('pulling the rectangle that closes the opening up builds a closed box on top, facing out', async ({
+  page,
+}) => {
+  const { corner, opposite } = await boxWithHole(page);
+  const { min, max } = await extents(page);
+  const center = { x: (min.x + max.x) / 2, y: (min.y + max.y) / 2 };
+  await page.keyboard.press('r');
+  await page.mouse.move(corner.x, corner.y, { steps: 3 });
+  await page.mouse.click(corner.x, corner.y);
+  await page.mouse.move(opposite.x, opposite.y, { steps: 3 });
+  await page.mouse.click(opposite.x, opposite.y);
+  await expect.poll(async () => (await faces(page)).count).toBe(11);
+  // The new rectangle faces up like the top around it, so from above it shows its front.
+  const lidPoints = [-0.3, 0, 0.3].map((dx) => ({ x: center.x + dx, y: center.y, z: 1 }));
+  await expect.poll(() => backColored(page, lidPoints)).toBe(0);
+
+  await page.keyboard.press('p');
+  const lid = await onScreen(page, { ...center, z: 1 });
+  await page.mouse.move(lid.x, lid.y, { steps: 3 });
+  await page.mouse.click(lid.x, lid.y);
+  await page.mouse.move(lid.x, lid.y - 30, { steps: 3 });
+  await page.keyboard.type('500mm');
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => (await faces(page)).count).toBe(16);
+  await expect.poll(async () => (await extents(page)).max.z).toBeCloseTo(1.5, 6);
+  // Its front wall shows its front too, not the back of an inside-out box.
+  const wallPoints = [-0.3, 0, 0.3].map((dx) => ({ x: center.x + dx, y: center.y - 0.25, z: 1.25 }));
+  await expect.poll(() => backColored(page, wallPoints)).toBe(0);
 });

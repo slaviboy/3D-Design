@@ -25,9 +25,11 @@ import { DEFAULT_CIRCLE_SEGMENTS, insertCurve } from '../../../src/kernel/ops/cu
 import { deleteFaces, eraseEdges } from '../../../src/kernel/ops/erase';
 import { insertSegments } from '../../../src/kernel/ops/insertSegments';
 import { faceArea } from '../../../src/kernel/ops/planar/regions';
+import { pushPull } from '../../../src/kernel/ops/pushPull';
 import { EPS_LEN } from '../../../src/kernel/tolerance';
 import {
   areas,
+  boxEdges,
   counts,
   draw,
   expectValid,
@@ -48,7 +50,7 @@ const CIRCLE_IN_RECTANGLE: CurveParams & { kind: 'circle' } = {
   segments: DEFAULT_CIRCLE_SEGMENTS,
 };
 
-/** Rows A1–A24 of docs/BEHAVIOR_MATRIX.md (A20 is in hierarchy.test.ts). */
+/** Rows A1–A25 of docs/BEHAVIOR_MATRIX.md (A20 is in hierarchy.test.ts). */
 describe('behavior matrix A: edge insertion, auto-split, auto-face', () => {
   it('A1: a single line creates two vertices and one edge', () => {
     const doc = newDocument();
@@ -300,6 +302,33 @@ describe('behavior matrix A: edge insertion, auto-split, auto-face', () => {
     });
     expect(counts(doc).f).toBe(6);
     expect(orientationConsistent(doc.rootStore)).toBe(true);
+    expectValid(doc);
+  });
+
+  it('A25: a face drawn over an opening of a hole faces like the surface around it, not into the hole', () => {
+    const doc = newDocument();
+    const root = doc.rootDefinitionId;
+    draw(doc, boxEdges(0, 0, 0, 1, 1, 1));
+    draw(doc, rectangle(0.25, 0.25, 0.75, 0.75, 1));
+    const square = [...doc.rootStore.faces()].find(
+      (face) => face.inners.length === 0 && doc.rootStore.loopPoints(face.outer).every((p) => p.z === 1),
+    );
+    if (!square) throw new Error('no square marked on the top');
+    pushPull(doc, root, square.id, -1);
+    expect(counts(doc)).toEqual({ v: 16, e: 24, f: 10 });
+
+    // The hole's walls meet the top and the bottom along its rims already: the lids agree with those surfaces.
+    for (const z of [1, 0]) {
+      insertSegments(doc, root, rectangle(0.25, 0.25, 0.75, 0.75, z), { autoFace: true, retrace: true });
+      const [lid, around] = [...doc.rootStore.faces()]
+        .filter((face) => doc.rootStore.loopPoints(face.outer).every((p) => p.z === z))
+        .sort((a, b) => a.inners.length - b.inners.length);
+      if (!lid || !around) throw new Error(`the opening at z = ${String(z)} is still open`);
+      expect(doc.rootStore.getFacePlane(lid.id).normal.z).toBeCloseTo(
+        doc.rootStore.getFacePlane(around.id).normal.z,
+      );
+    }
+    expect(counts(doc)).toEqual({ v: 16, e: 24, f: 12 });
     expectValid(doc);
   });
 

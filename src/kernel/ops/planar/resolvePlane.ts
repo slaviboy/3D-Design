@@ -226,7 +226,8 @@ function chooseOrientation(
   let coplanarVote: boolean | undefined;
   for (const cycle of [region.outer, ...region.holes]) {
     for (const use of cycle.uses) {
-      for (const neighbourId of store.getEdge(use.edge).faces) {
+      const neighbours = store.getEdge(use.edge).faces;
+      for (const neighbourId of neighbours) {
         const neighbour = store.getFace(neighbourId);
         const neighbourUse = [neighbour.outer, ...neighbour.inners]
           .flat()
@@ -235,8 +236,14 @@ function chooseOrientation(
         // Consistently oriented faces traverse a shared edge in opposite directions.
         const agrees = neighbourUse.reversed !== use.reversed;
         const coplanar = neighbour.plane !== null && planesCoincide(neighbour.plane, plane);
-        if (!coplanar) return agrees;
-        coplanarVote ??= agrees;
+        if (coplanar) {
+          coplanarVote ??= agrees;
+        } else if (neighbours.length === 1) {
+          // The new face closes the surface along this edge, as the last face of a box does. Where two faces meet
+          // already (the top and a wall at the rim of a hole), the shape is closed without it, and the surface around
+          // it decides instead.
+          return agrees;
+        }
       }
     }
   }

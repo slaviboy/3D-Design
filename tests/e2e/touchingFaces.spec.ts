@@ -17,35 +17,7 @@
 
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { drawBox, extents, onScreen, type Point } from './modelHelpers';
-
-/** How many of the world points are drawn in the faces' back color (blue-gray) rather than their front color. */
-async function backColored(page: Page, points: readonly Point[]): Promise<number> {
-  return page.evaluate((targets) => {
-    const canvas = document.querySelector<HTMLCanvasElement>('.viewport canvas');
-    if (!canvas) throw new Error('no viewport canvas');
-    const scale = canvas.width / canvas.clientWidth;
-    const copy = document.createElement('canvas');
-    copy.width = canvas.width;
-    copy.height = canvas.height;
-    const context = copy.getContext('2d');
-    if (!context) throw new Error('no 2D context');
-    context.drawImage(canvas, 0, 0);
-    let count = 0;
-    for (const target of targets) {
-      const screen = window.__planar?.screenOf(target);
-      if (!screen) throw new Error('point not on screen');
-      const [red = 0, , blue = 0] = context.getImageData(
-        Math.round(screen.x * scale),
-        Math.round(screen.y * scale),
-        1,
-        1,
-      ).data;
-      if (blue - red > 12) count++;
-    }
-    return count;
-  }, points);
-}
+import { backColored, drawBox, extents, onScreen, type Point } from './modelHelpers';
 
 /** Points spread over the inside of a horizontal face spanning the box's footprint, clear of its edges. */
 function grid(min: Point, max: Point, z: number): Point[] {

@@ -152,7 +152,11 @@ for the active context, plus options such as `autoFace`.
     - If no face covers the sample and `autoFace` is set: create a face.
     - A closed loop inside a face produces a hole in that face plus a new inner face.
 11. **Orient new faces.**
-    - A face that shares an edge with an existing face is oriented so the shared edge is used in opposite directions.
+    - A face that closes a surface along an edge, where the edge has one face so far, is oriented so the shared edge
+      is used in opposite directions: the last face of a box faces out like the others.
+    - Otherwise, a face lying in the plane of faces it shares edges with faces the way they do. Along an edge that two
+      faces share already (the rim of a hole, where the top meets a wall), the shape is closed without the new face,
+      so only the surface around it decides: a rectangle drawn over an opening faces like the top around it.
     - Otherwise, a face on the ground plane (z within `EPS_LEN` of 0) gets a −Z normal, so its back side faces up, as
       in the reference workflows.
     - Otherwise, the normal points away from the camera view direction.
@@ -206,7 +210,9 @@ Push/Pull applies to a planar face F. Let `n` be F's normal and `d` the signed d
      each corner. A polygon that became a polyline (an edge erased, or scaled unevenly) extrudes smooth like one.
    - What happens to F depends on the case:
      - **Ctrl held:** F is kept.
-     - **F has no neighbors:** F is kept, flipped, as the base of a closed shell.
+     - **F has no neighbors, or spans an opening** (every edge of it is shared by two other faces already, as for a
+       rectangle drawn over a hole): F is kept, flipped, as the base of a closed shell. Empty space lies on both of
+       its sides, so the extrusion stands on it instead of opening into what is behind it.
      - **F has neighbors (the "frame remains" case):** F is removed and F′ takes over its id.
 4. **Imprint.** For F′ and each side face, find existing faces in the same plane whose bounding boxes overlap.
    Imprint the boundaries in both directions with insertSegments (`autoFace` off). Then compare coincident regions

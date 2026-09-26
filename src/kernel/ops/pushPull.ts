@@ -79,6 +79,16 @@ function neighborFaces(store: EntityStore, faceId: FaceId): Set<FaceId> {
   return neighbors;
 }
 
+/**
+ * Whether the face spans an opening in a shape that is closed without it: every edge of it is already shared by two
+ * other faces, as for a rectangle drawn over the top of a hole. Empty space lies on both of its sides.
+ */
+function spansOpening(store: EntityStore, faceId: FaceId): boolean {
+  return store
+    .faceEdges(faceId)
+    .every((edgeId) => store.getEdge(edgeId).faces.filter((other) => other !== faceId).length >= 2);
+}
+
 /** How a push or pull of this face would be carried out. */
 export function pushPullMode(
   store: EntityStore,
@@ -349,7 +359,9 @@ function extrude(
   const normal = store.getFacePlane(faceId).normal;
   const offset = scale(normal, distance);
   const travel = scale(normal, Math.sign(distance));
-  const isFree = neighborFaces(store, faceId).size === 0;
+  // A free-standing face, or one spanning an opening, becomes the base of a new closed shape: nothing solid lies on
+  // either side of it, so the extrusion stands on it instead of opening into what is behind it.
+  const base = neighborFaces(store, faceId).size === 0 || spansOpening(store, faceId);
   const attributes = face.attributes;
   const loops: CapturedLoop[] = store.faceLoops(faceId).map((loop) => ({
     points: store.loopPoints(loop),
@@ -362,8 +374,8 @@ function extrude(
       if (curveId !== null) sourceCurves.set(curveId, store.getCurve(curveId));
   }
 
-  if (isFree) {
-    // A free-standing face becomes the base of a closed shape, facing away from the extrusion.
+  if (base) {
+    // The base faces away from the extrusion.
     if (dot(normal, travel) > 0) reverseFace(doc, context, faceId);
   } else if (!keepOriginal) {
     removeFace(doc, context, faceId);
@@ -400,20 +412,20 @@ function extrude(
     ...inserted.segmentEdges.flatMap((edges) => edges),
   ]);
 
-  // Cap: faces the push direction for a free face, otherwise keeps the original face's orientation.
+  // Cap: faces the push direction on a base, otherwise keeps the original face's orientation.
   const capOuter = (loops[0]?.points ?? []).map((p) => add(p, offset));
   const capFaces = settleRegion(doc, context, {
     plane: planeFromPointNormal(capOuter[0] ?? offset, normal),
     seeds: capSegments.flat().flatMap((index) => edgesOf(index)),
     outer: capOuter,
     inners: loops.slice(1).map((loop) => loop.points.map((p) => add(p, offset))),
-    normal: isFree ? travel : normal,
+    normal: base ? travel : normal,
     attributes,
     rule: 'cancel-opposite',
   });
 
-  // Sides face away from the material: outward for a free face or a pull, into the pocket for a push.
-  const sideSign = isFree || distance > 0 ? 1 : -1;
+  // Sides face away from the material: outward on a base or for a pull, into the pocket for a push.
+  const sideSign = base || distance > 0 ? 1 : -1;
   loops.forEach((loop, loopIndex) => {
     const count = loop.points.length;
     const caps = capSegments[loopIndex] ?? [];

@@ -38,7 +38,15 @@ import { add, AXIS_X, AXIS_Z, scale, vec3, type Vec3 } from '../../src/kernel/ma
 import { validateDocument } from '../../src/kernel/model/validate';
 import { deleteFaces } from '../../src/kernel/ops/erase';
 import { pushPull } from '../../src/kernel/ops/pushPull';
-import { boxEdges, counts, draw, polygon, rectangle, segment } from '../kernel/helpers';
+import {
+  boxEdges,
+  counts,
+  draw,
+  orientationConsistent,
+  polygon,
+  rectangle,
+  segment,
+} from '../kernel/helpers';
 import { click, createTestEditor, pointer, screenOf, VIEW_SIZE } from './fixtures';
 
 const key = (value: string, modifiers: { shiftKey?: boolean } = {}) => ({
@@ -273,6 +281,38 @@ describe('Rectangle tool', () => {
           .sort(),
       ).toEqual([0, 1]);
       expect(doc.lastTransaction?.label).toBe('Rectangle');
+      expectValidModel(editor);
+    });
+
+    it('pulls the rectangle closing the opening up into a closed box, keeping it as the bottom', () => {
+      const editor = viewed();
+      const doc = editor.session.doc;
+      draw(doc, boxEdges(0, 0, 0, 1, 1, 1));
+      draw(doc, rectangle(0.25, 0.25, 0.75, 0.75, 1));
+      const square = facesAt(editor, 'z', 1).find((face) => face.inners.length === 0);
+      if (!square) throw new Error('no square marked on the top');
+      pushPull(doc, doc.rootDefinitionId, square.id, -1);
+
+      editor.activateTool(RECTANGLE_TOOL_ID);
+      clickOn(editor, vec3(0.25, 0.25, 1));
+      clickOn(editor, vec3(0.75, 0.75, 1));
+      const lid = facesAt(editor, 'z', 1).find((face) => face.inners.length === 0);
+      if (!lid) throw new Error('the opening is still open');
+      // It faces up, like the top around it, not down into the hole.
+      expect(doc.rootStore.getFacePlane(lid.id).normal.z).toBeCloseTo(1);
+
+      editor.activateTool(PUSH_PULL_TOOL_ID);
+      clickOn(editor, vec3(0.5, 0.5, 1));
+      const up = projectToScreen(camera, vec3(0.5, 0.5, 1.2), VIEW_SIZE);
+      if (!up) throw new Error('behind the camera');
+      editor.tools.pointerMove(pointer(up.x, up.y, { buttons: 0 }));
+      type(editor, '500mm');
+      expect(counts(doc)).toEqual({ v: 20, e: 32, f: 16 });
+      expect(doc.rootStore.getFacePlane(lid.id).normal.z).toBeCloseTo(-1);
+      const [top] = facesAt(editor, 'z', 1.5);
+      if (!top) throw new Error('no top on the new box');
+      expect(doc.rootStore.getFacePlane(top.id).normal.z).toBeCloseTo(1);
+      expect(orientationConsistent(doc.rootStore)).toBe(true);
       expectValidModel(editor);
     });
 

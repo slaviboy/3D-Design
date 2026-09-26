@@ -44,6 +44,7 @@ tool is marked Done.
 | A22 | 1e-5 m square | 4/4/1 | Tiny features still form faces |
 | A23 | A 2 × 2 ground face with a 1 × 1 square hole (its inner face deleted); draw over the hole's outline, one of its edges, or part of one | 8/8/2 | Drawing tools fill the hole, as a new edge drawn into it would; inserting the same segments without retracing (operations) leaves it open |
 | A24 | A unit box with its top face deleted; draw over one top edge | 8/12/6 | The top face comes back, oriented consistently |
+| A25 | B7's hole through a unit box; draw over the outline of its top opening, then of its bottom one | 16/24/12 | Each lid faces like the surface around it (the top up, the bottom down), not into the hole: along the rim, a wall and that surface meet already |
 
 ## B. Push/Pull
 
@@ -71,6 +72,8 @@ tool is marked Done.
 | B20 | 6-sided polygon on ground, r 0.5, push/pull +1 | 12/18/8 | A prism: the 6 vertical edges stay hard (a polygon is faceted, unlike B9's circle); top and bottom remain polygon curves |
 | B21 | B4, then pull the inner face +0.3 and push it back −0.3 | 12/16/7 | Stops flush where the bump's walls end (`pushPullLimit` kind `flush`); the bump flattens into the top, the square stays marked. −0.4 is refused |
 | B22 | B1 at 2 × 1 × 1 with its top split at x = 1, the left half pulled +1, then pushed −1 | 10/15/7 | The step levels with the top beside it; the dividing line stays |
+| B23 | A25's top lid, pulled +0.5 | 20/32/16 | A closed box on the hole: the lid spans an opening, so it stays as the box's bottom, facing down into the hole; the new top faces up, the walls out |
+| B24 | A25's top lid, pushed −0.3 | 20/28/12 | Plugs the top of the hole: the lid stays on top, and a new floor at 0.7 faces down into the rest |
 
 ## C. Move / stretch / autofold
 
